@@ -620,7 +620,9 @@ export function createSkidrowMap(): WorldMapDef {
     { id: "cone1", kind: "cone", x: 18, y: 19 },
     { id: "cone2", kind: "cone", x: 41, y: 21 },
     { id: "phone1", kind: "phonebooth", x: 28, y: 22, label: "Last working booth" },
-    { id: "mail1", kind: "mailbox", x: 46, y: 18 },
+    { id: "mail1", kind: "mailbox", x: 46, y: 18, label: "Federal pigeonhole" },
+    { id: "h1c", kind: "hydrant", x: 30, y: 28, label: "Pressure relief" },
+    { id: "cone0", kind: "cone", x: 36, y: 24, label: "Union property" },
     // War zone
     { id: "d2", kind: "dumpster", x: 55, y: 45, label: "Smells like opportunity" },
     { id: "d3", kind: "dumpster", x: 88, y: 50, label: "Industrial salad" },
@@ -643,11 +645,14 @@ export function createSkidrowMap(): WorldMapDef {
     { id: "cone3", kind: "cone", x: 39, y: 41 },
     { id: "cone4", kind: "cone", x: 61, y: 43 },
     { id: "phone2", kind: "phonebooth", x: 16, y: 46, label: "Bulletproof glass (not)" },
-    { id: "mail2", kind: "mailbox", x: 54, y: 48 },
+    { id: "mail2", kind: "mailbox", x: 54, y: 48, label: "War mail" },
+    { id: "phone3", kind: "phonebooth", x: 68, y: 54, label: "Collect-call cathedral" },
+    { id: "mail3", kind: "mailbox", x: 78, y: 46, label: "Docks dropbox" },
     // Docks — cold storage street dressing
     { id: "n5", kind: "neon", x: 86, y: 52, label: "COLD" },
     { id: "cr3", kind: "crate", x: 84, y: 56, label: "Keep frozen (or else)" },
-    { id: "cone5", kind: "cone", x: 87, y: 50 },
+    { id: "cone5", kind: "cone", x: 87, y: 50, label: "Ice hazard" },
+    { id: "h3", kind: "hydrant", x: 90, y: 54, label: "Frost valve" },
   ];
 
   return {
@@ -670,6 +675,8 @@ export function createSkidrowMap(): WorldMapDef {
       { id: "npc_gun", name: "Caliber Kate", x: 74, y: 85, role: "dealer", buildingId: "shop_gun" },
       { id: "npc_booze", name: "Bottle Bob", x: 86, y: 3, role: "dealer", buildingId: "shop_liquor" },
       { id: "npc_club", name: "Venus Static", x: 36.5, y: 3.2, role: "bartender", buildingId: "club_neon" },
+      // Outdoor fence hustle (no shop building — dialogue deals only)
+      { id: "npc_fence", name: "Fence Frankie", x: 36, y: 20, role: "dealer" },
       // The Titty Twister — stage talent (tip for progressive reveal)
       {
         id: "npc_dancer_a",
@@ -702,7 +709,7 @@ export function createSkidrowMap(): WorldMapDef {
       { id: "npc_street", name: "Corner Carl", x: 36, y: 28, role: "thug" },
       { id: "npc_street2", name: "Alley Ace", x: 22, y: 30, role: "thug" },
       { id: "npc_street3", name: "Meter Maid Mayhem", x: 48, y: 24, role: "thug" },
-      { id: "npc_street4", name: "Quiet Quentin", x: 58, y: 32, role: "thug" },
+      { id: "npc_street4", name: "Quiet Quentin", x: 40, y: 34, role: "thug" },
       { id: "npc_street5", name: "Bench Benny", x: 72, y: 26, role: "thug" },
       { id: "npc_street6", name: "Stoop Sally", x: 14, y: 34, role: "thug" },
       { id: "npc_street7", name: "Roxy Switch", x: 42, y: 22, role: "thug" },

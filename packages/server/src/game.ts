@@ -10,6 +10,8 @@ import {
   DISTRICTS,
   districtAt,
   HEAT,
+  HUSTLE_HEAT,
+  hustleCooldownSec,
   isDistrictUnlocked,
   LAY_LOW_HEAT_REDUCE,
   DANCER_MAX_STAGE,
@@ -2641,6 +2643,14 @@ export class GameWorld {
       const u = npcPick.unit;
       const spawn = this.map.npcSpawns.find((n) => n.id === u.id);
       if (spawn?.role === "dealer") {
+        // Outdoor fence: dialogue hustles (no shop building)
+        if (!spawn.buildingId) {
+          const dlg = this.buildDialogue(u, posse);
+          dlg.gender = u.gender;
+          posse.dialogue = dlg;
+          posse.shop = null;
+          return;
+        }
         const b = this.map.buildings.find((bb) => bb.id === (u.buildingId ?? posse.insideBuildingId));
         const n = u.name.toLowerCase();
         let openLine = "phil_open";
@@ -2705,7 +2715,10 @@ export class GameWorld {
       }
     }
 
-    this.log(session, "Nothing to interact with. Try a door, NPC, dumpster, or corner.");
+    this.log(
+      session,
+      "Nothing to interact with. Try a door, NPC, dumpster, booth, mailbox, or corner.",
+    );
   }
 
   private serviceHeal(session: CharacterSession, posse: Posse): void {
@@ -2760,6 +2773,11 @@ export class GameWorld {
     );
   }
 
+  private setPropCooldown(propId: string, kind: string): void {
+    const sec = hustleCooldownSec(kind);
+    this.propReadyAt.set(propId, this.tick + TICK_HZ * sec);
+  }
+
   private interactProp(
     session: CharacterSession,
     posse: Posse,
@@ -2774,7 +2792,7 @@ export class GameWorld {
       const cash = 15 + Math.floor(Math.random() * 25);
       posse.cash += cash;
       this.log(session, `Loose cash in the crate: $${cash}.`);
-      this.propReadyAt.set(propId, this.tick + TICK_HZ * 70);
+      this.setPropCooldown(propId, prop.kind);
       return;
     }
 
@@ -2786,7 +2804,7 @@ export class GameWorld {
     }
 
     if (prop.kind === "dumpster") {
-      this.propReadyAt.set(propId, this.tick + TICK_HZ * 45);
+      this.setPropCooldown(propId, prop.kind);
       const roll = Math.random();
       if (roll < 0.35) {
         const cash = 20 + Math.floor(Math.random() * 60);
@@ -2814,7 +2832,7 @@ export class GameWorld {
     }
 
     if (prop.kind === "protection") {
-      this.propReadyAt.set(propId, this.tick + TICK_HZ * 60);
+      this.setPropCooldown(propId, prop.kind);
       const cash = 40 + Math.floor(Math.random() * 80) + Math.floor(posse.rep * 2);
       posse.cash += cash;
       posse.rep += 1;
@@ -2827,20 +2845,25 @@ export class GameWorld {
     }
 
     if (prop.kind === "car" || prop.kind === "motorcycle") {
-      this.propReadyAt.set(propId, this.tick + TICK_HZ * 90);
+      this.setPropCooldown(propId, prop.kind);
       const cash = 30 + Math.floor(Math.random() * 100);
       posse.cash += cash;
+      this.addHeat(posse, HUSTLE_HEAT.carJack, session, "vehicle jack");
+      const loud = Math.random() < 0.22;
       this.log(
         session,
         prop.kind === "motorcycle"
-          ? `Yanked $${cash} from ${prop.label ?? "a bike"}. The tank still smells like regret.`
-          : `Liberated $${cash} from ${prop.label ?? "a car"}. The radio only plays static now.`,
+          ? `Yanked $${cash} from ${prop.label ?? "a bike"}. The tank still smells like regret.${loud ? " Alarm: yes." : ""}`
+          : `Liberated $${cash} from ${prop.label ?? "a car"}. The radio only plays static now.${loud ? " Alarm's screaming." : ""}`,
       );
+      if (loud) {
+        this.addHeat(posse, HEAT.hustleSoft, session, "car alarm");
+      }
       return;
     }
 
     if (prop.kind === "crate") {
-      this.propReadyAt.set(propId, this.tick + TICK_HZ * 70);
+      this.setPropCooldown(propId, prop.kind);
       const unit = this.leader(posse);
       if (unit && Math.random() < 0.4 && !unit.ownedWeapons.has("uzi")) {
         unit.ownedWeapons.add("uzi");
@@ -2854,19 +2877,140 @@ export class GameWorld {
       return;
     }
 
-    if (
-      prop.kind === "neon" ||
-      prop.kind === "hydrant" ||
-      prop.kind === "cone" ||
-      prop.kind === "phonebooth" ||
-      prop.kind === "mailbox"
-    ) {
-      this.log(
-        session,
-        prop.label
-          ? `"${prop.label}" has nothing useful. Mood, though? Immaculate.`
-          : "You stare. It stares back. The streets keep their secrets.",
-      );
+    if (prop.kind === "phonebooth") {
+      this.setPropCooldown(propId, prop.kind);
+      const roll = Math.random();
+      const label = prop.label ?? "the booth";
+      if (roll < 0.32) {
+        // Tip line — pay for intel
+        const cost = 15;
+        if (posse.cash < cost) {
+          this.log(session, `${label}: dead line. Also your wallet is dead. Need $${cost} for the tip line.`);
+          // still on CD — they tried
+          return;
+        }
+        posse.cash -= cost;
+        posse.rep += 1;
+        this.log(
+          session,
+          `${label}: tip line. (−$${cost}, rep +1) "Dogs west, rats fringe, parking south, freezer east. Don't call this number again."`,
+        );
+      } else if (roll < 0.58) {
+        // Collect-call scam
+        const cash = 25 + Math.floor(Math.random() * 55);
+        posse.cash += cash;
+        this.addHeat(posse, HUSTLE_HEAT.phoneScam, session, "phone scam");
+        this.log(
+          session,
+          `${label}: reverse charges from a 'lawyer in Bermuda'. +$${cash}. Heat up. The operator cried.`,
+        );
+      } else if (roll < 0.78) {
+        const unit = this.leader(posse);
+        if (unit) {
+          unit.health = Math.max(1, unit.health - 5);
+          this.log(session, `${label}: wrong number. A guy named Spike promised to find you. (−5 HP from the receiver slam)`);
+        }
+      } else {
+        this.log(session, `${label}: dial tone and existential dread. No cash. No mercy.`);
+      }
+      return;
+    }
+
+    if (prop.kind === "mailbox") {
+      this.setPropCooldown(propId, prop.kind);
+      const roll = Math.random();
+      const label = prop.label ?? "the box";
+      if (roll < 0.4) {
+        const cash = 18 + Math.floor(Math.random() * 45);
+        posse.cash += cash;
+        this.addHeat(posse, HUSTLE_HEAT.mailbox, session, "mail theft");
+        this.log(session, `${label}: birthday checks and divorce papers. +$${cash}. Heat + a little federal curiosity.`);
+      } else if (roll < 0.62) {
+        posse.rep += 1;
+        this.log(session, `${label}: anonymous love letter addressed to 'whoever smells like gun oil.' Rep +1. Weird flex.`);
+      } else if (roll < 0.8) {
+        this.addHeat(posse, HEAT.hustleSoft + 1, session, "opened warrant");
+        this.log(session, `${label}: opened someone else's warrant. Heat up. Congratulations, you play yourself.`);
+      } else {
+        this.log(session, `${label}: catalogs and coupons for a funeral home. Mood: accurate.`);
+      }
+      return;
+    }
+
+    if (prop.kind === "hydrant") {
+      this.setPropCooldown(propId, prop.kind);
+      const roll = Math.random();
+      const label = prop.label ?? "hydrant";
+      if (roll < 0.35) {
+        const cash = 10 + Math.floor(Math.random() * 30);
+        posse.cash += cash;
+        this.log(session, `${label}: city workers left a bribe in the cap. +$${cash}. Wet socks optional.`);
+      } else if (roll < 0.55) {
+        const before = posse.heat;
+        posse.heat = Math.max(0, posse.heat - 6);
+        this.log(
+          session,
+          `${label}: cold spray washes the stink off. Heat ${Math.round(before)} → ${Math.round(posse.heat)}.`,
+        );
+      } else if (roll < 0.78) {
+        const unit = this.leader(posse);
+        if (unit) {
+          unit.health = Math.max(1, unit.health - 6);
+          this.addHeat(posse, HUSTLE_HEAT.hydrant, session, "hydrant spray");
+          this.log(session, `${label}: valve fights back. Face full of street water. (−6 HP)`);
+        }
+      } else {
+        this.log(session, `${label}: rust, pressure, and civic pride. Nothing to steal but dignity.`);
+      }
+      return;
+    }
+
+    if (prop.kind === "neon") {
+      this.setPropCooldown(propId, prop.kind);
+      const roll = Math.random();
+      const label = prop.label ?? "neon";
+      if (roll < 0.45) {
+        const cash = 35 + Math.floor(Math.random() * 70);
+        posse.cash += cash;
+        this.addHeat(posse, HUSTLE_HEAT.neonSmash, session, "neon smash");
+        this.log(
+          session,
+          `Smashed "${label}" for scrap copper and pride. +$${cash}. Loud. Heat up.`,
+        );
+      } else if (roll < 0.7) {
+        const unit = this.leader(posse);
+        if (unit) {
+          unit.health = Math.max(1, unit.health - 10);
+          this.addHeat(posse, HEAT.hustleSoft, session, "glass rain");
+          this.log(session, `"${label}" glass rain. (−10 HP) Neon cuts deeper than feelings.`);
+        }
+      } else {
+        posse.rep += 1;
+        this.log(session, `You pose under "${label}" like a tourist. Photo not included. Rep +1 for the aesthetic.`);
+      }
+      return;
+    }
+
+    if (prop.kind === "cone") {
+      this.setPropCooldown(propId, prop.kind);
+      const roll = Math.random();
+      const label = prop.label ?? "cone";
+      if (roll < 0.4) {
+        const cash = 12 + Math.floor(Math.random() * 28);
+        posse.cash += cash;
+        this.log(session, `Moved ${label}. Union dues fell out. +$${cash}. "That's a reorg."`);
+      } else if (roll < 0.65) {
+        this.addHeat(posse, HUSTLE_HEAT.coneTrouble, session, "traffic cone");
+        this.log(session, `${label}: a meter maid saw that. Heat up. The cone had witnesses.`);
+      } else if (roll < 0.85) {
+        const unit = this.leader(posse);
+        if (unit) {
+          unit.health = Math.max(1, unit.health - 4);
+          this.log(session, `Tripped over ${label}. (−4 HP) It was personal.`);
+        }
+      } else {
+        this.log(session, `${label}: still orange. Still judging you.`);
+      }
       return;
     }
   }
@@ -3238,6 +3382,34 @@ export class GameWorld {
       };
     }
     if (role === "dealer") {
+      // Outdoor fence — no counter, just dirty deals
+      if (!spawn?.buildingId) {
+        return {
+          npcId: npc.id,
+          npcName: npc.name,
+          text: `${npc.name} leans on a railing that isn't structural. "I move things. You bring cash. We pretend this is legal."`,
+          voiceLineId,
+          choices: [
+            {
+              id: "fence_ammo",
+              label: "Dirty clip — top up special ammo. ($55)",
+              tone: "business",
+            },
+            {
+              id: "street_tip",
+              label: "Buy a tip. ($25, rep +1)",
+              tone: "smooth",
+            },
+            {
+              id: "fence_buy",
+              label: "Got anything loose? ($40 mystery bag)",
+              tone: "business",
+            },
+            { id: "haggle", label: "You're robbing me.", tone: "insult" },
+            { id: "bye", label: "Later, fence.", tone: "smooth" },
+          ],
+        };
+      }
       return {
         npcId: npc.id,
         npcName: npc.name,
@@ -3329,13 +3501,24 @@ export class GameWorld {
         ],
       };
     }
+    // Street thug (default + outdoor meat)
     return {
       npcId: npc.id,
       npcName: npc.name,
-      text: `${npc.name} spits on the sidewalk. "You hiring or wasting oxygen?"`,
+      text: `${npc.name} spits on the sidewalk. "You hiring, buying gossip, or looking for a broken nose?"`,
       voiceLineId,
       choices: [
         { id: "hire_street", label: "Join the crew. ($100)", tone: "business" },
+        {
+          id: "street_tip",
+          label: "Buy a tip. ($25, rep +1)",
+          tone: "smooth",
+        },
+        {
+          id: "shake_down",
+          label: "Shake them down. (risk)",
+          tone: "threaten",
+        },
         { id: "insult", label: "You're the waste.", tone: "insult" },
         { id: "bye", label: "Forget it.", tone: "smooth" },
       ],
@@ -3524,17 +3707,133 @@ export class GameWorld {
       return;
     }
 
-    if (choiceId === "rumor" || choiceId === "tip") {
+    if (choiceId === "rumor" || choiceId === "tip" || choiceId === "street_tip") {
       const femaleBar = this.isFemaleBartender(npc);
       const isRita = /rita/i.test(npc?.name ?? d.npcName);
+      if (choiceId === "street_tip") {
+        const cost = 25;
+        if (posse.cash < cost) {
+          d.text = "\"Tips ain't free, genius. Come back with twenty-five or shut up.\"";
+          d.choices = [{ id: "bye", label: "Tight week.", tone: "smooth" }];
+          return;
+        }
+        posse.cash -= cost;
+      }
       d.text =
-        "\"Dumpster Dogs west, Rail Rats on the fringe, Parking Racket south. Warehouse and Chop Shop jobs if you want a sealed room with freeloaders.\"";
+        "\"Dumpster Dogs west, Rail Rats on the fringe, Parking Racket south. Phone booths and mailboxes pay if you're shameless. Warehouse, Chop Shop, Cold Storage if you want a sealed room with freeloaders.\"";
       this.setDialogueVoice(
         d,
         isRita ? "rita_tip" : femaleBar ? "venus_rumor" : "vince_rumor",
       );
       d.choices = [{ id: "bye", label: "Good looking out.", tone: "smooth" }];
       posse.rep += 1;
+      if (choiceId === "street_tip") {
+        this.log(session, `Paid $${25} for street intel. Rep +1.`);
+      }
+      return;
+    }
+
+    if (choiceId === "shake_down" && npc) {
+      const roll = Math.random();
+      if (roll < 0.4) {
+        const cash = 30 + Math.floor(Math.random() * 70);
+        posse.cash += cash;
+        this.addHeat(posse, HUSTLE_HEAT.shake, session, "street shake");
+        d.text = `"Alright, alright — take it!" They empty a greasy wallet. +$${cash}.`;
+        this.log(session, `Shook down ${npc.name} for $${cash}. Heat up.`);
+      } else if (roll < 0.7) {
+        const unit = this.leader(posse);
+        if (unit) {
+          unit.health = Math.max(1, unit.health - 12);
+        }
+        this.addHeat(posse, HEAT.hustleSoft, session, "bad shake");
+        d.text = "They slug you first. \"Try that again and I'll feed you to the dumpster dogs.\"";
+        this.log(session, `${npc.name} fought back. (−12 HP)`);
+      } else {
+        d.text = "They laugh and walk. \"You're broke and obvious. Work on the act.\"";
+        this.log(session, `Shake failed. ${npc.name} is unimpressed.`);
+      }
+      d.choices = [{ id: "bye", label: "We're done.", tone: "smooth" }];
+      return;
+    }
+
+    if (choiceId === "fence_ammo" && npc) {
+      const cost = 55;
+      if (posse.cash < cost) {
+        d.text = "\"No cash, no clip. Physics.\"";
+        d.choices = [{ id: "bye", label: "Later.", tone: "smooth" }];
+        return;
+      }
+      const unit = this.leader(posse);
+      if (!unit) {
+        posse.dialogue = null;
+        return;
+      }
+      posse.cash -= cost;
+      // Prefer topping a limited gun they already own (+20 rounds, capped at max)
+      const limited: WeaponId[] = ["uzi", "shotgun", "tommy", "minigun", "flamethrower"];
+      let topped: WeaponId | null = null;
+      for (const w of limited) {
+        if (unit.ownedWeapons.has(w)) {
+          const def = WEAPONS[w];
+          if (def?.maxAmmo != null) {
+            const cur = unit.weaponAmmo.get(w) ?? 0;
+            unit.weaponAmmo.set(w, Math.min(def.maxAmmo, cur + 20));
+            topped = w;
+            break;
+          }
+        }
+      }
+      if (!topped) {
+        unit.ownedWeapons.add("uzi");
+        grantWeaponAmmo(unit, "uzi");
+        const def = WEAPONS.uzi;
+        if (def?.maxAmmo != null) {
+          const cur = unit.weaponAmmo.get("uzi") ?? 0;
+          unit.weaponAmmo.set("uzi", Math.min(def.maxAmmo, cur + 20));
+        }
+        topped = "uzi";
+      }
+      d.text = `"Here's a dirty ${topped} top-up. Don't ask where the brass slept."`;
+      this.log(session, `Fence sold ammo for ${topped} (−$${cost}).`);
+      d.choices = [{ id: "bye", label: "Pleasure.", tone: "business" }];
+      return;
+    }
+
+    if (choiceId === "fence_buy" && npc) {
+      const cost = 40;
+      if (posse.cash < cost) {
+        d.text = "\"Mystery bag requires non-mystery money.\"";
+        d.choices = [{ id: "bye", label: "Fair.", tone: "smooth" }];
+        return;
+      }
+      posse.cash -= cost;
+      const roll = Math.random();
+      if (roll < 0.35) {
+        const cash = 50 + Math.floor(Math.random() * 40);
+        posse.cash += cash;
+        d.text = `"Huh. That bag had cash. Don't tell the previous owner." +$${cash} (net +$${cash - cost}).`;
+        this.log(session, `Mystery bag: net +$${cash - cost}.`);
+      } else if (roll < 0.6) {
+        const unit = this.leader(posse);
+        if (unit && !unit.ownedWeapons.has("switchblade")) {
+          unit.ownedWeapons.add("switchblade");
+          d.text = "\"Switchblade. Sticky. Still sharp. You're welcome.\"";
+          this.log(session, `Mystery bag: switchblade (−$${cost}).`);
+        } else {
+          posse.cash += 20;
+          d.text = "\"Spare change and a half-smoked cigar. Living large.\" +$20 back.";
+          this.log(session, `Mystery bag: $20 scrap (−$${cost} paid).`);
+        }
+      } else if (roll < 0.8) {
+        this.addHeat(posse, HEAT.hustleSoft, session, "hot bag");
+        d.text = "\"Whoops. That was hot. Heat's on you now.\"";
+        this.log(session, `Mystery bag was hot. Heat up. (−$${cost})`);
+      } else {
+        d.text = "\"Empty bag. Educational experience. Tuition: forty bucks.\"";
+        this.log(session, `Mystery bag: empty. (−$${cost})`);
+      }
+      d.choices = [{ id: "bye", label: "Classic.", tone: "insult" }];
       return;
     }
 
@@ -5583,13 +5882,21 @@ export class GameWorld {
       })(),
       props: posse.insideBuildingId
         ? []
-        : this.map.props.map((p) => ({
-            id: p.id,
-            kind: p.kind,
-            x: p.x,
-            y: p.y,
-            label: p.label,
-          })),
+        : this.map.props.map((p) => {
+            const readyTick = this.propReadyAt.get(p.id) ?? 0;
+            const readyIn =
+              this.tick < readyTick
+                ? Math.ceil((readyTick - this.tick) / TICK_HZ)
+                : 0;
+            return {
+              id: p.id,
+              kind: p.kind,
+              x: p.x,
+              y: p.y,
+              label: p.label,
+              ...(readyIn > 0 ? { readyIn } : {}),
+            };
+          }),
       mapWidth: this.map.width,
       mapHeight: this.map.height,
       mapRevision: this.mapRevision,

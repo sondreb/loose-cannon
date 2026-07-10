@@ -13,6 +13,7 @@ import {
   type CombatFxEvent,
   type DayPhase,
   type LightingLook,
+  propHustleAction,
   type PropPublic,
   type UnitPublic,
   type WeaponId,
@@ -2973,12 +2974,9 @@ export class WorldView {
     const p = this.pickProp(clientX, clientY);
     if (p) {
       const label = p.label ?? p.kind;
+      const base = propHustleAction(p.kind);
       const action =
-        p.kind === "dumpster" || p.kind === "crate"
-          ? "Search"
-          : p.kind === "protection"
-            ? "Collect"
-            : "Inspect";
+        p.readyIn != null && p.readyIn > 0 ? `Wait ~${p.readyIn}s` : base;
       this.hover = { kind: "prop", id: p.id, label, action };
       return "pointer";
     }

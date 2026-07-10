@@ -15,6 +15,10 @@ export const HEAT = {
   missionSoft: 3,
   /** Protection racket hustle */
   protection: 4,
+  /** Soft street crimes (phone scam, mail, hydrant, cone, car jack) — see HUSTLE_HEAT */
+  hustleSoft: 2,
+  /** Smashing neon / loud street crime */
+  hustleLoud: 5,
   /** Passive decay per second while not in combat */
   decayPerSec: 0.4,
   /** Heat above this slows decay */

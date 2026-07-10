@@ -19,6 +19,19 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-11 — cycle 19 (M7 street hustles / POI)
+- Focus: More street hustles / outdoor POI interactions (phone, mail, hydrant, neon, cone + fence NPC)
+- Done:
+  - Shared `hustles.ts`: cooldowns, heat amounts, `propHustleAction` labels
+  - Protocol: `PropPublic.readyIn` for realm-wide prop cooldowns
+  - Server: full outcomes for phonebooth / mailbox / hydrant / neon / cone; car jack heat + alarm; thug tip + shake; outdoor Fence Frankie (ammo/tip/mystery bag)
+  - Map: extra hustle props (hydrant/cone/phone/mail); Fence Frankie on walkable street; Quentin unstuck from warehouse shell
+  - Client: hover verbs (Call/Jack/Smash/…) + Wait ~Ns from `readyIn`
+  - Smoke: hustle catalog + phone CD + fence tip; Doc heal before chop/cold to cut wipe flakes
+- Verify: `npm run build` OK; `npm run smoke` → SMOKE_OK (clean server)
+- Next: **M7** rival gang variety or optional music bed
+- Blocked: none
+
 ### 2026-07-11 — cycle 18 (M7 third instance)
 - Focus: Third instanced mission + new building template (Cold Storage / Ice Box Eviction)
 - Done:

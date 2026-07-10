@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-11 (M7 third instance — Ice Box Eviction)  
+Last updated: 2026-07-11 (M7 street hustles / POI interactions)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -36,6 +36,7 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | **Ammo economy** | **Done** | Limited specials; ∞ pistol/melee; HUD counts; pawn refill |
 | **More missions (M6)** | **Done** | +4 jobs: still_not_guns, parking_tax, chop_shop_raid, rail_rats |
 | **Third instance (M7)** | **Done** | Cold Storage template + `cold_storage` Ice Box Eviction |
+| **Street hustles / POI (M7)** | **Done** | Phone/mail/hydrant/neon/cone hustles; fence NPC; prop `readyIn` |
 | **Day/night + district light** | **Done** | ~6 min cycle; sky/overlay/neon/rain; district tints; HUD phase |
 | **Directional goons / walk bob** | **Done** | Iso screen flip; two-beat bob + lean; speed cadence; idle server facing |
 | **HUD / event-log readability** | **Done** | Kind-colored log lines; pin-to-read; stronger objective/toasts/mission HUD |
@@ -206,9 +207,33 @@ Server-authoritative; AI ignores ammo (always free fire). Players:
 - Disconnect / leave dissolves party of &lt;2; shared hostiles only despawn when last party mate leaves the job  
 - Smoke: presence array; invite/accept/leave in realm `smoke-party`  
 
+### Street hustles / POI (live)
+
+All outdoor props are interactable (E / click). Realm-wide cooldowns; snapshot `prop.readyIn` seconds; hover shows verb or **Wait ~Ns**.
+
+| Kind | Action | Outcomes (server roll) |
+|------|--------|------------------------|
+| dumpster | Search | Cash / raccoon (−HP) / sticky blade / trash |
+| crate | Search | Cash or Uzi (“farm equipment”); mission smash still completes jobs |
+| protection | Collect | Cash + rep + heat (racket) |
+| car / motorcycle | Jack | Cash + heat; chance of loud alarm |
+| phonebooth | Call | Paid tip line (−$15, rep) / reverse-charge scam (+cash, heat) / wrong number (−HP) / dial tone |
+| mailbox | Search | Checks (+cash, heat) / love letter (rep) / warrant (heat) / junk |
+| hydrant | Open | Cap bribe / cool heat (−6) / face spray (−HP) / nothing |
+| neon | Smash | Scrap copper (+cash, loud heat) / glass rain (−HP) / tourist pose (rep) |
+| cone | Move | Union dues cash / meter-maid heat / trip (−HP) / judgment |
+
+**Outdoor NPCs**
+
+- Street thugs: hire ($100) + **buy tip** ($25, rep) + **shake down** (risk cash/HP/heat)  
+- **Fence Frankie** (downtown street dealer, no shop): dirty ammo top-up ($55), tip, mystery bag ($40)  
+- Vince / Rita tip copy mentions booths, mailboxes, freezer  
+
+Smoke: prop catalog + phone `readyIn` + fence street_tip; heal-before-instance to cut wipe flakes.
+
 ## Next for overseer (priority)
 
-1. **M7 content** — street hustles / POI interactions, rival gang variety, optional music bed  
+1. **M7 content** — rival gang variety (names, gear, aggression), optional music bed  
 2. Optional **M4 polish** — loot split, shared hold progress, kick confirm  
 3. Optional **M3** crash-pad stash UX polish  
 4. **Never** Mode B (Postgres/auth/k8s) unless human asks  
@@ -223,7 +248,7 @@ Server-authoritative; AI ignores ammo (always free fire). Players:
 | Disconnect = wipe | Low | Mode A design |
 | Three instance templates | Live | warehouse + garage + coldstore; more optional later |
 | Goon sprites single art facing | Low | L/R iso flip + lean/bob; full 8-dir art sheets still optional later |
-| Chop smoke flake | Ops | Rare death mid-chop if aggro unlucky; re-run on clean server |
+| Instance smoke wipe | Ops | Rare death mid-chop/cold if aggro unlucky; smoke heals at Doc first; re-run on clean server |
 
 ## Still deferred (Mode B)
 

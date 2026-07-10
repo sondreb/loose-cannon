@@ -1,6 +1,6 @@
 # Loose Cannon — Master Plan (Overseer Roadmap)
 
-Last updated: 2026-07-11 (M7 third instance)
+Last updated: 2026-07-11 (M7 street hustles)
 
 Track completion in `docs/STATUS.md`. This file is the **ordered backlog** for autonomous development. Prefer finishing higher milestones before lower ones unless a dependency forces otherwise.
 
@@ -93,7 +93,7 @@ Full design: [realms.md](./realms.md). Friend groups on one beta/in-memory serve
 
 - [x] Second instanced mission (garage / Chop Shop Sweep — shipped with M6 pack)
 - [x] Third+ instanced mission (coldstore / Ice Box Eviction)
-- [ ] More street hustles / POI interactions
+- [x] More street hustles / POI interactions
 - [ ] Rival gang variety (names, gear, aggression)
 - [ ] Optional music bed (procedural or loop files) — keep volume low
 
@@ -120,7 +120,7 @@ Each overseer cycle implements **one** primary milestone item (or a tightly rela
 
 ### Priority order for long unattended loops
 
-1. **M7 content density** (street hustles, rival variety, optional music)
+1. **M7 content density** (rival gang variety, optional music bed)
 2. Optional M4 polish (loot split, shared hold meters) if co-op feel is rough
 3. Optional M3 stash UX polish
 4. Never M8 / Mode B unless human asks

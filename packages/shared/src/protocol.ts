@@ -115,6 +115,8 @@ export interface PropPublic {
   x: number;
   y: number;
   label?: string;
+  /** Seconds until this prop can be hustled again (0/omit = ready). Realm-wide CD. */
+  readyIn?: number;
 }
 
 export interface ChatLine {

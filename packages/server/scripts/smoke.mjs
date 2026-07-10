@@ -80,6 +80,25 @@ console.log(
   meAmmo.weaponAmmo.tommy,
 );
 
+// --- M7 street hustles: prop catalog + outdoor NPCs present ---
+{
+  const props0 = last.props || [];
+  if (!props0.some((p) => p.kind === "phonebooth")) fail("expected phonebooth prop");
+  if (!props0.some((p) => p.kind === "mailbox")) fail("expected mailbox prop");
+  if (!props0.some((p) => p.kind === "hydrant")) fail("expected hydrant prop");
+  if (!props0.some((p) => p.kind === "cone")) fail("expected cone prop");
+  const streetThugs = (last.units || []).filter(
+    (u) => u.kind === "npc" && u.npcRole === "thug",
+  );
+  if (streetThugs.length < 6) {
+    fail(`expected outdoor street thugs, got ${streetThugs.length}`);
+  }
+  if (!(last.units || []).some((u) => u.id === "npc_fence")) {
+    fail("expected outdoor fence NPC npc_fence");
+  }
+  console.log("hustle catalog ok props", props0.length, "streetThugs", streetThugs.length);
+}
+
 /** @returns {Promise<object|undefined>} */
 async function goTo(x, y, seconds = 16) {
   // Re-issue move occasionally (server A* + stuck repath should mostly own routing)
@@ -136,12 +155,70 @@ function openRitaBoard() {
   })();
 }
 
+/** Full crew heal at Doc's — reduces instance wipe flakes after outdoor jobs */
+async function healCrew() {
+  if (last?.you.insideBuildingId && !String(last.you.insideBuildingId).startsWith("mi_")) {
+    ws.send(JSON.stringify({ type: "intent.exit" }));
+    await wait(400);
+    if (last?.you.insideBuildingId) {
+      ws.send(JSON.stringify({ type: "intent.interact" }));
+      await wait(400);
+    }
+  }
+  let me = await goTo(73, 15.2, 22);
+  if (!me || Math.hypot(me.x - 73, me.y - 15.2) > 1.8) return;
+  if (last?.you.insideBuildingId !== "hospital") {
+    ws.send(JSON.stringify({ type: "intent.interact" }));
+    await wait(500);
+  }
+  if (last?.you.insideBuildingId !== "hospital") return;
+  me = await goTo(3.5, 85, 12);
+  ws.send(JSON.stringify({ type: "intent.interact" }));
+  await wait(400);
+  ws.send(JSON.stringify({ type: "intent.exit" }));
+  await wait(400);
+}
+
 console.log("map", last?.mapWidth, "x", last?.mapHeight);
 if (!last?.mapWidth || !last?.mapHeight) fail("missing map size in snapshot");
 
+// --- M7 hustle interact: phone booth CD + outdoor fence tip ---
+let me = await goTo(28, 22, 22);
+if (!me || Math.hypot(me.x - 28, me.y - 22) > 1.5) fail("phone booth path");
+ws.send(JSON.stringify({ type: "intent.interact" }));
+await wait(500);
+const phoneAfter = (last?.props || []).find((p) => p.id === "phone1");
+if (!phoneAfter) fail("phone1 missing after interact");
+if (!(phoneAfter.readyIn > 0)) {
+  fail(`expected phone1 readyIn after hustle, got ${phoneAfter.readyIn}`);
+}
+console.log("hustle phone ok readyIn", phoneAfter.readyIn, "cash", last?.you?.cash);
+
+me = await goTo(36, 20, 22);
+if (!me || Math.hypot(me.x - 36, me.y - 20) > 1.8) fail("fence Frankie path");
+ws.send(JSON.stringify({ type: "intent.interact" }));
+await wait(500);
+if (!last?.dialogue) fail("expected fence dialogue");
+const fenceChoices = last.dialogue.choices || [];
+if (!fenceChoices.some((c) => c.id === "fence_ammo" || c.id === "street_tip")) {
+  fail("expected fence hustle choices");
+}
+const repBefore = last.you?.rep ?? 0;
+ws.send(JSON.stringify({ type: "dialogue.choice", choiceId: "street_tip" }));
+await wait(400);
+if ((last.you?.rep ?? 0) < repBefore + 1) fail("street tip should grant rep");
+console.log("hustle fence tip ok rep", last.you.rep);
+ws.send(JSON.stringify({ type: "dialogue.choice", choiceId: "bye" }));
+await wait(250);
+if (last?.dialogue) {
+  // force-close if still open
+  ws.send(JSON.stringify({ type: "dialogue.close" }));
+  await wait(200);
+}
+
 // --- Bar hire ---
 // Single click from spawn (~40,30) to bar door — exercises A* around shells
-let me = await goTo(8.5, 15.2, 30);
+me = await goTo(8.5, 15.2, 30);
 console.log("at bar door (direct path)", me?.x?.toFixed(2), me?.y?.toFixed(2));
 if (!me || Math.hypot(me.x - 8.5, me.y - 15.2) > 1.5) fail("bar door direct pathing");
 ws.send(JSON.stringify({ type: "intent.interact" }));
@@ -295,6 +372,7 @@ if (last.you.rep < rep0 + 2) fail("still_not_guns rep");
 console.log("still_not_guns outdoor ok cash", last.you.cash);
 
 // --- M6 instance: chop_shop_raid (garage template) ---
+await healCrew();
 await openRitaBoard();
 cash0 = last.you.cash;
 rep0 = last.you.rep;
@@ -348,6 +426,7 @@ if (last?.you.insideBuildingId) fail("should be outdoors after chop extract");
 console.log("chop_shop_raid instance ok cash", last.you.cash);
 
 // --- M7 instance: cold_storage (coldstore template) ---
+await healCrew();
 await openRitaBoard();
 if (!last.jobBoard.offers.some((o) => o.id === "cold_storage")) fail("no cold_storage offer");
 cash0 = last.you.cash;
