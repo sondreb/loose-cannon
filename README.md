@@ -2,6 +2,41 @@
 
 Browser-based crime game — isometric squad tactics (*Syndicate*), crew comedy (*Cannon Fodder*), gangster recruitment (*Kingpin*).
 
+<p align="center">
+  <img src="packages/client/public/art/combat-scene.jpg" alt="Loose Cannon combat concept art — rainy neon street shootout" width="920" />
+</p>
+
+<p align="center">
+  <img src="packages/client/public/art/splash.jpg" alt="Loose Cannon splash concept art" width="460" />
+  &nbsp;
+  <img src="packages/client/public/art/gangster-male.jpg" alt="Gangster concept portrait" width="220" />
+  &nbsp;
+  <img src="packages/client/public/art/gangster-female.jpg" alt="Gangster concept portrait" width="220" />
+</p>
+
+<p align="center">
+  <img src="packages/client/public/art/crew/goon-m-01.jpg" alt="Crew goon portrait" width="140" />
+  <img src="packages/client/public/art/crew/goon-f-01.jpg" alt="Crew goon portrait" width="140" />
+  <img src="packages/client/public/art/bartender-male.jpg" alt="Bartender concept" width="140" />
+  <img src="packages/client/public/art/bartender-female.jpg" alt="Club hostess concept" width="140" />
+  <img src="packages/client/public/art/club/profiles/portrait-a-0.jpg" alt="Club talent profile concept" width="140" />
+</p>
+
+## 18+ only — content warning
+
+**Loose Cannon is an adult-only game (18+).** By playing you confirm you are **18 years of age or older**.
+
+Expect throughout the game:
+
+- **Strong / explicit language** (Kingpin-style profanity and crude humor)
+- **Violence**, street crime, and permanent (or long-lasting) crew deaths
+- **Sexual themes and suggestive content** (e.g. gentlemen’s club venues, flirtation, adult humor)
+- Dark comedy about gangs, money, and disposable “meat” — not a kids’ game
+
+If that is not for you, do not play. There is no family-friendly mode.
+
+---
+
 ## Play (local)
 
 ```bash
@@ -23,6 +58,7 @@ npm run dev
 | 1–4 | Select posse member |
 | 5–0 / - | Quick-equip weapons (Syndicate-style slots) |
 | FULL (panel) | Open full crew loadout editor |
+| M | City district map |
 | Enter | Focus proximity chat |
 | Esc | Close dialogue / shop / editor |
 
@@ -32,13 +68,13 @@ Death: **3 second** respawn delay, then a random outdoor spot with few other pla
 
 - Large isometric city (multi-avenue Skidrow)
 - Free WASD + click move; RMB **attack-move** (chase + fire)
-- Bars, pawn shop, gun shop, liquor, hospital, gym, club, church, garage, warehouse
+- Free outdoor roam (district rep is advisory for hot zones; shops/jobs still gate gear)
+- Bars, pawn shop, gun shop, liquor, hospital, gym, **The Titty Twister**, church, garage, warehouse
 - Dumpsters, protection corners, cars, crates (street hustles)
 - Hire / recruit, shop with icons, crew loadout editor
 - Combat scales with Aim / Muscle / weapons; wipe loot
-- Enemy **gear visible** on the street (armor bulk, weapon shape, threat pips)
-- Action banner (GOING / ASSASSINATE / ENGAGING…)
-- Basic Web Audio SFX
+- Job board / missions, heat meter, tutorial coach
+- Basic Web Audio SFX + offline NPC voice lines
 - Proximity chat
 
 ## Beta (Azure)
@@ -54,6 +90,15 @@ Setup (publish profiles + WebSockets): [`.github/DEPLOY.md`](./.github/DEPLOY.md
 ```bash
 npm run build:azure   # produces deploy/client + deploy/server
 ```
+
+## Concept art
+
+| | |
+|--|--|
+| Street combat (rain, neon, guns) | ![combat](packages/client/public/art/combat-scene.jpg) |
+| Splash / title mood | ![splash](packages/client/public/art/splash.jpg) |
+
+More portraits and club art live under [`packages/client/public/art/`](./packages/client/public/art/).
 
 ## Docs
 
@@ -79,4 +124,3 @@ grok
 ## Inspiration
 
 [`inspiration/`](./inspiration/)
-

@@ -1686,11 +1686,13 @@ img.photo {
   margin-top: 0.5rem;
 }
 
-/* Dialogue with NPC portrait (bartenders, etc.) */
+/* Dialogue with NPC portrait (bartenders, strippers, etc.) */
 .modal-card.dialogue-card {
   width: min(560px, 94vw);
   padding: 0;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .modal-card.dialogue-card.has-portrait {
@@ -1703,6 +1705,7 @@ img.photo {
   align-items: stretch;
   gap: 0;
   min-height: 0;
+  flex: 1 1 auto;
 }
 
 .dialogue-portrait-wrap {
@@ -1742,7 +1745,7 @@ img.photo {
   min-height: 280px;
   max-height: min(70vh, 420px);
   object-fit: cover;
-  object-position: center top;
+  object-position: center 15%;
   display: block;
 }
 
@@ -1814,6 +1817,7 @@ img.photo {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
 }
 
 .dialogue-body #dlgText {
@@ -1829,23 +1833,95 @@ img.photo {
   margin: 0.8rem 0;
 }
 
-@media (max-width: 560px) {
-  .dialogue-layout {
+/* Phones / narrow: full-screen dialogue + full portrait (no cropped headshots) */
+@media (max-width: 900px) {
+  #dialogueModal.modal {
+    place-items: stretch;
+    padding: 0;
+    background: rgba(0, 0, 0, 0.88);
+    z-index: 40;
+  }
+
+  #dialogueModal .modal-card.dialogue-card,
+  #dialogueModal .modal-card.dialogue-card.has-portrait,
+  #dialogueModal .modal-card.dialogue-card.is-dancer {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100%;
+    max-height: 100% !important;
+    min-height: 100%;
+    min-height: 100dvh;
+    border-radius: 0;
+    margin: 0;
+    border-left: none;
+    border-right: none;
+    box-shadow: none;
+    display: flex;
     flex-direction: column;
   }
 
-  .dialogue-portrait-wrap {
-    flex: 0 0 auto;
-    max-width: none;
-    width: 100%;
-    border-right: none;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    max-height: 200px;
+  #dialogueModal .dialogue-layout {
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
   }
 
-  .dialogue-portrait {
-    min-height: 160px;
-    max-height: 200px;
+  #dialogueModal .dialogue-portrait-wrap,
+  #dialogueModal .dialogue-card.is-dancer .dialogue-portrait-wrap {
+    flex: 0 0 min(52dvh, 420px);
+    max-width: none;
+    width: 100%;
+    max-height: none;
+    min-height: min(48dvh, 380px);
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  #dialogueModal .dialogue-portrait,
+  #dialogueModal .dialogue-card.is-dancer .dialogue-portrait {
+    width: 100%;
+    height: 100%;
+    min-height: min(48dvh, 380px);
+    max-height: none;
+    object-fit: cover;
+    object-position: center 12%;
+  }
+
+  #dialogueModal .dialogue-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 1rem 1.1rem calc(1rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  #dialogueModal #dlgChoices button {
+    padding: 0.75rem 0.9rem;
+    font-size: 0.95rem;
+    border-radius: 12px;
+  }
+
+  #dialogueModal #dlgClose {
+    margin-top: auto;
+    padding: 0.85rem;
+    width: 100%;
+  }
+
+  /* Other game modals: near full-screen on phones */
+  .modal {
+    padding: 0;
+    place-items: stretch;
+  }
+
+  .modal-card:not(.dialogue-card) {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
+    min-height: 100%;
+    min-height: 100dvh;
+    border-radius: 0;
+    margin: 0;
   }
 }
 
@@ -3035,15 +3111,22 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
     transform: scale(0.96);
   }
 
-  /* Modals fill phone */
-  .modal-card {
-    width: min(96vw, 520px) !important;
-    max-height: min(88dvh, 720px) !important;
-    margin: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px);
+  /* Modals fill phone (dialogue has its own full-screen rules above) */
+  .modal-card:not(.dialogue-card) {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
+    min-height: 100%;
+    min-height: 100dvh;
+    border-radius: 0;
+    margin: 0;
+    padding-top: calc(1rem + env(safe-area-inset-top, 0px));
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
   }
 
   .shop-card {
-    width: min(98vw, 640px) !important;
+    width: 100% !important;
+    max-width: 100% !important;
   }
 
   .shop-cols {
