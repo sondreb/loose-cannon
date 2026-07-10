@@ -51,6 +51,15 @@ export interface UnitPublic {
   /** Present for your own posse units */
   ownedWeapons?: WeaponId[];
   ownedArmors?: ArmorId[];
+  /** NPC spawn role (bartender, dancer, …) for client presentation */
+  npcRole?: string;
+  /**
+   * Gentleman's club tip stage for this viewer (0 = clothed … max 2 = most skin).
+   * Only set for dancer NPCs.
+   */
+  revealStage?: number;
+  /** Stable dancer art key: a | b | c */
+  dancerKey?: string;
 }
 
 export interface PossePublic {
@@ -120,6 +129,9 @@ export interface DialogueState {
   voiceLineId?: string;
   /** For portrait selection (crew art / gender) */
   gender?: "male" | "female";
+  /** Gentleman's club dancer art key + tip stage for portrait */
+  dancerKey?: string;
+  revealStage?: number;
 }
 
 export interface ShopState {

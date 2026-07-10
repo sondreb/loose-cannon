@@ -14,6 +14,8 @@ import {
 import { Application, Container, Graphics, Sprite, Text } from "pixi.js";
 import { screenToWorld as isoScreenToWorld, worldToScreen } from "./iso.js";
 import {
+  clubPropTexture,
+  DANCER_SPRITE_H,
   loadGameSprites,
   propTexture,
   PROP_SPRITE_H,
@@ -1308,32 +1310,39 @@ export class WorldView {
     const cx = (bounds.x0 + bounds.x1 + 1) / 2;
     const cy = (bounds.y0 + bounds.y1 + 1) / 2;
     const mid = worldToScreen(cx, cy);
+    const isTwister = b.id === "club_neon" || /titty|twister/i.test(b.name);
+
+    if (isTwister) {
+      this.drawClubInteriorDecor(bounds);
+    }
 
     const title = new Text({
       text: b.name.toUpperCase(),
       style: {
-        fontSize: 16,
-        fill: 0xffe0a0,
+        fontSize: isTwister ? 18 : 16,
+        fill: isTwister ? 0xff60c0 : 0xffe0a0,
         fontWeight: "800",
         fontFamily: "system-ui, sans-serif",
       },
     });
     title.x = mid.sx - title.width / 2;
-    title.y = mid.sy - 80;
+    title.y = mid.sy - (isTwister ? 100 : 80);
     this.overlayLayer.addChild(title);
     this.buildingLabelPool.push(title);
 
     const sub = new Text({
-      text: b.blurb ?? "E near exit · click door to leave",
+      text: isTwister
+        ? "Tip the talent · E near dancers · EXIT south"
+        : (b.blurb ?? "E near exit · click door to leave"),
       style: {
         fontSize: 11,
-        fill: 0xa89880,
+        fill: isTwister ? 0xffa0d0 : 0xa89880,
         fontWeight: "600",
         fontFamily: "system-ui, sans-serif",
       },
     });
     sub.x = mid.sx - sub.width / 2;
-    sub.y = mid.sy - 60;
+    sub.y = mid.sy - (isTwister ? 80 : 60);
     this.overlayLayer.addChild(sub);
     this.buildingLabelPool.push(sub);
 
@@ -1353,6 +1362,95 @@ export class WorldView {
       this.overlayLayer.addChild(exit);
       this.buildingLabelPool.push(exit);
     }
+  }
+
+  /** Velvet floors, stages, VIP booths, neon for The Titty Twister. */
+  private drawClubInteriorDecor(bounds: {
+    x0: number;
+    y0: number;
+    x1: number;
+    y1: number;
+  }): void {
+    const g = this.buildingGfx;
+    const pulse = 0.55 + Math.sin(this.time * 2.5) * 0.15;
+
+    // Carpet wash over floor tiles
+    for (let y = bounds.y0; y <= bounds.y1; y++) {
+      for (let x = bounds.x0; x <= bounds.x1; x++) {
+        const { sx, sy } = worldToScreen(x, y);
+        const hw = TILE_W / 2;
+        const tone = (x + y) % 2 === 0 ? 0x3a1830 : 0x321428;
+        g.poly([sx, sy, sx + hw, sy + TILE_H / 2, sx, sy + TILE_H, sx - hw, sy + TILE_H / 2]);
+        g.fill({ color: tone, alpha: 0.55 });
+        // Spotlights on stage row
+        if (y === bounds.y0 + 2 && x > bounds.x0 + 2 && x < bounds.x1 - 1) {
+          g.ellipse(sx, sy + 10, 14, 6);
+          g.fill({ color: 0xff40aa, alpha: 0.08 * pulse });
+        }
+      }
+    }
+
+    // Neon wall strips
+    for (let x = bounds.x0; x <= bounds.x1; x += 2) {
+      const a = worldToScreen(x, bounds.y0);
+      const c = worldToScreen(x + 1, bounds.y0);
+      g.moveTo(a.sx, a.sy - 36);
+      g.lineTo(c.sx, c.sy - 36);
+      g.stroke({ color: 0xff40c8, width: 2, alpha: 0.35 + pulse * 0.2 });
+    }
+
+    // Stages + booths (painted sprites when loaded)
+    const stageSpots = [
+      { x: 40, y: 4.2 },
+      { x: 43.5, y: 4.0 },
+      { x: 46, y: 5.2 },
+    ];
+    for (const s of stageSpots) {
+      const { sx, sy } = worldToScreen(s.x, s.y);
+      const tex = clubPropTexture("stage");
+      if (tex && spritesReady()) {
+        // Draw via graphics-adjacent: use a temp approach — bake into building layer as simple shapes if no sprite pool
+        // Procedural stage under dancers always
+      }
+      // Raised stage plate + pole
+      g.ellipse(sx, sy + 6, 22, 10);
+      g.fill({ color: 0x1a0a14, alpha: 0.85 });
+      g.ellipse(sx, sy + 4, 18, 8);
+      g.fill({ color: 0x3a1830, alpha: 0.9 });
+      g.ellipse(sx, sy + 4, 18, 8);
+      g.stroke({ color: 0xff40aa, width: 1.5, alpha: 0.55 * pulse });
+      // Chrome pole
+      g.rect(sx - 1.5, sy - 42, 3, 46);
+      g.fill({ color: 0xc0c8d8, alpha: 0.85 });
+      g.rect(sx - 0.5, sy - 42, 1, 46);
+      g.fill({ color: 0xffffff, alpha: 0.35 });
+      g.circle(sx, sy - 44, 3);
+      g.fill({ color: 0xff60c0, alpha: 0.5 });
+    }
+
+    // VIP booths along left wall
+    for (const spot of [
+      { x: 36.5, y: 6.5 },
+      { x: 38.5, y: 7.2 },
+    ]) {
+      const { sx, sy } = worldToScreen(spot.x, spot.y);
+      g.ellipse(sx, sy + 4, 16, 7);
+      g.fill({ color: 0x000000, alpha: 0.35 });
+      g.roundRect(sx - 18, sy - 10, 36, 16, 6);
+      g.fill({ color: 0x5a1828, alpha: 0.9 });
+      g.roundRect(sx - 18, sy - 10, 36, 16, 6);
+      g.stroke({ color: 0xff4080, width: 1, alpha: 0.4 });
+      // Table
+      g.ellipse(sx, sy - 2, 7, 3.5);
+      g.fill({ color: 0x2a1a20 });
+      g.circle(sx, sy - 6, 3);
+      g.fill({ color: 0xff60c0, alpha: 0.35 * pulse });
+    }
+
+    // Bar glow
+    const bar = worldToScreen(36.5, 3.2);
+    g.ellipse(bar.sx, bar.sy + 4, 20, 8);
+    g.fill({ color: 0xff40aa, alpha: 0.12 * pulse });
   }
 
   private drawZoneDivider(g: Graphics): void {
@@ -1897,10 +1995,20 @@ export class WorldView {
       return;
     }
 
+    const isDancer = u.npcRole === "dancer" || !!u.dancerKey;
+
     // Team / threat rings under feet
-    if (isNpc && !mine) {
+    if (isNpc && !mine && !isDancer) {
       g.circle(sx, baseSy + 11, 14);
       g.stroke({ color: 0x60e0ff, width: 1.2, alpha: 0.35 + Math.sin(this.time * 3 + u.x) * 0.1 });
+    }
+    if (isDancer) {
+      // Pink stage glow under dancers
+      const glow = 0.25 + Math.sin(this.time * 3 + u.x * 2) * 0.1;
+      g.ellipse(sx, baseSy + 12, 16, 6);
+      g.fill({ color: 0xff40aa, alpha: glow });
+      g.circle(sx, baseSy + 11, 15);
+      g.stroke({ color: 0xff60c0, width: 1.2, alpha: 0.45 + glow });
     }
     if (!mine && !isNpc && (posse?.hostile || threat >= 2)) {
       g.circle(sx, baseSy + 11, 15);
@@ -1917,7 +2025,9 @@ export class WorldView {
       name: u.name,
       female,
       isNpc,
-      npcRole: isNpc ? u.name : undefined,
+      npcRole: u.npcRole,
+      dancerKey: u.dancerKey,
+      revealStage: u.revealStage,
     });
     let bh = 28 + bulk; // label offset height (sprite or procedural)
 
@@ -1930,19 +2040,24 @@ export class WorldView {
         this.unitSpriteLayer.addChild(spr);
       }
       if (spr.texture !== tex) spr.texture = tex;
-      const scale = UNIT_SPRITE_H / Math.max(1, tex.height);
+      const targetH = isDancer ? DANCER_SPRITE_H : UNIT_SPRITE_H;
+      const scale = targetH / Math.max(1, tex.height);
       // Face left when facing west-ish
       const flip = vis.facing >= 3 && vis.facing <= 6 ? -1 : 1;
+      // Dancers: slight idle sway / hip roll
+      const danceSway = isDancer ? Math.sin(this.time * 2.8 + u.x) * 2.2 : 0;
+      const danceBob = isDancer ? Math.abs(Math.sin(this.time * 2.2 + u.y)) * 2 : 0;
       spr.scale.set(flip * scale, scale);
-      spr.x = sx + sway;
-      spr.y = sy + 2;
+      spr.x = sx + sway + danceSway;
+      spr.y = sy + 2 - danceBob;
       spr.visible = true;
       // Team tint: posse color wash (keep readable)
       if (mine) spr.tint = 0xffffff;
+      else if (isDancer) spr.tint = 0xffffff;
       else if (isNpc) spr.tint = 0xe8f4ff;
       else if (posse?.hostile) spr.tint = 0xffd0d0;
       else spr.tint = 0xffffff;
-      bh = UNIT_SPRITE_H * 0.85;
+      bh = targetH * 0.85;
       used.add(u.id);
     } else {
       // Hide any stale sprite

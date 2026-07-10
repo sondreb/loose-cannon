@@ -96,13 +96,21 @@ function dialoguePortraitUrl(
   npcId: string,
   npcName: string,
   gender?: string | null,
+  opts?: { dancerKey?: string; revealStage?: number },
 ): string {
+  if (opts?.dancerKey) {
+    const stage = Math.max(0, Math.min(2, Math.floor(opts.revealStage ?? 0)));
+    return `/art/sprites/club/dancer-${opts.dancerKey}-${stage}.png`;
+  }
   if (DIALOGUE_PORTRAITS[npcId]) return DIALOGUE_PORTRAITS[npcId]!;
   const n = npcName.toLowerCase();
   if (n.includes("vince") || n.includes("barman")) return "/art/bartender-male.jpg";
   if (n.includes("venus") || n.includes("static")) return "/art/bartender-female.jpg";
   if (n.includes("rita")) return "/art/club-female-2.jpg";
   if (n.includes("kate") || n.includes("caliber")) return "/art/bartender-female-2.jpg";
+  if (n.includes("cherry")) return "/art/sprites/club/dancer-a-0.png";
+  if (n.includes("sable")) return "/art/sprites/club/dancer-b-0.png";
+  if (n.includes("lola")) return "/art/sprites/club/dancer-c-0.png";
   // Hireable street meat / generic talkers — painted crew faces
   return crewPortraitUrl(npcId + npcName, isFemaleUnit(gender, npcName));
 }
@@ -850,7 +858,10 @@ function renderDialogue(): void {
     voice.play(d.voiceLineId, { force: true });
   }
 
-  const portrait = dialoguePortraitUrl(d.npcId, d.npcName, d.gender);
+  const portrait = dialoguePortraitUrl(d.npcId, d.npcName, d.gender, {
+    dancerKey: d.dancerKey,
+    revealStage: d.revealStage,
+  });
   dlgPortraitWrap.classList.remove("hidden");
   if (dlgPortrait.getAttribute("src") !== portrait) {
     dlgPortrait.src = portrait;

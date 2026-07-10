@@ -12,6 +12,8 @@ import {
   HEAT,
   isDistrictUnlocked,
   LAY_LOW_HEAT_REDUCE,
+  DANCER_MAX_STAGE,
+  dancerTipCost,
   listMissionOffers,
   layLowCost,
   MAX_ACTIVE_GOONS,
@@ -112,6 +114,10 @@ interface Unit {
   respawnT?: number;
   /** Posse that last damaged this unit (for wipe loot attribution) */
   lastHitByPosseId: string | null;
+  /** NPC spawn role for dialogue / client art */
+  npcRole?: string;
+  /** Gentleman's club dancer art key */
+  dancerKey?: string;
 }
 
 function weaponScore(w: WeaponId): number {
@@ -177,6 +183,8 @@ interface Posse {
   attackTargetId: string | null;
   /** last click-move destination label */
   moveLabel: string | null;
+  /** Per-viewer dancer reveal stage at The Titty Twister (npcId → 0..DANCER_MAX_STAGE) */
+  dancerStages: Record<string, number>;
 }
 
 function emptyStashFields(): Pick<Posse, "stashOpen" | "stashCash" | "stashWeapons" | "stashArmors"> {
@@ -322,19 +330,21 @@ export class GameWorld {
         ...emptyStashFields(),
         attackTargetId: null,
         moveLabel: null,
+        dancerStages: {},
       });
-      // Named NPC genders (bartenders, coaches, street meat)
-      const femaleNpc = /rita|kate|may|sally|jazz|rosa|pepper|cookie|venus|lola|sable|cherry|roxy|nova|storm|ivy|jade|foxy|candy|maid/i.test(
+      // Named NPC genders (bartenders, coaches, street meat, dancers)
+      const femaleNpc = /rita|kate|may|sally|jazz|rosa|pepper|cookie|venus|lola|sable|cherry|roxy|nova|storm|ivy|jade|foxy|candy|maid|bomb|sin/i.test(
         n.name,
       );
       const street = n.role === "thug";
-      const gender: Gender = femaleNpc
-        ? "female"
-        : street
-          ? Math.random() < 0.4
-            ? "female"
-            : "male"
-          : "male";
+      const gender: Gender =
+        n.role === "dancer" || femaleNpc
+          ? "female"
+          : street
+            ? Math.random() < 0.4
+              ? "female"
+              : "male"
+            : "male";
       this.units.set(unitId, {
         id: unitId,
         name: n.name,
@@ -363,6 +373,8 @@ export class GameWorld {
         aiWanderT: 0,
         buildingId: n.buildingId ?? null,
         lastHitByPosseId: null,
+        npcRole: n.role,
+        dancerKey: n.dancerKey,
       });
     }
 
@@ -414,6 +426,7 @@ export class GameWorld {
       ...emptyStashFields(),
       attackTargetId: null,
       moveLabel: null,
+      dancerStages: {},
     });
 
     const gearFor = (t: number): { weapon: WeaponId; armor: ArmorId; weapons: WeaponId[]; armors: ArmorId[]; stats: Partial<UnitStats> } => {
@@ -571,6 +584,7 @@ export class GameWorld {
       ...emptyStashFields(),
       attackTargetId: null,
       moveLabel: null,
+      dancerStages: {},
     };
     this.posses.set(posseId, posse);
 
@@ -2600,6 +2614,7 @@ export class GameWorld {
     if (role === "priest") return ["priest_greet"];
     if (role === "mechanic") return ["tony_greet"];
     if (role === "thug") return female ? ["thug_greet_f"] : ["thug_greet_m"];
+    if (role === "dancer") return ["dancer_greet_1", "dancer_greet_2", "dancer_greet_3"];
     return ["generic_bye"];
   }
 
@@ -2724,6 +2739,38 @@ export class GameWorld {
         ],
       };
     }
+    if (role === "dancer") {
+      const stage = playerPosse?.dancerStages[npc.id] ?? 0;
+      const tip = dancerTipCost(stage);
+      const stageBlurb =
+        stage <= 0
+          ? "She's in a glamorous stage dress — smiling like your wallet already said yes."
+          : stage === 1
+            ? "Outfit's getting thinner. The room feels warmer."
+            : "Almost nothing left but attitude, heels, and neon. The house still wants more tips… for the memory.";
+      const tipLabel =
+        tip == null
+          ? "She's as undressed as the stage allows."
+          : `Tip her. Reveal more. ($${tip})`;
+      return {
+        npcId: npc.id,
+        npcName: npc.name,
+        text: `${npc.name} rolls her hips on the edge of the stage. ${stageBlurb} "Tip sweet, sugar. Clothes are optional. Cash isn't."`,
+        voiceLineId,
+        gender: "female",
+        dancerKey: npc.dancerKey,
+        revealStage: stage,
+        choices: [
+          {
+            id: "tip_dancer",
+            label: tipLabel,
+            tone: "business",
+          },
+          { id: "flirt_dancer", label: "You're killing me.", tone: "smooth" },
+          { id: "bye", label: "Maybe later.", tone: "smooth" },
+        ],
+      };
+    }
     return {
       npcId: npc.id,
       npcName: npc.name,
@@ -2744,6 +2791,62 @@ export class GameWorld {
 
     if (choiceId === "bye") {
       posse.dialogue = null;
+      return;
+    }
+
+    if (choiceId === "tip_dancer" && npc) {
+      const stage = posse.dancerStages[npc.id] ?? 0;
+      const cost = dancerTipCost(stage);
+      if (cost == null) {
+        const line = "dancer_tip_max";
+        d.text = `${npc.name} blows a kiss, almost wearing nothing but confidence. "That's the floor show, daddy. Anything else is a fairy tale."`;
+        this.setDialogueVoice(d, line);
+        session.conn?.send({ type: "voice.play", lineId: line });
+        this.log(session, `${npc.name}: max reveal. Your wallet is lighter; your memory is not.`);
+        return;
+      }
+      if (posse.cash < cost) {
+        const line = "dancer_broke";
+        d.text = `${npc.name} tugs a strap back up and smirks. "Empty pockets? Cute. Come back when you can afford the view."`;
+        this.setDialogueVoice(d, line);
+        session.conn?.send({ type: "voice.play", lineId: line });
+        this.log(session, `${npc.name}: broke. No tip, no peel.`);
+        return;
+      }
+      posse.cash -= cost;
+      const next = Math.min(DANCER_MAX_STAGE, stage + 1);
+      posse.dancerStages[npc.id] = next;
+      const line = next >= DANCER_MAX_STAGE ? "dancer_tip_max" : next === 1 ? "dancer_tip_1" : "dancer_tip_2";
+      const look =
+        next === 1
+          ? "She peels the dress like a promise — crop top, tiny shorts, way more skin."
+          : "Micro bikini, neon sweat, and a smile that bills interest. The stage is hers.";
+      d.text = `${npc.name} takes the cash with two fingers and a wicked grin. ${look}`;
+      d.revealStage = next;
+      d.dancerKey = npc.dancerKey;
+      d.gender = "female";
+      this.setDialogueVoice(d, line);
+      session.conn?.send({ type: "voice.play", lineId: line });
+      // Refresh choices for next tip
+      const tip = dancerTipCost(next);
+      d.choices = [
+        {
+          id: "tip_dancer",
+          label: tip == null ? "She's as undressed as the stage allows." : `Tip her. Reveal more. ($${tip})`,
+          tone: "business",
+        },
+        { id: "flirt_dancer", label: "You're killing me.", tone: "smooth" },
+        { id: "bye", label: "I need air.", tone: "smooth" },
+      ];
+      this.log(session, `Tipped ${npc.name} $${cost}. Reveal stage ${next}/${DANCER_MAX_STAGE}.`);
+      return;
+    }
+
+    if (choiceId === "flirt_dancer" && npc) {
+      const line = "dancer_flirt";
+      d.text = `${npc.name} laughs low, tracing a finger along her own collarbone. "Careful, boss… keep talking sweet and I might actually like you. Then you'll really go broke."`;
+      this.setDialogueVoice(d, line);
+      session.conn?.send({ type: "voice.play", lineId: line });
       return;
     }
 
@@ -3088,6 +3191,7 @@ export class GameWorld {
       ...emptyStashFields(),
       attackTargetId: null,
       moveLabel: null,
+      dancerStages: {},
       respawnT: undefined,
     });
 
@@ -4166,6 +4270,11 @@ export class GameWorld {
         incapacitated: u.incapacitated || undefined,
         gender: u.gender,
       };
+      if (u.npcRole) pub.npcRole = u.npcRole;
+      if (u.dancerKey) {
+        pub.dancerKey = u.dancerKey;
+        pub.revealStage = posse.dancerStages[u.id] ?? 0;
+      }
       if (u.posseId === posse.id) {
         pub.ownedWeapons = [...u.ownedWeapons];
         pub.ownedArmors = [...u.ownedArmors];

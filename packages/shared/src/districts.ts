@@ -59,7 +59,7 @@ export const DISTRICTS: DistrictDef[] = [
     y1: 37,
     minRep: 2,
     danger: "risky",
-    landmark: "Neon Confessional / gun row",
+    landmark: "The Titty Twister / gun row",
   },
   {
     id: "war_deep",

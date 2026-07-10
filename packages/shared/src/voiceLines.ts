@@ -304,6 +304,63 @@ export const VOICE_LINES: VoiceLineDef[] = [
     voice: "rex",
     role: "generic",
   },
+
+  // ——— The Titty Twister dancers (sensual) ———
+  {
+    id: "dancer_greet_1",
+    speak:
+      "Hey sugar… eyes up here. Or don't. [laugh] Tips make the clothes come off. House rules.",
+    voice: "eve",
+    role: "dancer",
+  },
+  {
+    id: "dancer_greet_2",
+    speak:
+      "Mmm, fresh money. Sit pretty, daddy. Want a private show, or just gonna stare and dream?",
+    voice: "ara",
+    role: "dancer",
+  },
+  {
+    id: "dancer_greet_3",
+    speak:
+      "Welcome to the Twister, boss. Keep those bills coming and I'll keep giving you something to lose sleep over.",
+    voice: "eve",
+    role: "dancer",
+  },
+  {
+    id: "dancer_tip_1",
+    speak:
+      "Ooh… just like that. [laugh] A little more skin for a little more cash. Don't stop now.",
+    voice: "eve",
+    role: "dancer",
+  },
+  {
+    id: "dancer_tip_2",
+    speak:
+      "Mmm, you're spoiling me. Watch close… I don't do this for free, and I never do it boring.",
+    voice: "ara",
+    role: "dancer",
+  },
+  {
+    id: "dancer_tip_max",
+    speak:
+      "That's as naughty as the stage allows, sugar. [laugh] You want more, you better own the club.",
+    voice: "eve",
+    role: "dancer",
+  },
+  {
+    id: "dancer_broke",
+    speak: "Empty pockets? Cute. Come back when your wallet matches that hungry look.",
+    voice: "ara",
+    role: "dancer",
+  },
+  {
+    id: "dancer_flirt",
+    speak:
+      "Careful, boss… keep talking sweet and I might actually like you. Then you'll really go broke.",
+    voice: "eve",
+    role: "dancer",
+  },
 ];
 
 const byId = new Map(VOICE_LINES.map((l) => [l.id, l]));

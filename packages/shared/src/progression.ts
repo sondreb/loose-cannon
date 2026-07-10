@@ -49,3 +49,13 @@ export function layLowCost(heat: number): number {
 }
 
 export const LAY_LOW_HEAT_REDUCE = 28;
+
+/** The Titty Twister — tip stages (0 clothed → max most revealing) */
+export const DANCER_MAX_STAGE = 2;
+/** Cash cost to advance FROM stage i → i+1 (index = current stage) */
+export const DANCER_TIP_COSTS = [50, 120, 250] as const;
+
+export function dancerTipCost(stage: number): number | null {
+  if (stage < 0 || stage >= DANCER_MAX_STAGE) return null;
+  return DANCER_TIP_COSTS[stage] ?? null;
+}

@@ -71,8 +71,19 @@ export interface WorldMapDef {
     name: string;
     x: number;
     y: number;
-    role: "bartender" | "fixer" | "thug" | "dealer" | "doc" | "coach" | "priest" | "mechanic";
+    role:
+      | "bartender"
+      | "fixer"
+      | "thug"
+      | "dealer"
+      | "doc"
+      | "coach"
+      | "priest"
+      | "mechanic"
+      | "dancer";
     buildingId?: string;
+    /** Gentleman's club dancer art variant */
+    dancerKey?: "a" | "b" | "c";
   }>;
   aiPosseSpawns: Array<{
     id: string;
@@ -230,12 +241,13 @@ export function createSkidrowMap(): WorldMapDef {
   rect(tiles, 23, 83, 31, 87, "floor");
   tiles[82][27] = "door";
 
-  // Club
-  rect(tiles, 34, 1, 44, 6, "floor");
-  outline(tiles, 34, 1, 44, 6, "wall");
-  rect(tiles, 35, 2, 43, 5, "floor");
-  tiles[6][39] = "door";
+  // The Titty Twister (gentleman's club) — larger lounge floor
+  rect(tiles, 34, 1, 48, 9, "floor");
+  outline(tiles, 34, 1, 48, 9, "wall");
+  rect(tiles, 35, 2, 47, 8, "floor");
+  tiles[9][41] = "door";
   tiles[3][36] = "bar";
+  tiles[3][37] = "bar";
 
   // Garage
   rect(tiles, 46, 82, 56, 88, "floor");
@@ -421,7 +433,7 @@ export function createSkidrowMap(): WorldMapDef {
     },
     {
       id: "club_neon",
-      name: "Neon Confessional",
+      name: "The Titty Twister",
       kind: "club",
       doorX: 96,
       doorY: 28,
@@ -432,16 +444,16 @@ export function createSkidrowMap(): WorldMapDef {
       stories: 3,
       ix0: 35,
       iy0: 2,
-      ix1: 43,
-      iy1: 5,
-      spawnX: 39,
-      spawnY: 4,
-      exitX: 39,
-      exitY: 6,
+      ix1: 47,
+      iy1: 8,
+      spawnX: 41,
+      spawnY: 7,
+      exitX: 41,
+      exitY: 9,
       exteriorSpawnX: 96,
       exteriorSpawnY: 27,
-      blurb: "Sins optional, cover not",
-      wallColor: 0x281828,
+      blurb: "Gentlemen's club · tip the talent",
+      wallColor: 0x2a1020,
       roofColor: 0x100810,
       accentColor: 0xff40aa,
     },
@@ -617,7 +629,35 @@ export function createSkidrowMap(): WorldMapDef {
       { id: "npc_mech", name: "Grease Tony", x: 51, y: 85, role: "mechanic", buildingId: "garage" },
       { id: "npc_gun", name: "Caliber Kate", x: 74, y: 85, role: "dealer", buildingId: "shop_gun" },
       { id: "npc_booze", name: "Bottle Bob", x: 86, y: 3, role: "dealer", buildingId: "shop_liquor" },
-      { id: "npc_club", name: "Venus Static", x: 38, y: 3, role: "bartender", buildingId: "club_neon" },
+      { id: "npc_club", name: "Venus Static", x: 36.5, y: 3.2, role: "bartender", buildingId: "club_neon" },
+      // The Titty Twister — stage talent (tip for progressive reveal)
+      {
+        id: "npc_dancer_a",
+        name: "Cherry Bomb",
+        x: 40,
+        y: 4.5,
+        role: "dancer",
+        buildingId: "club_neon",
+        dancerKey: "a",
+      },
+      {
+        id: "npc_dancer_b",
+        name: "Sable Sin",
+        x: 43.5,
+        y: 4.2,
+        role: "dancer",
+        buildingId: "club_neon",
+        dancerKey: "b",
+      },
+      {
+        id: "npc_dancer_c",
+        name: "Lola Cash",
+        x: 46,
+        y: 5.5,
+        role: "dancer",
+        buildingId: "club_neon",
+        dancerKey: "c",
+      },
       // Recruitable street meat in SAFE DOWNTOWN (~40% women by name + spawn gender)
       { id: "npc_street", name: "Corner Carl", x: 36, y: 28, role: "thug" },
       { id: "npc_street2", name: "Alley Ace", x: 22, y: 30, role: "thug" },
