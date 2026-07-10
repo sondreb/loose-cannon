@@ -17,6 +17,13 @@ export interface MapBuildingDef {
   kind: BuildingKind;
   doorX: number;
   doorY: number;
+  /** Exterior footprint for 3D isometric drawing (tile coords inclusive) */
+  ex0: number;
+  ey0: number;
+  ex1: number;
+  ey1: number;
+  /** Visual height in "floors" for renderer */
+  stories: number;
   ix0: number;
   iy0: number;
   ix1: number;
@@ -29,6 +36,9 @@ export interface MapBuildingDef {
   exteriorSpawnY: number;
   /** Optional flavor for labels */
   blurb?: string;
+  wallColor?: number;
+  roofColor?: number;
+  accentColor?: number;
 }
 
 export interface WorldMapDef {
@@ -251,6 +261,11 @@ export function createSkidrowMap(): WorldMapDef {
       kind: "bar",
       doorX: 8,
       doorY: 14,
+      ex0: 4,
+      ey0: 6,
+      ex1: 12,
+      ey1: 14,
+      stories: 2,
       ix0: 2,
       iy0: 2,
       ix1: 9,
@@ -262,6 +277,9 @@ export function createSkidrowMap(): WorldMapDef {
       exteriorSpawnX: 8,
       exteriorSpawnY: 15,
       blurb: "Where careers go to drink",
+      wallColor: 0x3a2820,
+      roofColor: 0x1a1210,
+      accentColor: 0xc04030,
     },
     {
       id: "shop_pawn",
@@ -269,6 +287,11 @@ export function createSkidrowMap(): WorldMapDef {
       kind: "shop",
       doorX: 51,
       doorY: 14,
+      ex0: 46,
+      ey0: 6,
+      ex1: 56,
+      ey1: 14,
+      stories: 2,
       ix0: 99,
       iy0: 2,
       ix1: 107,
@@ -280,6 +303,9 @@ export function createSkidrowMap(): WorldMapDef {
       exteriorSpawnX: 51,
       exteriorSpawnY: 15,
       blurb: "Cash only, no refunds",
+      wallColor: 0x2a3040,
+      roofColor: 0x151820,
+      accentColor: 0xc9a227,
     },
     {
       id: "hospital",
@@ -287,6 +313,11 @@ export function createSkidrowMap(): WorldMapDef {
       kind: "hospital",
       doorX: 73,
       doorY: 14,
+      ex0: 68,
+      ey0: 6,
+      ex1: 78,
+      ey1: 14,
+      stories: 3,
       ix0: 2,
       iy0: 83,
       ix1: 9,
@@ -298,6 +329,9 @@ export function createSkidrowMap(): WorldMapDef {
       exteriorSpawnX: 73,
       exteriorSpawnY: 15,
       blurb: "We accept cash & threats",
+      wallColor: 0x3a4850,
+      roofColor: 0x1a2028,
+      accentColor: 0xe05050,
     },
     {
       id: "gym",
@@ -305,6 +339,11 @@ export function createSkidrowMap(): WorldMapDef {
       kind: "gym",
       doorX: 96,
       doorY: 16,
+      ex0: 90,
+      ey0: 8,
+      ex1: 102,
+      ey1: 16,
+      stories: 2,
       ix0: 99,
       iy0: 83,
       ix1: 107,
@@ -316,6 +355,9 @@ export function createSkidrowMap(): WorldMapDef {
       exteriorSpawnX: 96,
       exteriorSpawnY: 17,
       blurb: "Guts for sale",
+      wallColor: 0x3a3428,
+      roofColor: 0x1a1810,
+      accentColor: 0xe0a030,
     },
     {
       id: "safehouse",
@@ -323,6 +365,11 @@ export function createSkidrowMap(): WorldMapDef {
       kind: "safehouse",
       doorX: 8,
       doorY: 26,
+      ex0: 4,
+      ey0: 26,
+      ex1: 12,
+      ey1: 34,
+      stories: 2,
       ix0: 13,
       iy0: 2,
       ix1: 19,
@@ -333,6 +380,9 @@ export function createSkidrowMap(): WorldMapDef {
       exitY: 6,
       exteriorSpawnX: 8,
       exteriorSpawnY: 25,
+      wallColor: 0x2a2830,
+      roofColor: 0x121018,
+      accentColor: 0x60c080,
     },
     {
       id: "warehouse",
@@ -340,6 +390,11 @@ export function createSkidrowMap(): WorldMapDef {
       kind: "warehouse",
       doorX: 53,
       doorY: 26,
+      ex0: 46,
+      ey0: 26,
+      ex1: 60,
+      ey1: 38,
+      stories: 2,
       ix0: 23,
       iy0: 83,
       ix1: 31,
@@ -350,6 +405,9 @@ export function createSkidrowMap(): WorldMapDef {
       exitY: 82,
       exteriorSpawnX: 53,
       exteriorSpawnY: 25,
+      wallColor: 0x3a3a30,
+      roofColor: 0x1a1a14,
+      accentColor: 0x888860,
     },
     {
       id: "club_neon",
@@ -357,6 +415,11 @@ export function createSkidrowMap(): WorldMapDef {
       kind: "club",
       doorX: 96,
       doorY: 28,
+      ex0: 90,
+      ey0: 28,
+      ex1: 102,
+      ey1: 36,
+      stories: 3,
       ix0: 35,
       iy0: 2,
       ix1: 43,
@@ -368,6 +431,9 @@ export function createSkidrowMap(): WorldMapDef {
       exteriorSpawnX: 96,
       exteriorSpawnY: 27,
       blurb: "Sins optional, cover not",
+      wallColor: 0x281828,
+      roofColor: 0x100810,
+      accentColor: 0xff40aa,
     },
     {
       id: "garage",
@@ -375,6 +441,11 @@ export function createSkidrowMap(): WorldMapDef {
       kind: "garage",
       doorX: 70,
       doorY: 32,
+      ex0: 70,
+      ey0: 28,
+      ex1: 80,
+      ey1: 36,
+      stories: 1,
       ix0: 47,
       iy0: 83,
       ix1: 55,
@@ -386,6 +457,9 @@ export function createSkidrowMap(): WorldMapDef {
       exteriorSpawnX: 69,
       exteriorSpawnY: 32,
       blurb: "Wheels fall off free",
+      wallColor: 0x3a3a3a,
+      roofColor: 0x222,
+      accentColor: 0x60a0e0,
     },
     {
       id: "church",
@@ -393,6 +467,11 @@ export function createSkidrowMap(): WorldMapDef {
       kind: "church",
       doorX: 27,
       doorY: 48,
+      ex0: 22,
+      ey0: 48,
+      ex1: 32,
+      ey1: 58,
+      stories: 3,
       ix0: 59,
       iy0: 2,
       ix1: 67,
@@ -404,6 +483,9 @@ export function createSkidrowMap(): WorldMapDef {
       exteriorSpawnX: 27,
       exteriorSpawnY: 47,
       blurb: "Forgiveness $50",
+      wallColor: 0x4a4038,
+      roofColor: 0x2a2018,
+      accentColor: 0xc9a227,
     },
     {
       id: "shop_gun",
@@ -411,6 +493,11 @@ export function createSkidrowMap(): WorldMapDef {
       kind: "shop",
       doorX: 74,
       doorY: 70,
+      ex0: 68,
+      ey0: 70,
+      ex1: 80,
+      ey1: 82,
+      stories: 2,
       ix0: 71,
       iy0: 83,
       ix1: 79,
@@ -422,6 +509,9 @@ export function createSkidrowMap(): WorldMapDef {
       exteriorSpawnX: 74,
       exteriorSpawnY: 69,
       blurb: "Bullets & excuses",
+      wallColor: 0x2a3028,
+      roofColor: 0x141810,
+      accentColor: 0x80c040,
     },
     {
       id: "shop_liquor",
@@ -429,6 +519,11 @@ export function createSkidrowMap(): WorldMapDef {
       kind: "shop",
       doorX: 9,
       doorY: 70,
+      ex0: 4,
+      ey0: 70,
+      ex1: 14,
+      ey1: 80,
+      stories: 1,
       ix0: 83,
       iy0: 2,
       ix1: 91,
@@ -440,6 +535,9 @@ export function createSkidrowMap(): WorldMapDef {
       exteriorSpawnX: 9,
       exteriorSpawnY: 69,
       blurb: "Courage in a bottle",
+      wallColor: 0x3a2830,
+      roofColor: 0x1a1018,
+      accentColor: 0xc060a0,
     },
   ];
 
@@ -452,21 +550,23 @@ export function createSkidrowMap(): WorldMapDef {
   }
 
   const props: WorldMapDef["props"] = [
+    // Safe downtown
     { id: "d1", kind: "dumpster", x: 14, y: 22, label: "Dumpster of Destiny" },
+    { id: "n2", kind: "neon", x: 50, y: 12, label: "PAWN" },
+    { id: "h1", kind: "hydrant", x: 20, y: 24 },
+    { id: "cr1", kind: "crate", x: 44, y: 28, label: "Definitely not guns" },
+    // War zone
     { id: "d2", kind: "dumpster", x: 55, y: 45, label: "Smells like opportunity" },
     { id: "d3", kind: "dumpster", x: 88, y: 50, label: "Industrial salad" },
-    { id: "p1", kind: "protection", x: 30, y: 42, label: "Protection Corner" },
-    { id: "p2", kind: "protection", x: 72, y: 42, label: "Toll Booth (unofficial)" },
+    { id: "p1", kind: "protection", x: 30, y: 48, label: "Protection Corner" },
+    { id: "p2", kind: "protection", x: 72, y: 48, label: "Toll Booth (unofficial)" },
     { id: "p3", kind: "protection", x: 50, y: 66, label: "Parking Racket" },
     { id: "c1", kind: "car", x: 48, y: 74, label: "Rusty Coupe" },
     { id: "c2", kind: "car", x: 52, y: 78, label: "No plates, no problems" },
     { id: "c3", kind: "car", x: 56, y: 72, label: "Chop candidate" },
-    { id: "n1", kind: "neon", x: 94, y: 30, label: "OPEN" },
-    { id: "n2", kind: "neon", x: 50, y: 12, label: "PAWN" },
-    { id: "h1", kind: "hydrant", x: 20, y: 24 },
+    { id: "n1", kind: "neon", x: 94, y: 58, label: "OPEN" },
     { id: "h2", kind: "hydrant", x: 64, y: 46 },
-    { id: "cr1", kind: "crate", x: 56, y: 30, label: "Definitely not guns" },
-    { id: "cr2", kind: "crate", x: 58, y: 32, label: "Still not guns" },
+    { id: "cr2", kind: "crate", x: 58, y: 50, label: "Still not guns" },
   ];
 
   return {
@@ -474,7 +574,8 @@ export function createSkidrowMap(): WorldMapDef {
     height,
     tiles,
     buildings,
-    playerSpawn: { x: 40, y: 42 },
+    // Start in safe downtown (north of war line ~y38)
+  playerSpawn: { x: 40, y: 30 },
     respawnPoints,
     props,
     npcSpawns: [
@@ -493,16 +594,17 @@ export function createSkidrowMap(): WorldMapDef {
       { id: "npc_street3", name: "Meter Maid Mayhem", x: 50, y: 68, role: "thug" },
       { id: "npc_street4", name: "Quiet Quentin", x: 80, y: 44, role: "thug" },
     ],
+    // Rival gangs only in WAR ZONE (y > SAFE_Y_MAX ≈ 38)
     aiPosseSpawns: [
-      { id: "ai_dogs", name: "The Dumpster Dogs", x: 14, y: 22, color: 0xc44, aggression: 0.65, threat: 1 },
-      { id: "ai_silk", name: "Silk Street Crew", x: 55, y: 20, color: 0x48c, aggression: 0.4, threat: 2 },
       { id: "ai_rats", name: "Rail Rats", x: 42, y: 55, color: 0x8a4, aggression: 0.55, threat: 2 },
-      { id: "ai_chrome", name: "Chrome Fists", x: 30, y: 16, color: 0xa6a, aggression: 0.5, threat: 3 },
       { id: "ai_south", name: "Southside Slicks", x: 78, y: 52, color: 0xc84, aggression: 0.55, threat: 3 },
       { id: "ai_west", name: "West End Wreckers", x: 18, y: 55, color: 0x6a8, aggression: 0.5, threat: 2 },
-      { id: "ai_neon", name: "Neon Vipers", x: 92, y: 34, color: 0xf0c, aggression: 0.6, threat: 4 },
       { id: "ai_lot", name: "Lot Lizards MC", x: 52, y: 76, color: 0x886, aggression: 0.45, threat: 3 },
       { id: "ai_church", name: "Choir of Pain", x: 28, y: 52, color: 0xa55, aggression: 0.35, threat: 2 },
+      { id: "ai_docks", name: "Pier Punchers", x: 95, y: 48, color: 0x48a, aggression: 0.5, threat: 2 },
+      { id: "ai_neon", name: "Neon Vipers", x: 92, y: 58, color: 0xf0c, aggression: 0.6, threat: 4 },
+      { id: "ai_chrome", name: "Chrome Fists", x: 65, y: 45, color: 0xa6a, aggression: 0.5, threat: 3 },
+      { id: "ai_dogs", name: "The Dumpster Dogs", x: 14, y: 48, color: 0xc44, aggression: 0.65, threat: 1 },
     ],
   };
 }

@@ -148,7 +148,7 @@ export class GameWorld {
   chat: ChatLine[] = [];
   chatSeq = 0;
   private uid = 0;
-  mapRevision = 3;
+  mapRevision = 4;
   /** Prop interaction cooldowns: propId -> tick available */
   propReadyAt = new Map<string, number>();
 
@@ -2215,6 +2215,14 @@ export class GameWorld {
         doorY: b.doorY,
         interiorId: b.id,
         blurb: b.blurb,
+        ex0: b.ex0,
+        ey0: b.ey0,
+        ex1: b.ex1,
+        ey1: b.ey1,
+        stories: b.stories,
+        wallColor: b.wallColor,
+        roofColor: b.roofColor,
+        accentColor: b.accentColor,
       })),
       props: posse.insideBuildingId
         ? []

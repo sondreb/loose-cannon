@@ -8,33 +8,30 @@ Last updated: 2026-07-10
 |------|--------|-------|
 | Local WS server + Vite client | Done | `npm run dev` |
 | Isometric map, free WASD + click move | Done | Screen-aligned WASD |
-| Buildings enter/exit, bars, shops | Done | Exit priority fixed |
+| Multi-story isometric buildings | Done | Walls, windows, roofs, doors |
+| Character interpolation + walk bob | Done | Client-side smoothing |
+| Buildings enter/exit, many POIs | Done | Exit priority fixed |
 | Dialogue, hire, recruit street NPCs | Done | Recruits convert NPC |
-| Posse UI, portraits, upgrade tiers | Done | |
+| Posse UI, portraits, upgrade tiers | Done | Glass panel styling |
 | Crew editor + weapon icon bar | Done | Syndicate-style slots |
-| Pawn-O-Matic shop UI | Done | Buyer chips + icons |
+| Pawn-O-Matic / multi-shop UI | Done | Buyer chips + icons |
 | Attack-move (RMB chase + fire) | Done | Action banner |
 | Combat formula (aim/muscle/weapons) | Done | AI damage nerfed |
 | Wipe loot (gear + cash) | Done | |
 | Respawn 3s, quiet spots | Done | |
+| Street hustles (dumpster, protection…) | Done | |
+| Web Audio SFX | Done | Procedural |
+| Glass login / modern HUD | Done | Apple-style gloss |
 | Proximity chat | Done | |
 | Dead goons removed from roster | Done | |
-
-## In this push
-
-- Larger, denser map with more POIs/stores
-- Stronger isometric art (tiles, units, gear silhouettes, VFX)
-- Web Audio SFX (no asset pipeline required)
-- Extra activities (hospital, gym, dumpsters, protection corners)
-- Enemy gear readable on the street (armor bulk + weapon shape + tier pips)
-- Funnier barks / world flavor
 
 ## Still deferred (Mode B / later)
 
 - Persistence (Postgres), real auth, multi-region
-- Voice TTS batch, Grok Imagine art pipeline to atlases
+- Voice TTS batch, Grok Imagine → pixel atlases
 - Turf wars, player gangs, seasons
-- Mobile touch polish, full content volume for launch
+- Full mission instances / matchmaking
+- Mobile touch polish
 
 ## How to run
 

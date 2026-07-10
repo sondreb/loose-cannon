@@ -67,6 +67,15 @@ export interface BuildingPublic {
   doorY: number;
   interiorId: string;
   blurb?: string;
+  /** Exterior footprint for 3D isometric drawing */
+  ex0?: number;
+  ey0?: number;
+  ex1?: number;
+  ey1?: number;
+  stories?: number;
+  wallColor?: number;
+  roofColor?: number;
+  accentColor?: number;
 }
 
 export interface PropPublic {
@@ -117,6 +126,8 @@ export interface WorldSnapshot {
     /** Syndicate-style order banner: IDLE, GOING, ASSASSINATE, etc. */
     action: string;
     actionDetail: string | null;
+    /** true = safe downtown (PvE), false = war zone (PvP / rival gangs) */
+    inSafeZone: boolean;
   };
   units: UnitPublic[];
   posses: PossePublic[];

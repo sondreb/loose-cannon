@@ -9,19 +9,26 @@
   <body>
     <div id="app">
       <div id="login">
-        <div class="login-card">
-          <h1>LOOSE CANNON</h1>
-          <p class="tagline">Crime has never been so much fun.</p>
-          <label>
-            Your name
+        <div class="login-bg" aria-hidden="true">
+          <div class="login-orb o1"></div>
+          <div class="login-orb o2"></div>
+          <div class="login-orb o3"></div>
+          <div class="login-grid"></div>
+        </div>
+        <div class="login-card glass">
+          <div class="login-badge">LOCAL · IN-MEMORY</div>
+          <h1>Loose Cannon</h1>
+          <p class="tagline">Build a posse. Take the block. Try not to die broke.</p>
+          <label class="login-field">
+            <span>Display name</span>
             <input id="nameInput" maxlength="20" placeholder="e.g. Nikki" autocomplete="off" />
           </label>
-          <button id="joinBtn" type="button">Hit the Streets</button>
+          <button id="joinBtn" type="button" class="login-cta">Hit the Streets</button>
           <p id="loginError" class="error"></p>
-          <p class="hint">
-            WASD / arrows or LMB move · RMB fire · E interact · 1-4 select · Enter chat<br />
-            Server: local WebSocket (in-memory)
-          </p>
+          <div class="login-hints glass-inset">
+            <div><kbd>WASD</kbd> move · <kbd>RMB</kbd> attack-move</div>
+            <div><kbd>E</kbd> interact · <kbd>1–4</kbd> crew · <kbd>5–0</kbd> weapons</div>
+          </div>
         </div>
       </div>
 

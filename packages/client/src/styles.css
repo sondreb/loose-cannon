@@ -1,21 +1,30 @@
 :root {
-  --bg: #0c0c10;
-  --panel: #1a1a22ee;
-  --border: #f0a030;
-  --text: #e8e0d0;
-  --muted: #9a9080;
+  --bg: #07080c;
+  --panel: rgba(22, 22, 30, 0.72);
+  --panel-solid: #16161e;
+  --glass: rgba(255, 255, 255, 0.06);
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --glass-highlight: rgba(255, 255, 255, 0.18);
+  --border: rgba(240, 160, 48, 0.55);
+  --text: #f2efe8;
+  --muted: #9a948a;
   --accent: #ffcc33;
-  --danger: #e05040;
-  --ok: #60c080;
-  font-family: "Segoe UI", system-ui, sans-serif;
-}
-
-/* Thin, low-clutter scrollbars (posse panel, shop lists, crew editor) */
-:root {
+  --danger: #ff5a4a;
+  --ok: #34c759;
+  --blur: 24px;
   --scroll-size: 5px;
   --scroll-track: transparent;
-  --scroll-thumb: #3a3a48;
-  --scroll-thumb-hover: #f0a03099;
+  --scroll-thumb: rgba(255, 255, 255, 0.14);
+  --scroll-thumb-hover: rgba(255, 204, 51, 0.55);
+  font-family:
+    "SF Pro Display",
+    "SF Pro Text",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    system-ui,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 * {
@@ -67,62 +76,235 @@ body {
   display: none !important;
 }
 
-/* Login */
+/* ——— Glass utilities ——— */
+.glass {
+  background: linear-gradient(
+    165deg,
+    rgba(255, 255, 255, 0.12) 0%,
+    rgba(255, 255, 255, 0.04) 40%,
+    rgba(0, 0, 0, 0.25) 100%
+  );
+  backdrop-filter: blur(var(--blur)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(160%);
+  border: 1px solid var(--glass-border);
+  box-shadow:
+    0 8px 40px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 var(--glass-highlight),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+}
+
+.glass-inset {
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+/* ——— Login (Apple-style glass) ——— */
 #login {
+  position: relative;
   height: 100%;
   display: grid;
   place-items: center;
-  background:
-    radial-gradient(ellipse at 30% 20%, #3a2010 0%, transparent 50%),
-    radial-gradient(ellipse at 70% 80%, #1a1020 0%, transparent 45%),
-    var(--bg);
+  overflow: hidden;
+  background: #05060a;
+}
+
+.login-bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.login-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.55;
+  animation: orb-float 18s ease-in-out infinite;
+}
+
+.login-orb.o1 {
+  width: 420px;
+  height: 420px;
+  background: #c06020;
+  top: -10%;
+  left: -5%;
+}
+
+.login-orb.o2 {
+  width: 380px;
+  height: 380px;
+  background: #6020a0;
+  bottom: -15%;
+  right: -5%;
+  animation-delay: -6s;
+}
+
+.login-orb.o3 {
+  width: 280px;
+  height: 280px;
+  background: #2040a0;
+  top: 40%;
+  left: 50%;
+  opacity: 0.35;
+  animation-delay: -12s;
+}
+
+.login-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse at center, black 20%, transparent 75%);
+}
+
+@keyframes orb-float {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(30px, -20px) scale(1.08);
+  }
 }
 
 .login-card {
-  width: min(420px, 92vw);
-  padding: 2rem;
-  background: var(--panel);
-  border: 2px solid var(--border);
-  box-shadow: 0 0 40px #f0a03033;
+  position: relative;
+  z-index: 1;
+  width: min(400px, 92vw);
+  padding: 2rem 1.85rem 1.75rem;
+  border-radius: 24px;
+}
+
+.login-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 100px;
+  padding: 0.28rem 0.65rem;
+  margin-bottom: 1rem;
 }
 
 .login-card h1 {
   margin: 0;
-  font-size: 2rem;
-  letter-spacing: 0.12em;
-  color: var(--accent);
-  text-shadow: 0 0 12px #f80a;
+  font-size: 2.15rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #fff;
+  background: linear-gradient(180deg, #ffffff 20%, #ffcc66 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .tagline {
-  color: var(--muted);
-  margin: 0.25rem 0 1.25rem;
-  font-style: italic;
+  color: rgba(255, 255, 255, 0.55);
+  margin: 0.45rem 0 1.5rem;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  font-weight: 400;
 }
 
-.login-card label {
+.login-field {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  font-size: 0.85rem;
-  color: var(--muted);
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 0.02em;
 }
 
-.login-card input,
-#chatInput,
-#gearEditor select {
-  background: #0a0a0e;
-  border: 1px solid #555;
+.login-field input,
+#chatInput {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
   color: var(--text);
-  padding: 0.55rem 0.7rem;
+  padding: 0.75rem 0.9rem;
   font-size: 1rem;
+  outline: none;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s,
+    background 0.15s;
 }
 
-#joinBtn,
+.login-field input:focus,
+#chatInput:focus {
+  border-color: rgba(255, 204, 51, 0.55);
+  box-shadow: 0 0 0 3px rgba(255, 204, 51, 0.15);
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.login-cta {
+  margin-top: 1rem;
+  width: 100%;
+  border: none;
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+  font-size: 1rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  color: #1a1208;
+  background: linear-gradient(180deg, #ffe08a 0%, #f0a030 45%, #c07018 100%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.35) inset,
+    0 8px 24px rgba(240, 160, 48, 0.35);
+  transition:
+    transform 0.12s,
+    box-shadow 0.12s,
+    filter 0.12s;
+}
+
+.login-cta:hover {
+  filter: brightness(1.05);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.4) inset,
+    0 10px 28px rgba(240, 160, 48, 0.45);
+}
+
+.login-cta:active {
+  transform: scale(0.985);
+}
+
+.error {
+  color: #ff6b5c;
+  min-height: 1.2em;
+  font-size: 0.85rem;
+  margin: 0.5rem 0 0;
+}
+
+.login-hints {
+  margin-top: 1.25rem;
+  padding: 0.75rem 0.9rem;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.45);
+  line-height: 1.55;
+}
+
+.login-hints kbd {
+  display: inline-block;
+  font-family: inherit;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 0.1rem 0.35rem;
+  margin: 0 0.1rem;
+}
+
 #dlgChoices button,
-#shopWeapons button,
-#shopArmor button,
-#shopUpgrades button,
 #chatForm button {
   margin-top: 0.85rem;
   width: 100%;
@@ -133,22 +315,7 @@ body {
   padding: 0.65rem;
   cursor: pointer;
   letter-spacing: 0.04em;
-}
-
-#joinBtn:hover {
-  filter: brightness(1.08);
-}
-
-.error {
-  color: var(--danger);
-  min-height: 1.2em;
-}
-
-.hint {
-  margin-top: 1rem;
-  font-size: 0.78rem;
-  color: var(--muted);
-  line-height: 1.45;
+  border-radius: 10px;
 }
 
 /* Game shell */
@@ -169,17 +336,22 @@ body {
   position: absolute;
   top: 0;
   left: 0;
-  width: 268px;
+  width: 280px;
   bottom: 0;
-  background: linear-gradient(180deg, #1c1c26f2, #12121af2);
-  border-right: 2px solid #f0a03088;
-  padding: 0.55rem 0.4rem 0.8rem 0.55rem;
+  background: linear-gradient(
+    180deg,
+    rgba(18, 18, 26, 0.82) 0%,
+    rgba(12, 12, 18, 0.88) 100%
+  );
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.65rem 0.45rem 0.8rem 0.65rem;
   overflow-x: hidden;
   overflow-y: auto;
   z-index: 5;
   font-size: 0.82rem;
-  box-shadow: 4px 0 24px #0008;
-  /* Overlay-style thin scrollbar so it doesn't steal layout width */
+  box-shadow: 8px 0 40px rgba(0, 0, 0, 0.4);
   scrollbar-gutter: stable;
   scrollbar-width: thin;
   scrollbar-color: #4a4030 transparent;
@@ -267,24 +439,30 @@ body {
 }
 
 .posse-card {
-  border: 1px solid #3a3a48;
-  background: #0e0e14;
-  padding: 0.45rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.28);
+  padding: 0.5rem;
   margin-bottom: 0.45rem;
   cursor: pointer;
-  border-radius: 3px;
-  transition: border-color 0.12s, box-shadow 0.12s, background 0.12s;
+  border-radius: 14px;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s,
+    background 0.15s,
+    transform 0.12s;
 }
 
 .posse-card:hover {
-  border-color: #887;
-  background: #14141c;
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .posse-card.selected {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px #f0a03066, inset 0 0 12px #f0a03018;
-  background: #18140e;
+  border-color: rgba(240, 160, 48, 0.65);
+  box-shadow:
+    0 0 0 1px rgba(240, 160, 48, 0.25),
+    0 4px 20px rgba(240, 160, 48, 0.12);
+  background: rgba(40, 30, 12, 0.45);
 }
 
 .posse-card.upgraded {
@@ -889,32 +1067,44 @@ body {
 
 #objective {
   position: absolute;
-  left: 280px;
-  top: 8px;
-  background: #000c;
-  border: 1px solid #f0a03088;
+  left: 300px;
+  top: 12px;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 100px;
   color: var(--accent);
-  padding: 0.25rem 0.6rem;
-  font-size: 0.8rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
   z-index: 5;
+  max-width: min(360px, 30vw);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* Syndicate-style order strip */
+/* Syndicate-style order strip + glass */
 #actionBanner {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  top: 8px;
+  top: 12px;
   z-index: 6;
   display: flex;
   align-items: baseline;
   gap: 0.65rem;
-  background: linear-gradient(180deg, #1a1408ee, #0e0c08ee);
-  border: 2px solid #f0a030;
-  box-shadow: 0 0 16px #f0a03044, inset 0 0 20px #0008;
-  padding: 0.35rem 1.1rem;
+  background: rgba(12, 10, 8, 0.55);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  border: 1px solid rgba(240, 160, 48, 0.45);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  border-radius: 100px;
+  padding: 0.45rem 1.25rem;
   min-width: 200px;
   justify-content: center;
   pointer-events: none;
@@ -979,13 +1169,17 @@ body {
 
 #chatBox {
   position: absolute;
-  left: 280px;
-  bottom: 8px;
-  width: min(420px, calc(100% - 300px));
+  left: 292px;
+  bottom: 14px;
+  width: min(420px, calc(100% - 320px));
   z-index: 6;
-  background: #0a0a10cc;
-  border: 1px solid #555;
-  padding: 0.35rem;
+  background: rgba(10, 10, 16, 0.55);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 0.45rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
 }
 
 #chatLog {
@@ -1082,12 +1276,22 @@ body {
 
 .modal-card {
   width: min(480px, 92vw);
-  background: #16161e;
-  border: 2px solid var(--border);
-  padding: 1.1rem 1.2rem;
+  background: linear-gradient(
+    165deg,
+    rgba(40, 40, 52, 0.75) 0%,
+    rgba(16, 16, 24, 0.88) 100%
+  );
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  padding: 1.25rem 1.35rem;
   max-height: 85vh;
   overflow-y: auto;
   pointer-events: auto;
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 .modal-card.wide {
