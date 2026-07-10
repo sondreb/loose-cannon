@@ -415,6 +415,7 @@ function renderPosse(): void {
       leader: boss,
       dead: !u.alive,
       upgradeTier: tier,
+      female: u.gender === "female",
     });
     const card = document.createElement("div");
     card.className =
@@ -581,6 +582,7 @@ function renderGear(): void {
     leader: !!(u.isPlayerLeader || u.kind === "player"),
     dead: !u.alive,
     upgradeTier: tier,
+    female: u.gender === "female",
   });
 
   statsView.innerHTML = `
@@ -618,6 +620,7 @@ function renderCrewEditor(): void {
     leader: !!(u.isPlayerLeader || u.kind === "player"),
     dead: !u.alive,
     upgradeTier: tier,
+    female: u.gender === "female",
   });
 
   crewEditorRoster.innerHTML = "";
@@ -627,6 +630,7 @@ function renderCrewEditor(): void {
       leader: !!(member.isPlayerLeader || member.kind === "player"),
       dead: !member.alive,
       upgradeTier: t,
+      female: member.gender === "female",
     });
     const btn = document.createElement("button");
     btn.type = "button";
@@ -777,6 +781,7 @@ function renderShop(): void {
       leader: !!(m.isPlayerLeader || m.kind === "player"),
       dead: !m.alive,
       upgradeTier: t,
+      female: m.gender === "female",
     });
     chip.innerHTML = `
       <img src="${img}" alt="" width="32" height="32" draggable="false" />
@@ -1454,11 +1459,165 @@ function bindInput(): void {
   });
 }
 
+/* ——— Onboarding wizard ——— */
+const ONBOARD_KEY = "lc_onboard_v1";
+
+type OnboardStep = {
+  title: string;
+  text: string;
+  bullets: string[];
+  art: string;
+};
+
+const ONBOARD_STEPS: OnboardStep[] = [
+  {
+    title: "Welcome to Skidrow",
+    text: "Loose Cannon is a crime-city posse game: recruit muscle, gear up, and survive rival gangs. The city is split into two realities.",
+    bullets: [
+      "Safe Downtown (PvE) — shops, bars, recruit. No murders.",
+      "War Zone (PvP) — south of the red line. Rival posses shoot back.",
+      "Your boss is the star — bodyguards circle you and take the front in a fight.",
+    ],
+    art: "/art/splash.jpg",
+  },
+  {
+    title: "Build your posse",
+    text: "Talk to street NPCs and bar muscle. Hire them, equip better iron, and keep the boss in the middle of the pack.",
+    bullets: [
+      "E / Use — doors, shops, talk, recruit.",
+      "Street meat is ~20% women / 80% men — both can join the crew.",
+      "Boss goes DOWNED if bodyguards still stand — they cover you until the wipe.",
+    ],
+    art: "/art/gangster-female.jpg",
+  },
+  {
+    title: "Move & fight",
+    text: "Walk the block, pick fights carefully, and loot better gear when you wipe a crew.",
+    bullets: [
+      "Desktop: WASD move · click to move · RMB attack-move.",
+      "Mobile: tap to move · long-press or Attack button to fire.",
+      "Better weapons from wipe loot show a gold GEAR UPGRADE toast.",
+    ],
+    art: "/art/combat-scene.jpg",
+  },
+  {
+    title: "The nightlife",
+    text: "Bars, pawn shops, gun counters, and neon clubs keep the city alive. Charm the staff — or just buy their inventory.",
+    bullets: [
+      "Interiors open as a full room view (outside is hidden).",
+      "Bartenders, fixers, and dealers have their own deals.",
+      "Cash is king. Don't die broke.",
+    ],
+    art: "/art/bartender-female.jpg",
+  },
+  {
+    title: "You're ready",
+    text: "Pick a name, hit the streets, and don't cross the war line empty-handed.",
+    bullets: [
+      "Recruit north → gear up → push south when you're mean enough.",
+      "Open FULL loadout for weapons and armor.",
+      "Proximity chat for nearby players. Good luck, boss.",
+    ],
+    art: "/art/gangster-male.jpg",
+  },
+];
+
+let onboardStep = 0;
+let onboardThenJoin = false;
+
+const onboardEl = document.getElementById("onboard") as HTMLElement | null;
+const onboardTitle = document.getElementById("onboardTitle");
+const onboardText = document.getElementById("onboardText");
+const onboardBullets = document.getElementById("onboardBullets");
+const onboardArt = document.getElementById("onboardArt") as HTMLImageElement | null;
+const onboardProgress = document.getElementById("onboardProgress");
+const onboardNext = document.getElementById("onboardNext");
+const onboardBack = document.getElementById("onboardBack");
+const onboardSkip = document.getElementById("onboardSkip");
+const howToPlayBtn = document.getElementById("howToPlayBtn");
+
+function renderOnboard(): void {
+  const step = ONBOARD_STEPS[onboardStep];
+  if (!step || !onboardEl) return;
+  if (onboardTitle) onboardTitle.textContent = step.title;
+  if (onboardText) onboardText.textContent = step.text;
+  if (onboardArt) onboardArt.src = step.art;
+  if (onboardBullets) {
+    onboardBullets.innerHTML = step.bullets.map((b) => `<li>${escapeHtml(b)}</li>`).join("");
+  }
+  if (onboardProgress) {
+    onboardProgress.innerHTML = ONBOARD_STEPS.map(
+      (_, i) => `<span class="${i <= onboardStep ? "on" : ""}"></span>`,
+    ).join("");
+  }
+  if (onboardBack) onboardBack.style.visibility = onboardStep === 0 ? "hidden" : "visible";
+  if (onboardNext) {
+    onboardNext.textContent = onboardStep >= ONBOARD_STEPS.length - 1 ? "Let's go" : "Next";
+  }
+}
+
+function openOnboard(thenJoin: boolean): void {
+  onboardThenJoin = thenJoin;
+  onboardStep = 0;
+  onboardEl?.classList.remove("hidden");
+  renderOnboard();
+  sfx.play("ui");
+}
+
+function closeOnboard(markDone: boolean): void {
+  onboardEl?.classList.add("hidden");
+  if (markDone) {
+    try {
+      localStorage.setItem(ONBOARD_KEY, "1");
+    } catch {
+      /* ignore */
+    }
+  }
+  if (onboardThenJoin) {
+    onboardThenJoin = false;
+    void startGame();
+  }
+}
+
+function finishOnboardStep(): void {
+  if (onboardStep >= ONBOARD_STEPS.length - 1) {
+    closeOnboard(true);
+    return;
+  }
+  onboardStep += 1;
+  renderOnboard();
+  sfx.play("ui");
+}
+
 joinBtn.addEventListener("click", () => {
   myName = nameInput.value.trim() || "Thug";
   loginError.textContent = "";
+  let seen = false;
+  try {
+    seen = localStorage.getItem(ONBOARD_KEY) === "1";
+  } catch {
+    seen = false;
+  }
+  if (!seen) {
+    openOnboard(true);
+    return;
+  }
   void startGame();
 });
+
+howToPlayBtn?.addEventListener("click", () => {
+  openOnboard(false);
+});
+
+onboardNext?.addEventListener("click", () => finishOnboardStep());
+onboardBack?.addEventListener("click", () => {
+  if (onboardStep > 0) {
+    onboardStep -= 1;
+    renderOnboard();
+    sfx.play("ui");
+  }
+});
+onboardSkip?.addEventListener("click", () => closeOnboard(true));
 
 nameInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") joinBtn.click();

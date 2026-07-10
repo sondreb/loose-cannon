@@ -16,13 +16,15 @@
     <div id="app">
       <div id="login">
         <div class="login-bg" aria-hidden="true">
+          <img class="login-splash" src="/art/splash.jpg" alt="" />
+          <div class="login-splash-shade"></div>
           <div class="login-orb o1"></div>
           <div class="login-orb o2"></div>
           <div class="login-orb o3"></div>
           <div class="login-grid"></div>
         </div>
         <div class="login-card glass">
-          <div class="login-badge">LOCAL · IN-MEMORY</div>
+          <div class="login-badge">BETA · IN-MEMORY</div>
           <h1>Loose Cannon</h1>
           <p class="tagline">Build a posse. Take the block. Try not to die broke.</p>
           <label class="login-field">
@@ -30,11 +32,34 @@
             <input id="nameInput" maxlength="20" placeholder="e.g. Nikki" autocomplete="off" />
           </label>
           <button id="joinBtn" type="button" class="login-cta">Hit the Streets</button>
+          <button id="howToPlayBtn" type="button" class="login-secondary">How to Play</button>
           <p id="loginError" class="error"></p>
           <div class="login-hints glass-inset">
             <div class="hint-desktop"><kbd>WASD</kbd> move · <kbd>RMB</kbd> attack-move</div>
             <div class="hint-desktop"><kbd>E</kbd> interact · <kbd>1–4</kbd> crew · <kbd>5–0</kbd> weapons</div>
             <div class="hint-mobile">Tap to move · long-press to attack · use bottom buttons</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- First-run / How to Play wizard -->
+      <div id="onboard" class="hidden" role="dialog" aria-modal="true" aria-labelledby="onboardTitle">
+        <div class="onboard-card glass">
+          <div class="onboard-art-wrap">
+            <img id="onboardArt" class="onboard-art" src="/art/splash.jpg" alt="" />
+          </div>
+          <div class="onboard-body">
+            <div class="onboard-progress" id="onboardProgress"></div>
+            <h2 id="onboardTitle">Welcome to Skidrow</h2>
+            <p id="onboardText" class="onboard-text"></p>
+            <ul id="onboardBullets" class="onboard-bullets"></ul>
+            <div class="onboard-actions">
+              <button type="button" id="onboardSkip" class="ghost">Skip</button>
+              <div class="onboard-nav">
+                <button type="button" id="onboardBack" class="tiny-btn">Back</button>
+                <button type="button" id="onboardNext" class="login-cta">Next</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>

@@ -1,4 +1,6 @@
-const FIRST = [
+/** Street names — ~20% female when using randomRecruitProfile */
+
+const FIRST_M = [
   "Rico",
   "Sal",
   "Tommy",
@@ -9,16 +11,39 @@ const FIRST = [
   "Scratch",
   "Lefty",
   "Bones",
-  "Nikki",
-  "Rosa",
-  "Jazz",
-  "Pepper",
-  "Cookie",
   "Brick",
   "Shadow",
   "Wheels",
   "Gums",
   "Ace",
+  "Dutch",
+  "Paco",
+  "Hank",
+  "Colt",
+  "Razor",
+];
+
+const FIRST_F = [
+  "Nikki",
+  "Rosa",
+  "Jazz",
+  "Pepper",
+  "Cookie",
+  "Vex",
+  "Lola",
+  "Sable",
+  "Cherry",
+  "Roxy",
+  "Diamond",
+  "Blaze",
+  "Kitty",
+  "Venus",
+  "Storm",
+  "Ivy",
+  "Jade",
+  "Foxy",
+  "Nova",
+  "Candy",
 ];
 
 const LAST = [
@@ -34,10 +59,30 @@ const LAST = [
   "the Quiet One",
   "Barstool",
   "Payday",
+  "Switchblade",
+  "the Problem",
+  "Cashmere",
+  "Last Call",
 ];
 
-export function randomGoonName(rng = Math.random): string {
-  const a = FIRST[Math.floor(rng() * FIRST.length)]!;
+export type Gender = "male" | "female";
+
+/** Street meat / hire / AI goon gender mix */
+export const FEMALE_SPAWN_CHANCE = 0.2;
+
+export function rollGender(rng = Math.random): Gender {
+  return rng() < FEMALE_SPAWN_CHANCE ? "female" : "male";
+}
+
+export function randomGoonName(rng = Math.random, gender?: Gender): string {
+  const g = gender ?? rollGender(rng);
+  const pool = g === "female" ? FIRST_F : FIRST_M;
+  const a = pool[Math.floor(rng() * pool.length)]!;
   const b = LAST[Math.floor(rng() * LAST.length)]!;
   return `${a} ${b}`;
+}
+
+export function randomRecruitProfile(rng = Math.random): { name: string; gender: Gender } {
+  const gender = rollGender(rng);
+  return { name: randomGoonName(rng, gender), gender };
 }

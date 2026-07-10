@@ -588,14 +588,16 @@ export function createSkidrowMap(): WorldMapDef {
       { id: "npc_mech", name: "Grease Tony", x: 51, y: 85, role: "mechanic", buildingId: "garage" },
       { id: "npc_gun", name: "Caliber Kate", x: 74, y: 85, role: "dealer", buildingId: "shop_gun" },
       { id: "npc_booze", name: "Bottle Bob", x: 86, y: 3, role: "dealer", buildingId: "shop_liquor" },
-      { id: "npc_club", name: "DJ Static", x: 38, y: 3, role: "bartender", buildingId: "club_neon" },
-      // Recruitable street meat lives in SAFE DOWNTOWN (y < SAFE_Y_MAX ≈ 38)
+      { id: "npc_club", name: "Venus Static", x: 38, y: 3, role: "bartender", buildingId: "club_neon" },
+      // Recruitable street meat in SAFE DOWNTOWN (~20% women by name + spawn gender)
       { id: "npc_street", name: "Corner Carl", x: 36, y: 28, role: "thug" },
       { id: "npc_street2", name: "Alley Ace", x: 22, y: 30, role: "thug" },
       { id: "npc_street3", name: "Meter Maid Mayhem", x: 48, y: 24, role: "thug" },
       { id: "npc_street4", name: "Quiet Quentin", x: 58, y: 32, role: "thug" },
       { id: "npc_street5", name: "Bench Benny", x: 72, y: 26, role: "thug" },
       { id: "npc_street6", name: "Stoop Sally", x: 14, y: 34, role: "thug" },
+      { id: "npc_street7", name: "Roxy Switch", x: 42, y: 22, role: "thug" },
+      { id: "npc_street8", name: "Dutch Dumpster", x: 64, y: 30, role: "thug" },
     ],
     // Rival gangs only in WAR ZONE (y >= SAFE_Y_MAX ≈ 38) — keep clear of the line
     aiPosseSpawns: [

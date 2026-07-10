@@ -34,7 +34,7 @@ import {
   type WeaponId,
   type WorldSnapshot,
 } from "@loose-cannon/shared";
-import { randomGoonName } from "./names.js";
+import { randomGoonName, randomRecruitProfile, type Gender } from "./names.js";
 import type { ClientConn } from "./net.js";
 
 interface Unit {
@@ -61,6 +61,7 @@ interface Unit {
   isPlayerLeader: boolean;
   /** Boss is too hurt to fight; stays alive until the rest of the posse falls */
   incapacitated: boolean;
+  gender: Gender;
   ownedWeapons: Set<WeaponId>;
   ownedArmors: Set<ArmorId>;
   aiWanderT: number;
@@ -163,7 +164,7 @@ export class GameWorld {
   chat: ChatLine[] = [];
   chatSeq = 0;
   private uid = 0;
-  mapRevision = 7;
+  mapRevision = 8;
   /** Prop interaction cooldowns: propId -> tick available */
   propReadyAt = new Map<string, number>();
   /** Combat VFX queued this tick, attached to snapshots then cleared */
@@ -212,6 +213,18 @@ export class GameWorld {
         attackTargetId: null,
         moveLabel: null,
       });
+      // Named NPC genders (bartenders, coaches, street meat)
+      const femaleNpc = /rita|kate|may|sally|jazz|rosa|pepper|cookie|venus|lola|sable|cherry|roxy|nova|storm|ivy|jade|foxy|candy|maid/i.test(
+        n.name,
+      );
+      const street = n.role === "thug";
+      const gender: Gender = femaleNpc
+        ? "female"
+        : street
+          ? Math.random() < 0.2
+            ? "female"
+            : "male"
+          : "male";
       this.units.set(unitId, {
         id: unitId,
         name: n.name,
@@ -234,6 +247,7 @@ export class GameWorld {
         fireCd: 0,
         isPlayerLeader: false,
         incapacitated: false,
+        gender,
         ownedWeapons: new Set(["pipe"]),
         ownedArmors: new Set(["none"]),
         aiWanderT: 0,
@@ -328,6 +342,7 @@ export class GameWorld {
       ox: number,
       oy: number,
       t: number,
+      gender: Gender = "male",
     ) => {
       const g = gearFor(t);
       this.units.set(uid, {
@@ -358,6 +373,7 @@ export class GameWorld {
         fireCd: 0,
         isPlayerLeader: false,
         incapacitated: false,
+        gender,
         ownedWeapons: new Set(g.weapons),
         ownedArmors: new Set(g.armors),
         aiWanderT: Math.random() * 3,
@@ -366,14 +382,16 @@ export class GameWorld {
       });
     };
 
-    // Boss dead-center; goons on a protective circle
-    make(leaderId, `${name} Boss`, "ai_boss", x, y, threat);
+    // Boss dead-center; goons on a protective circle (~20% female street meat)
+    make(leaderId, `${name} Boss`, "ai_boss", x, y, threat, "male");
     const g1 = `${id}_g1`;
     const g2 = `${id}_g2`;
     const s0 = this.circleSlot(x, y, 0, 2, 1.05);
     const s1 = this.circleSlot(x, y, 1, 2, 1.05);
-    make(g1, randomGoonName(), "ai_goon", s0.x, s0.y, Math.max(1, threat - 1));
-    make(g2, randomGoonName(), "ai_goon", s1.x, s1.y, Math.max(1, threat - 1));
+    const r1 = randomRecruitProfile();
+    const r2 = randomRecruitProfile();
+    make(g1, r1.name, "ai_goon", s0.x, s0.y, Math.max(1, threat - 1), r1.gender);
+    make(g2, r2.name, "ai_goon", s1.x, s1.y, Math.max(1, threat - 1), r2.gender);
     memberIds.push(g1, g2);
     this.posses.get(id)!.memberIds = memberIds;
   }
@@ -452,6 +470,7 @@ export class GameWorld {
       fireCd: 0,
       isPlayerLeader: true,
       incapacitated: false,
+      gender: "male",
       ownedWeapons: new Set(STARTER_WEAPONS),
       ownedArmors: new Set(["none"]),
       aiWanderT: 0,
@@ -460,9 +479,10 @@ export class GameWorld {
     });
 
     const starterSlot = this.circleSlot(spawn.x, spawn.y, 0, 1, 1.0);
+    const starter = randomRecruitProfile();
     this.units.set(goon1, {
       id: goon1,
-      name: randomGoonName(),
+      name: starter.name,
       kind: "goon",
       ownerId: characterId,
       posseId,
@@ -482,6 +502,7 @@ export class GameWorld {
       fireCd: 0,
       isPlayerLeader: false,
       incapacitated: false,
+      gender: starter.gender,
       ownedWeapons: new Set(STARTER_WEAPONS),
       ownedArmors: new Set(["none"]),
       aiWanderT: 0,
@@ -2052,12 +2073,12 @@ export class GameWorld {
     const leader = this.leader(posse);
     if (!leader) return "Nobody";
     const id = this.nextId("unit");
-    const name = randomGoonName();
+    const profile = randomRecruitProfile();
     const nextCount = this.goons(posse).length + 1;
     const slot = this.circleSlot(leader.x, leader.y, nextCount - 1, nextCount, this.formationRadius(nextCount));
     const goon: Unit = {
       id,
-      name,
+      name: profile.name,
       kind: "goon",
       ownerId: session.characterId,
       posseId: posse.id,
@@ -2082,6 +2103,7 @@ export class GameWorld {
       fireCd: 0,
       isPlayerLeader: false,
       incapacitated: false,
+      gender: profile.gender,
       ownedWeapons: new Set(STARTER_WEAPONS),
       ownedArmors: new Set(["none"]),
       aiWanderT: 0,
@@ -2092,7 +2114,7 @@ export class GameWorld {
     posse.memberIds.push(id);
     // Re-space full circle so the boss stays centered
     this.assignCircleFormation(posse, leader.x, leader.y, { moveBoss: false });
-    return name;
+    return profile.name;
   }
 
   /**
@@ -2117,6 +2139,7 @@ export class GameWorld {
     npc.posseId = posse.id;
     npc.isPlayerLeader = false;
     npc.incapacitated = false;
+    if (!npc.gender) npc.gender = "male";
     npc.alive = true;
     npc.health = Math.max(npc.health, npc.stats.maxHealth * 0.8);
     npc.weapon = "pistol";
@@ -2644,6 +2667,7 @@ export class GameWorld {
         alive: u.alive,
         isPlayerLeader: u.isPlayerLeader,
         incapacitated: u.incapacitated || undefined,
+        gender: u.gender,
       };
       if (u.posseId === posse.id) {
         pub.ownedWeapons = [...u.ownedWeapons];

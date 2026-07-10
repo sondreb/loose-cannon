@@ -31,9 +31,9 @@ const cache = new Map<string, string>();
 
 export function portraitDataUrl(
   key: string,
-  opts?: { leader?: boolean; dead?: boolean; upgradeTier?: number },
+  opts?: { leader?: boolean; dead?: boolean; upgradeTier?: number; female?: boolean },
 ): string {
-  const cacheKey = `${key}|${opts?.leader ? 1 : 0}|${opts?.dead ? 1 : 0}|${opts?.upgradeTier ?? 0}`;
+  const cacheKey = `${key}|${opts?.leader ? 1 : 0}|${opts?.dead ? 1 : 0}|${opts?.upgradeTier ?? 0}|${opts?.female ? 1 : 0}`;
   const hit = cache.get(cacheKey);
   if (hit) return hit;
 
@@ -50,13 +50,18 @@ export function portraitDataUrl(
     ctx.fillRect(x * s, y * s, s, s);
   };
 
+  const female = !!opts?.female;
   const skin = SKIN[Math.floor(rng() * SKIN.length)]!;
   const hair = HAIR[Math.floor(rng() * HAIR.length)]!;
-  const shirt = SHIRT[Math.floor(rng() * SHIRT.length)]!;
+  const shirt = (female ? [0x5a2030, 0x3a2040, 0x2a3050, 0x4a2030, 0x333333] : SHIRT)[
+    Math.floor(rng() * (female ? 5 : SHIRT.length))
+  ]!;
   const accent = ACCENT[Math.floor(rng() * ACCENT.length)]!;
-  const beard = rng() > 0.55;
-  const shades = rng() > 0.7;
-  const scar = rng() > 0.75;
+  const beard = !female && rng() > 0.55;
+  const shades = rng() > (female ? 0.55 : 0.7);
+  const scar = !female && rng() > 0.75;
+  const lipstick = female && rng() > 0.25;
+  const longHair = female && rng() > 0.35;
 
   // Background
   const bg = opts?.dead ? 0x2a1515 : opts?.leader ? 0x2a2418 : 0x1a1a22;
@@ -88,7 +93,18 @@ export function portraitDataUrl(
   // Hair
   const hairStyle = Math.floor(rng() * 3);
   for (let x = 4; x <= 11; x++) px(x, 2, hair);
-  if (hairStyle === 0) {
+  if (longHair) {
+    for (let x = 3; x <= 12; x++) px(x, 2, hair);
+    for (let x = 3; x <= 12; x++) px(x, 3, hair);
+    px(3, 4, hair);
+    px(3, 5, hair);
+    px(3, 6, hair);
+    px(12, 4, hair);
+    px(12, 5, hair);
+    px(12, 6, hair);
+    px(4, 4, hair);
+    px(11, 4, hair);
+  } else if (hairStyle === 0) {
     for (let x = 4; x <= 11; x++) px(x, 3, hair);
     px(4, 4, hair);
     px(11, 4, hair);
@@ -117,8 +133,8 @@ export function portraitDataUrl(
   // Nose / mouth
   px(7, 6, skin - 0x101010 > 0 ? skin - 0x101010 : skin);
   px(8, 6, skin);
-  px(7, 8, 0x5a3030);
-  px(8, 8, 0x5a3030);
+  px(7, 8, lipstick ? 0xc03050 : 0x5a3030);
+  px(8, 8, lipstick ? 0xc03050 : 0x5a3030);
   if (beard) {
     for (let x = 5; x <= 10; x++) px(x, 9, hair);
     px(6, 8, hair);

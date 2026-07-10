@@ -46,6 +46,8 @@ export interface UnitPublic {
   isPlayerLeader?: boolean;
   /** Boss is too hurt to fight but still "alive" while goons cover him */
   incapacitated?: boolean;
+  /** Presentation / portrait (street mix ~20% female) */
+  gender?: "male" | "female";
   /** Present for your own posse units */
   ownedWeapons?: WeaponId[];
   ownedArmors?: ArmorId[];
