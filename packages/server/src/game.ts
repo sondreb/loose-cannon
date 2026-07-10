@@ -2365,31 +2365,46 @@ export class GameWorld {
     // Always stop free/click movement when opening doors, talk, or shop
     this.cmdStop(posse);
 
-    // 1) Exit / enter doors FIRST so a counter NPC never traps you at the door
-    // Mission instance layer (private warehouse etc.)
+    // Exit mats use a tight radius. Interior spawn (e.g. Rusty Nail 5,5 → exit 5,7)
+    // is ~2.5 tiles from the door — full INTERACT_RANGE would false-exit on any E/click.
+    const EXIT_USE_RANGE = 1.35;
+
+    const exitDist = (exitX: number, exitY: number): number =>
+      dist(leader.x, leader.y, exitX + 0.5, exitY + 0.5);
+
+    /** Nearest in-layer NPC within talk range (prefer talk over leave when both possible). */
+    const nearestNpcInRange = (): { unit: Unit; d: number } | null => {
+      let best: { unit: Unit; d: number } | null = null;
+      for (const u of this.units.values()) {
+        if (u.kind !== "npc" || !u.alive) continue;
+        if ((u.buildingId ?? null) !== (posse.insideBuildingId ?? null)) continue;
+        const d = dist(leader.x, leader.y, u.x, u.y);
+        if (d > INTERACT_RANGE) continue;
+        if (!best || d < best.d) best = { unit: u, d };
+      }
+      return best;
+    };
+
+    // 1) Mission instance exit / seal (private warehouse etc.)
     if (posse.mission?.instanceLayerId && posse.insideBuildingId === posse.mission.instanceLayerId) {
       const tmpl = this.resolveBuildingDef(posse.mission.instanceLayerId);
-      if (
-        tmpl &&
-        dist(leader.x, leader.y, tmpl.exitX + 0.5, tmpl.exitY + 0.5) <= INTERACT_RANGE + 0.35
-      ) {
-        if (posse.mission.phase === "extract") {
-          this.cmdMissionExtract(session, posse);
+      if (tmpl && exitDist(tmpl.exitX, tmpl.exitY) <= EXIT_USE_RANGE) {
+        // Prefer talking to an NPC only if they're clearly closer than the door
+        const npc = nearestNpcInRange();
+        if (!npc || npc.d >= exitDist(tmpl.exitX, tmpl.exitY) - 0.15) {
+          if (posse.mission.phase === "extract") {
+            this.cmdMissionExtract(session, posse);
+            return;
+          }
+          this.log(session, "Exit sealed until hostiles are down. (Or abandon the contract.)");
           return;
         }
-        this.log(session, "Exit sealed until hostiles are down. (Or abandon the contract.)");
-        return;
       }
     }
 
-    for (const b of this.map.buildings) {
-      if (posse.insideBuildingId === b.id) {
-        if (dist(leader.x, leader.y, b.exitX + 0.5, b.exitY + 0.5) <= INTERACT_RANGE + 0.35) {
-          this.enterBuilding(posse, null);
-          this.log(session, `Left ${b.name}.`);
-          return;
-        }
-      } else if (!posse.insideBuildingId) {
+    // 1b) Outdoor enter door
+    if (!posse.insideBuildingId) {
+      for (const b of this.map.buildings) {
         if (dist(leader.x, leader.y, b.doorX + 0.5, b.doorY + 0.5) <= INTERACT_RANGE) {
           this.enterBuilding(posse, b.id, session);
           this.log(session, `Entered ${b.name}.`);
@@ -2410,13 +2425,11 @@ export class GameWorld {
       return;
     }
 
-    // 2b) Inside Crash Pad — open stash (away from exit)
+    // 2b) Inside Crash Pad — open stash (away from exit mat)
     if (posse.insideBuildingId) {
       const bHere = this.map.buildings.find((bb) => bb.id === posse.insideBuildingId);
-      const atExit =
-        !!bHere &&
-        dist(leader.x, leader.y, bHere.exitX + 0.5, bHere.exitY + 0.5) <= INTERACT_RANGE + 0.5;
-      if (!atExit && (bHere?.kind === "safehouse" || bHere?.id === "safehouse")) {
+      const onExitMat = !!bHere && exitDist(bHere.exitX, bHere.exitY) <= EXIT_USE_RANGE;
+      if (!onExitMat && (bHere?.kind === "safehouse" || bHere?.id === "safehouse")) {
         posse.stashOpen = true;
         posse.dialogue = null;
         posse.shop = null;
@@ -2428,20 +2441,10 @@ export class GameWorld {
       }
     }
 
-    // 3) NPCs / shop counter (only when clearly away from exit)
-    for (const u of this.units.values()) {
-      if (u.kind !== "npc" || !u.alive) continue;
-      if ((u.buildingId ?? null) !== (posse.insideBuildingId ?? null)) continue;
-      if (dist(leader.x, leader.y, u.x, u.y) > INTERACT_RANGE) continue;
-
-      // Don't treat dealer as interactable if we're still basically at the exit tile
-      if (posse.insideBuildingId) {
-        const b = this.map.buildings.find((bb) => bb.id === posse.insideBuildingId);
-        if (b && dist(leader.x, leader.y, b.exitX + 0.5, b.exitY + 0.5) <= INTERACT_RANGE + 0.5) {
-          continue;
-        }
-      }
-
+    // 3) NPCs / shop counter — before exit so spawn-room talks don't boot you outside
+    const npcPick = nearestNpcInRange();
+    if (npcPick) {
+      const u = npcPick.unit;
       const spawn = this.map.npcSpawns.find((n) => n.id === u.id);
       if (spawn?.role === "dealer") {
         const b = this.map.buildings.find((bb) => bb.id === (u.buildingId ?? posse.insideBuildingId));
@@ -2477,6 +2480,16 @@ export class GameWorld {
       posse.dialogue = dlg;
       posse.shop = null;
       return;
+    }
+
+    // 3b) Leave building — only when standing on the exit mat (tight range)
+    if (posse.insideBuildingId) {
+      const b = this.resolveBuildingDef(posse.insideBuildingId);
+      if (b && exitDist(b.exitX, b.exitY) <= EXIT_USE_RANGE) {
+        this.enterBuilding(posse, null);
+        this.log(session, `Left ${b.name}.`);
+        return;
+      }
     }
 
     // 4) Standing on special indoor tiles

@@ -1,7 +1,16 @@
 /**
  * Lightweight Web Audio SFX — no external files.
  * Punchy procedural combat + UI sounds (90s arcade / crime game energy).
+ * Plus HTMLAudio music beds under /music/ (kept quieter than SFX).
  */
+
+/** Background tracks served from packages/client/public/music/ */
+const MUSIC_TRACKS: readonly string[] = [
+  "/music/neon-heist-run.mp3",
+];
+
+/** Music bed level — must stay under SFX master (~0.55) and voice (~0.85). */
+const MUSIC_VOLUME = 0.12;
 
 export type Sfx =
   | "gun"
@@ -266,3 +275,76 @@ export class SfxBus {
 }
 
 export const sfx = new SfxBus();
+
+/**
+ * Looping (or sequential) background music from /public/music.
+ * Starts on first user gesture (autoplay policy) — call unlock() with SFX.
+ */
+export class MusicBus {
+  private audio: HTMLAudioElement | null = null;
+  private muted = false;
+  private volume = MUSIC_VOLUME;
+  private started = false;
+  private index = 0;
+  private tracks: readonly string[] = MUSIC_TRACKS;
+
+  setMuted(m: boolean): void {
+    this.muted = m;
+    if (!this.audio) return;
+    if (m) {
+      this.audio.pause();
+    } else if (this.started) {
+      void this.audio.play().catch(() => undefined);
+    }
+  }
+
+  setVolume(v: number): void {
+    this.volume = Math.max(0, Math.min(1, v));
+    if (this.audio) this.audio.volume = this.volume;
+  }
+
+  /** Call from a user gesture so autoplay is allowed. */
+  unlock(): void {
+    if (this.muted) return;
+    if (this.started && this.audio) {
+      if (this.audio.paused) void this.audio.play().catch(() => undefined);
+      return;
+    }
+    this.started = true;
+    this.playCurrent();
+  }
+
+  stop(): void {
+    if (this.audio) {
+      this.audio.pause();
+      this.audio.removeAttribute("src");
+      this.audio.load();
+      this.audio = null;
+    }
+    this.started = false;
+  }
+
+  private playCurrent(): void {
+    if (this.muted || this.tracks.length === 0) return;
+    const src = this.tracks[this.index % this.tracks.length]!;
+    const el = new Audio(src);
+    el.volume = this.volume;
+    el.loop = this.tracks.length === 1;
+    el.preload = "auto";
+    this.audio = el;
+
+    el.addEventListener("ended", () => {
+      if (this.audio !== el || this.tracks.length <= 1) return;
+      this.index = (this.index + 1) % this.tracks.length;
+      this.playCurrent();
+    });
+
+    void el.play().catch(() => {
+      // Autoplay blocked or missing file — allow another unlock attempt
+      this.started = false;
+      this.audio = null;
+    });
+  }
+}
+
+export const music = new MusicBus();

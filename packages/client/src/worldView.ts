@@ -346,13 +346,23 @@ export class WorldView {
     return this.zoom;
   }
 
-  /** Smooth zoom toward target (clamped). Positive = zoom in. */
+  private maxZoomNow(): number {
+    const indoors = !!this.lastSnap?.you.insideBuildingId;
+    return indoors ? MAX_INTERIOR_ZOOM : MAX_ZOOM;
+  }
+
+  /** Smooth zoom toward target (clamped). Positive = zoom in. Works outdoors and indoors. */
   adjustZoom(delta: number): void {
-    this.zoomTarget = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, this.zoomTarget + delta));
+    // User override — stop auto-fit lock so wheel/buttons stick inside buildings
+    this.interiorZoomLocked = false;
+    const maxZ = this.maxZoomNow();
+    this.zoomTarget = Math.min(maxZ, Math.max(MIN_ZOOM, this.zoomTarget + delta));
   }
 
   setZoom(z: number): void {
-    this.zoomTarget = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
+    this.interiorZoomLocked = false;
+    const maxZ = this.maxZoomNow();
+    this.zoomTarget = Math.min(maxZ, Math.max(MIN_ZOOM, z));
   }
 
   getHover(): HoverTarget {
@@ -2674,7 +2684,8 @@ export class WorldView {
     const bounds = insideB ? this.interiorBounds(insideB) : null;
     const indoors = !!(insideB && bounds);
 
-    // Enter / leave interior: lock zoom to fit the room, restore outdoor zoom on exit
+    // Enter / leave interior: suggest a room fit once, restore outdoor zoom on exit.
+    // Do NOT re-lock every frame — player can scroll-zoom indoors like outdoors.
     if (indoors && !this.wasInside) {
       this.outdoorZoomTarget = this.zoomTarget;
       this.interiorZoomLocked = true;
@@ -2692,19 +2703,23 @@ export class WorldView {
     }
     this.wasInside = indoors;
 
-    // Indoors: frame the whole room (soft-track player so small rooms stay centered)
+    // Indoors: soft-frame room center (player can still pan via follow blend)
     if (indoors && bounds) {
       const rcx = (bounds.x0 + bounds.x1 + 1) / 2;
       const rcy = (bounds.y0 + bounds.y1 + 1) / 2;
       this.followX = rcx * 0.72 + this.followX * 0.28;
       this.followY = rcy * 0.72 + this.followY * 0.28;
-      // Keep indoor fit stable so the room fills the view
+      // One-shot auto-fit only until the player zooms themselves
       if (this.interiorZoomLocked) {
         const bw = bounds.x1 - bounds.x0 + 3;
         const bh = bounds.y1 - bounds.y0 + 3;
         const span = Math.max(bw, bh) + Math.min(bw, bh) * 0.5;
         const fit = Math.min(MAX_INTERIOR_ZOOM, Math.max(1.1, 14 / Math.max(6, span)));
         this.zoomTarget = Math.min(MAX_INTERIOR_ZOOM, Math.max(MIN_ZOOM, fit));
+        // Release after first settle so further frames don't fight the user
+        if (Math.abs(this.zoom - this.zoomTarget) < 0.02) {
+          this.interiorZoomLocked = false;
+        }
       }
     }
 
@@ -2780,12 +2795,12 @@ export class WorldView {
     if (!snap) return null;
     const w = this.screenToWorld(clientX, clientY);
 
-    // Indoors: click the EXIT door tile to leave
+    // Indoors: click the EXIT door tile to leave (tight — don't steal NPC clicks)
     if (snap.you.insideBuildingId) {
       const b = this.getInteriorBuilding(snap);
       if (b?.exitX != null && b.exitY != null) {
         const d = Math.hypot(b.exitX + 0.5 - w.x, b.exitY + 0.5 - w.y);
-        if (d < 1.8) return b;
+        if (d < 1.25) return b;
       }
       return null;
     }

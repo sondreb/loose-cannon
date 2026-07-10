@@ -25,7 +25,7 @@ import {
   type WeaponId,
   type WorldSnapshot,
 } from "@loose-cannon/shared";
-import { sfx } from "./audio.js";
+import { music, sfx } from "./audio.js";
 import { voice } from "./voice.js";
 import { statBonus, upgradeTier } from "./avatar.js";
 import { crewPortraitUrl, isFemaleUnit } from "./crewPortraits.js";
@@ -320,8 +320,9 @@ function handlePrimaryPointer(clientX: number, clientY: number, asAttack: boolea
     return;
   }
 
-  // Dancers get a larger pick radius (taller sprites / stage glow)
-  const unitId = view.pickUnit(clientX, clientY, 1.75);
+  // Indoors: slightly larger pick so counters/bar NPCs beat the exit mat hitbox
+  const pickR = s.you.insideBuildingId ? 2.15 : 1.75;
+  const unitId = view.pickUnit(clientX, clientY, pickR);
   if (unitId) {
     const u = s.units.find((x) => x.id === unitId);
     if (u && u.posseId === s.you.posseId) {
@@ -330,7 +331,9 @@ function handlePrimaryPointer(clientX: number, clientY: number, asAttack: boolea
       return;
     }
     if (u && u.kind === "npc") {
-      // Walk up and open chat / profile (dancers include tip options)
+      // Walk up and open chat / profile (dancers include tip options).
+      // Prefer NPC foot position so we never route a "talk" click to the exit door.
+      pendingInteract = null;
       clickInteractAt(u.x, u.y);
       return;
     }
@@ -346,6 +349,7 @@ function handlePrimaryPointer(clientX: number, clientY: number, asAttack: boolea
   const building = view.pickBuilding(clientX, clientY);
   if (building) {
     if (s.you.insideBuildingId) {
+      // Only leave when the click is actually on the exit door (pickBuilding already filters)
       const ex = building.exitX ?? building.doorX;
       const ey = building.exitY ?? building.doorY;
       clickInteractAt(ex + 0.5, ey + 0.5);
@@ -1655,7 +1659,16 @@ function syncMobileHudTop(): void {
   document.documentElement.style.setProperty("--mobile-hud-top", `${Math.ceil(h)}px`);
 }
 
+/** Last layer we saw — clear pending interact when entering/leaving a building */
+let lastInsideBuildingId: string | null | undefined = undefined;
+
 function onSnapshot(s: WorldSnapshot): void {
+  // Layer change: drop walk-then-interact so we don't auto-E at the wrong door/NPC
+  if (lastInsideBuildingId !== undefined && lastInsideBuildingId !== s.you.insideBuildingId) {
+    pendingInteract = null;
+  }
+  lastInsideBuildingId = s.you.insideBuildingId;
+
   snap = s;
   view.applySnapshot(s);
   // Combat VFX SFX (visuals applied inside WorldView.applySnapshot)
@@ -2087,8 +2100,11 @@ function bindInput(): void {
     else setChatCollapsed(false);
   });
 
-  // Browsers block audio until a gesture — unlock often so combat SFX always work
-  const unlockAudio = () => sfx.unlock();
+  // Browsers block audio until a gesture — unlock SFX + start low music bed
+  const unlockAudio = () => {
+    sfx.unlock();
+    music.unlock();
+  };
   window.addEventListener("pointerdown", unlockAudio);
   window.addEventListener("keydown", unlockAudio);
   window.addEventListener("touchstart", unlockAudio, { passive: true });
