@@ -1,6 +1,6 @@
 # Loose Cannon — Master Plan (Overseer Roadmap)
 
-Last updated: 2026-07-11 (M6 HUD/event-log + mobile touch)
+Last updated: 2026-07-11 (M5 ammo clarity / balance)
 
 Track completion in `docs/STATUS.md`. This file is the **ordered backlog** for autonomous development. Prefer finishing higher milestones before lower ones unless a dependency forces otherwise.
 
@@ -72,7 +72,7 @@ Full design: [realms.md](./realms.md). Friend groups on one beta/in-memory serve
 - [x] Cover / true line-of-sight blocking (walls block; soft cover wall-hug)
 - [x] Enemy AI roles (shooter, rusher, coward/flee)
 - [x] Weapon feel pass (hit feedback, miss whiz; audio already per-weapon)
-- [ ] Ammo clarity / balance pass; note numbers in STATUS
+- [x] Ammo clarity / balance pass; note numbers in STATUS
 - [x] Simple stuck-path recovery / click path that routes around building shells better
 
 ### M6 — Presentation & feel (Mode A)
@@ -119,9 +119,9 @@ Each overseer cycle implements **one** primary milestone item (or a tightly rela
 
 ### Priority order for long unattended loops
 
-1. **M5 remainder** (ammo clarity / balance note) if combat still feels muddy
-2. **M4 parties** only when solo loop is solid (parties live inside a realm)
-3. **M7 content density** (third instance, hustles, rival variety) when social not ready
+1. **M4 parties** only when solo loop is solid (parties live inside a realm)
+2. **M7 content density** (third instance, hustles, rival variety) when social not ready
+3. Optional M3 stash UX polish
 4. Never M8 / Mode B unless human asks
 
 ### Guardrails

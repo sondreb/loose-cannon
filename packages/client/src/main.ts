@@ -4,8 +4,10 @@ import {
   DAY_PHASE_LABEL,
   dayPhaseFromTick,
   DEFAULT_REALM_ID,
+  formatWeaponAmmo,
   heatBand,
   INTERACT_RANGE,
+  isUnlimitedAmmo,
   realmLabel,
   SHOP_ARMOR_ORDER,
   SHOP_UPGRADE_ORDER,
@@ -14,6 +16,7 @@ import {
   statEffectLines,
   streetRole,
   UPGRADES,
+  weaponIdealDps,
   WEAPONS,
   type ArmorId,
   type CombatFxEvent,
@@ -918,14 +921,25 @@ function fillWeaponBar(
     const has = owned.has(id);
     const active = u.weapon === id;
     const def = WEAPONS[id];
+    const unlimited = isUnlimitedAmmo(def);
+    const ammo = u.weaponAmmo?.[id];
+    const ammoStr = formatWeaponAmmo(id, ammo);
+    const dry = has && !unlimited && (ammo ?? 0) <= 0;
+    const low =
+      has && !unlimited && def.maxAmmo != null && (ammo ?? 0) > 0 && (ammo ?? 0) <= Math.ceil(def.maxAmmo * 0.2);
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "icon-btn" + (active ? " active" : "") + (!has ? " locked" : "");
+    btn.className =
+      "icon-btn" +
+      (active ? " active" : "") +
+      (!has ? " locked" : "") +
+      (dry ? " ammo-empty" : low ? " ammo-low" : "");
     btn.dataset.equip = "weapon";
     btn.dataset.itemId = id;
     btn.disabled = !has;
+    const dps = weaponIdealDps(def).toFixed(0);
     btn.title = has
-      ? `${def.name} — DMG ${def.damage} · RNG ${def.range} · CD ${def.fireCooldown}s`
+      ? `${def.name} — DMG ${def.damage} · RNG ${def.range} · ~${dps} DPS · AMMO ${ammoStr}`
       : `${def.name} (not owned — buy at Pawn-O-Matic)`;
     const img = document.createElement("img");
     img.src = weaponIconDataUrl(id, { active, locked: !has });
@@ -934,6 +948,17 @@ function fillWeaponBar(
     img.height = large ? 48 : 40;
     img.draggable = false;
     btn.appendChild(img);
+    if (has && !unlimited) {
+      const ammoTag = document.createElement("span");
+      ammoTag.className = "icon-ammo" + (dry ? " empty" : low ? " low" : "");
+      ammoTag.textContent = String(ammo ?? 0);
+      btn.appendChild(ammoTag);
+    } else if (has && unlimited && active) {
+      const inf = document.createElement("span");
+      inf.className = "icon-ammo inf";
+      inf.textContent = "∞";
+      btn.appendChild(inf);
+    }
     if (has && active) {
       const tag = document.createElement("span");
       tag.className = "icon-eq";
@@ -943,7 +968,9 @@ function fillWeaponBar(
     container.appendChild(btn);
   }
   const w = WEAPONS[u.weapon];
-  detailEl.innerHTML = `<b>${escapeHtml(w.name)}</b> · DMG ${w.damage} · RNG ${w.range} · ROF ${(1 / w.fireCooldown).toFixed(1)}/s`;
+  const ammoLine = formatWeaponAmmo(u.weapon, u.weaponAmmo?.[u.weapon]);
+  const dps = weaponIdealDps(w).toFixed(0);
+  detailEl.innerHTML = `<b>${escapeHtml(w.name)}</b> · DMG ${w.damage} · RNG ${w.range} · ~${dps} DPS · <span class="ammo-readout">${escapeHtml(ammoLine)}</span>`;
 }
 
 function fillArmorBar(
@@ -1027,7 +1054,11 @@ function renderGear(): void {
   const tier = upgradeTier(u.stats);
   const ownedW = (u.ownedWeapons ?? []).slice().sort().join(",");
   const ownedA = (u.ownedArmors ?? []).slice().sort().join(",");
-  const key = `${u.id}|${u.weapon}|${u.armor}|${ownedW}|${ownedA}|${u.stats.aim},${u.stats.guts},${u.stats.muscle},${u.stats.brains},${u.stats.speed},${u.stats.maxHealth}|${u.health}|${crewEditorOpen}`;
+  const ammoKey = Object.entries(u.weaponAmmo ?? {})
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${k}:${v}`)
+    .join(",");
+  const key = `${u.id}|${u.weapon}|${u.armor}|${ownedW}|${ownedA}|${ammoKey}|${u.stats.aim},${u.stats.guts},${u.stats.muscle},${u.stats.brains},${u.stats.speed},${u.stats.maxHealth}|${u.health}|${crewEditorOpen}`;
   if (key === lastGearKey) return;
   lastGearKey = key;
 
@@ -1150,6 +1181,7 @@ function renderGoonProfile(): void {
         <div class="g-item">
           <span class="g-label">WEAPON</span>
           ${escapeHtml(WEAPONS[u.weapon].name)}
+          <span class="muted tiny"> · AMMO ${escapeHtml(formatWeaponAmmo(u.weapon, u.weaponAmmo?.[u.weapon]))}</span>
         </div>
         <div class="g-item">
           <span class="g-label">ARMOR</span>
@@ -1739,12 +1771,16 @@ function renderShop(): void {
 
   const ownedW = (u?.ownedWeapons ?? []).slice().sort().join(",");
   const ownedA = (u?.ownedArmors ?? []).slice().sort().join(",");
+  const ammoKey = Object.entries(u?.weaponAmmo ?? {})
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${k}:${v}`)
+    .join(",");
   const rosterKey = myUnits()
     .map((m) => m.id)
     .join(",");
   const heat = snap.you.heat ?? 0;
   const rep = snap.you.rep ?? 0;
-  const key = `${snap.shop.shopName}|${u?.id ?? ""}|${ownedW}|${ownedA}|${snap.you.cash}|${heat}|${rep}|${rosterKey}|${u?.stats.aim},${u?.stats.guts}`;
+  const key = `${snap.shop.shopName}|${u?.id ?? ""}|${ownedW}|${ownedA}|${ammoKey}|${snap.you.cash}|${heat}|${rep}|${rosterKey}|${u?.stats.aim},${u?.stats.guts}`;
   if (key === lastShopKey) return;
   lastShopKey = key;
 
@@ -1778,6 +1814,9 @@ function renderShop(): void {
     const locked = !owned && rep < needRep;
     const price = shopPrice(w.price, heat);
     const canAfford = snap.you.cash >= price;
+    const unlimited = isUnlimitedAmmo(w);
+    const ammoStr = owned ? formatWeaponAmmo(id, u?.weaponAmmo?.[id]) : unlimited ? "∞" : `${w.startingAmmo}/${w.maxAmmo}`;
+    const dps = weaponIdealDps(w).toFixed(0);
     const b = document.createElement("button");
     b.type = "button";
     b.className =
@@ -1799,12 +1838,37 @@ function renderShop(): void {
       <img class="shop-item-icon" src="${weaponIconDataUrl(id, { active: u?.weapon === id, locked })}" alt="" width="40" height="40" draggable="false" />
       <div class="shop-item-body">
         <div class="shop-item-name">${escapeHtml(w.name)}</div>
-        <div class="shop-item-meta">DMG ${w.damage} · RNG ${w.range}${needRep > 0 ? ` · Rep ${needRep}` : ""}</div>
+        <div class="shop-item-meta">DMG ${w.damage} · RNG ${w.range} · ~${dps} DPS · AMMO ${ammoStr}${needRep > 0 ? ` · Rep ${needRep}` : ""}</div>
         <div class="shop-item-desc">${escapeHtml(w.description)}</div>
       </div>
       <div class="shop-item-price">${priceLabel}</div>
     `;
     shopWeapons.appendChild(b);
+
+    // Refill row for owned limited weapons that aren't full
+    if (owned && !unlimited && w.maxAmmo != null && u) {
+      const cur = u.weaponAmmo?.[id] ?? 0;
+      const full = cur >= w.maxAmmo;
+      const refillList = shopPrice(w.refillPrice, heat);
+      const canRefill = snap.you.cash >= refillList;
+      const rb = document.createElement("button");
+      rb.type = "button";
+      rb.className =
+        "shop-item shop-ammo" + (full ? " owned" : "") + (!full && !canRefill ? " broke" : "");
+      rb.dataset.shopAction = "ammo";
+      rb.dataset.itemId = id;
+      if (full) rb.disabled = true;
+      rb.innerHTML = `
+        <div class="shop-upgrade-glyph">▸</div>
+        <div class="shop-item-body">
+          <div class="shop-item-name">Ammo · ${escapeHtml(w.name)}</div>
+          <div class="shop-item-meta">${cur}/${w.maxAmmo} rounds${full ? " · topped off" : " · full top-up"}</div>
+          <div class="shop-item-desc">Pawn-O-Matic belt feed. Heat tax applies when the street is hot.</div>
+        </div>
+        <div class="shop-item-price">${full ? "FULL" : refillList !== w.refillPrice ? `$${refillList}*` : `$${refillList}`}</div>
+      `;
+      shopWeapons.appendChild(rb);
+    }
   }
 
   shopArmor.innerHTML = "";
@@ -1904,6 +1968,8 @@ function onShopClick(ev: MouseEvent): void {
     socket.send({ type: "shop.buyArmor", armorId: itemId as ArmorId, unitId });
   } else if (action === "upgrade") {
     socket.send({ type: "shop.buyUpgrade", upgradeId: itemId as UpgradeId, unitId });
+  } else if (action === "ammo") {
+    socket.send({ type: "shop.buyAmmo", weaponId: itemId as WeaponId, unitId });
   }
 }
 

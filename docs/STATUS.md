@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-11 (M6 HUD/event-log + mobile touch polish)  
+Last updated: 2026-07-11 (M5 ammo clarity / balance pass)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -33,6 +33,7 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | **Weapon range readability** | **Done** | Selected-unit iso range ring (war / combat) |
 | **Hit / miss feedback** | **Done** | Miss whiz tracers; heavier shotgun/minigun/tommy hit FX |
 | **Cover / LoS** | **Done** | Walls/void block shots; soft cover near walls; BLOCKED FX |
+| **Ammo economy** | **Done** | Limited specials; ∞ pistol/melee; HUD counts; pawn refill |
 | **More missions (M6)** | **Done** | +4 jobs: still_not_guns, parking_tax, chop_shop_raid, rail_rats |
 | **Day/night + district light** | **Done** | ~6 min cycle; sky/overlay/neon/rain; district tints; HUD phase |
 | **Directional goons / walk bob** | **Done** | Iso screen flip; two-beat bob + lean; speed cadence; idle server facing |
@@ -128,6 +129,29 @@ Rep still gates **shop stock** and some content; map shows HOT / recommended rep
 - AI auto-fire prefers clear-LoS targets  
 - Guts tooltips mention cover + full LoS block  
 
+### Ammo (live)
+
+Server-authoritative; AI ignores ammo (always free fire). Players:
+
+| Weapon | DMG | RNG | CD | Ideal DPS | Ammo | Refill |
+|--------|-----|-----|-----|-----------|------|--------|
+| Lead Pipe | 12 | 1.2 | 0.55 | ~22 | ∞ | — |
+| Switchblade | 16 | 1.3 | 0.40 | ~40 | ∞ | — |
+| Cheap Pistol | 22 | 5.5 | 0.42 | ~52 | ∞ | — |
+| Uzi | 14 | 5.0 | 0.11 | ~127 | 90 (start 60) | $40 |
+| Shotgun | 48 | 3.4 | 0.85 | ~56 | 24 (start 16) | $55 |
+| Machine Gun | 20 | 6.0 | 0.10 | ~200 | 150 (start 100) | $70 |
+| Minigun | 16 | 7.0 | 0.055 | ~291 | 200 (start 120) | $120 |
+| Flamethrower | 28 | 3.8 | 0.18 | ~156 | 50 (start 35) | $90 |
+
+- Snapshot `unit.weaponAmmo` (own posse only); unlimited guns omit keys  
+- Consume 1 round per fire attempt (hit / miss / brick)  
+- Dry special → auto-swap to best fireable owned gun (pistol never dries)  
+- Pawn-O-Matic: **Ammo · [weapon]** rows top up to max (heat tax applies)  
+- Buy / loot / stash-withdraw grants starting ammo if new ownership  
+- HUD: count badges on icons (low / empty colors); detail line shows `cur/max` or ∞ + ideal DPS  
+- Smoke: asserts starter `weaponAmmo.tommy` and no `pistol` key  
+
 ### M6 extra missions (live)
 
 - Board order: starter 4 + `still_not_guns`, `parking_tax`, `chop_shop_raid`, `rail_rats`  
@@ -164,9 +188,9 @@ Rep still gates **shop stock** and some content; map shows HOT / recommended rep
 
 ## Next for overseer (priority)
 
-1. **M5 remainder** — ammo clarity / balance numbers note if combat still muddy  
-2. **M4 parties** after solo loop feels solid (scoped per realm)  
-3. **M7 content** — third instanced mission, rival variety, optional music  
+1. **M4 parties** — invite / leave / shared objective within a realm (solo loop is solid)  
+2. **M7 content** — third instanced mission, rival variety, optional music  
+3. Optional **M3** crash-pad stash UX polish  
 4. **Never** Mode B (Postgres/auth/k8s) unless human asks  
 
 ## Known bugs / polish debt
@@ -179,6 +203,7 @@ Rep still gates **shop stock** and some content; map shows HOT / recommended rep
 | Disconnect = wipe | Low | Mode A design |
 | Two instance templates | Design | warehouse + garage; more in M7 |
 | Goon sprites single art facing | Low | L/R iso flip + lean/bob; full 8-dir art sheets still optional later |
+| Chop smoke flake | Ops | Rare death mid-chop if aggro unlucky; re-run on clean server |
 
 ## Still deferred (Mode B)
 

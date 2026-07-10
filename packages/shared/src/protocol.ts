@@ -52,6 +52,11 @@ export interface UnitPublic {
   /** Present for your own posse units */
   ownedWeapons?: WeaponId[];
   ownedArmors?: ArmorId[];
+  /**
+   * Rounds remaining per limited weapon (own posse only).
+   * Melee + pistol are unlimited and omit keys; missing limited key = 0.
+   */
+  weaponAmmo?: Partial<Record<WeaponId, number>>;
   /** NPC spawn role (bartender, dancer, …) for client presentation */
   npcRole?: string;
   /**
@@ -345,6 +350,8 @@ export type ClientMessage =
   | { type: "shop.buyWeapon"; weaponId: WeaponId; unitId: string }
   | { type: "shop.buyArmor"; armorId: ArmorId; unitId: string }
   | { type: "shop.buyUpgrade"; upgradeId: UpgradeId; unitId: string }
+  /** Top up limited weapon ammo to max for selected crew member */
+  | { type: "shop.buyAmmo"; weaponId: WeaponId; unitId: string }
   | { type: "shop.close" }
   /** Crash Pad stash (safehouse only) */
   | { type: "stash.close" }

@@ -53,6 +53,17 @@ const phases = new Set(["dawn", "day", "dusk", "night"]);
 if (!phases.has(last.dayPhase)) {
   fail(`expected dayPhase dawn|day|dusk|night, got ${last.dayPhase}`);
 }
+// M5 ammo: starter tommy is limited; pistol is unlimited (no key / no dry)
+const meAmmo = last.units.find((u) => u.isPlayerLeader);
+if (!meAmmo?.weaponAmmo || typeof meAmmo.weaponAmmo.tommy !== "number") {
+  fail("expected starter tommy ammo on leader weaponAmmo.tommy");
+}
+if (meAmmo.weaponAmmo.tommy < 1 || meAmmo.weaponAmmo.tommy > 150) {
+  fail(`tommy ammo out of range: ${meAmmo.weaponAmmo.tommy}`);
+}
+if (meAmmo.weaponAmmo.pistol != null) {
+  fail("pistol should be unlimited (no weaponAmmo.pistol key)");
+}
 console.log(
   "tutorial start",
   last.tutorial?.step,
@@ -62,6 +73,8 @@ console.log(
   last.you.realmId,
   "dayPhase",
   last.dayPhase,
+  "tommyAmmo",
+  meAmmo.weaponAmmo.tommy,
 );
 
 /** @returns {Promise<object|undefined>} */

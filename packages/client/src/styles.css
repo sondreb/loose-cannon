@@ -1228,6 +1228,61 @@ img.photo {
   pointer-events: none;
 }
 
+/* Ammo count on weapon icons (Syndicate-style clarity) */
+.icon-ammo {
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: #1a1a22ee;
+  color: #e8e0d0;
+  font-size: 0.52rem;
+  font-weight: 800;
+  padding: 0 3px;
+  line-height: 1.25;
+  pointer-events: none;
+  border-radius: 0 0 3px 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.icon-ammo.low {
+  color: #ffcc44;
+  background: #3a2808ee;
+}
+
+.icon-ammo.empty {
+  color: #ff6666;
+  background: #3a1010ee;
+}
+
+.icon-ammo.inf {
+  color: #88ccaa;
+  font-size: 0.58rem;
+}
+
+.icon-btn.ammo-low img {
+  filter: brightness(1.05) saturate(1.1);
+}
+
+.icon-btn.ammo-empty img {
+  filter: grayscale(0.45) brightness(0.85);
+}
+
+.icon-btn.active.ammo-empty {
+  filter: drop-shadow(0 0 4px #ff444466);
+}
+
+.equip-detail .ammo-readout {
+  color: #f0c040;
+  font-weight: 700;
+}
+
+.shop-item.shop-ammo {
+  opacity: 0.95;
+  border-left: 3px solid #f0a03066;
+  margin-top: -0.15rem;
+  margin-bottom: 0.15rem;
+}
+
 /* Stat bars */
 .stat-bars {
   display: flex;

@@ -59,6 +59,7 @@ import {
   WEAPONS,
   createSkidrowMap,
   findGridPath,
+  isUnlimitedAmmo,
   pickVoiceLineId,
   type ArmorId,
   type ChatLine,
@@ -136,6 +137,8 @@ interface Unit {
   gender: Gender;
   ownedWeapons: Set<WeaponId>;
   ownedArmors: Set<ArmorId>;
+  /** Limited-weapon rounds remaining (players only; AI ignores ammo) */
+  weaponAmmo: Map<WeaponId, number>;
   aiWanderT: number;
   buildingId: string | null;
   respawnT?: number;
@@ -147,6 +150,59 @@ interface Unit {
   dancerKey?: string;
   /** Hostile AI fight style (shooter / rusher / coward) */
   aiRole?: AiCombatRole;
+}
+
+/** Seed ammo for limited guns the unit owns. */
+function ammoMapForWeapons(weapons: Iterable<WeaponId>): Map<WeaponId, number> {
+  const m = new Map<WeaponId, number>();
+  for (const id of weapons) {
+    const def = WEAPONS[id];
+    if (!def || isUnlimitedAmmo(def)) continue;
+    m.set(id, def.startingAmmo);
+  }
+  return m;
+}
+
+/** Ensure a newly acquired limited weapon has starting ammo (never lowers existing). */
+function grantWeaponAmmo(unit: Unit, weaponId: WeaponId, amount?: number): void {
+  const def = WEAPONS[weaponId];
+  if (!def || isUnlimitedAmmo(def) || def.maxAmmo == null) return;
+  const add = amount ?? def.startingAmmo;
+  const cur = unit.weaponAmmo.get(weaponId) ?? 0;
+  unit.weaponAmmo.set(weaponId, Math.min(def.maxAmmo, Math.max(cur, add)));
+}
+
+function stripLimitedAmmo(unit: Unit): void {
+  unit.weaponAmmo.clear();
+}
+
+/** True if unit can fire this weapon (unlimited or has rounds). */
+function canFireWeapon(unit: Unit, weaponId: WeaponId): boolean {
+  const def = WEAPONS[weaponId];
+  if (!def) return false;
+  if (isUnlimitedAmmo(def)) return true;
+  return (unit.weaponAmmo.get(weaponId) ?? 0) >= def.ammoPerShot;
+}
+
+/**
+ * If current gun is dry, equip best owned weapon that still has ammo
+ * (or unlimited pistol/melee). Returns false only if nothing is fireable.
+ */
+function ensureFireableWeapon(unit: Unit): boolean {
+  if (canFireWeapon(unit, unit.weapon)) return true;
+  let best: WeaponId | null = null;
+  let bestScore = -1;
+  for (const id of unit.ownedWeapons) {
+    if (!canFireWeapon(unit, id)) continue;
+    const score = weaponScore(id);
+    if (score > bestScore) {
+      bestScore = score;
+      best = id;
+    }
+  }
+  if (!best) return false;
+  unit.weapon = best;
+  return true;
 }
 
 function weaponScore(w: WeaponId): number {
@@ -407,6 +463,7 @@ export class GameWorld {
         gender,
         ownedWeapons: new Set(["pipe"]),
         ownedArmors: new Set(["none"]),
+        weaponAmmo: new Map(),
         aiWanderT: 0,
         buildingId: n.buildingId ?? null,
         lastHitByPosseId: null,
@@ -571,6 +628,7 @@ export class GameWorld {
         gender,
         ownedWeapons,
         ownedArmors: new Set(g.armors),
+        weaponAmmo: new Map(), // AI ignores ammo economy
         aiWanderT: Math.random() * 3,
         buildingId: null,
         lastHitByPosseId: null,
@@ -693,6 +751,7 @@ export class GameWorld {
       gender: "male",
       ownedWeapons: new Set(STARTER_WEAPONS),
       ownedArmors: new Set(["none"]),
+      weaponAmmo: ammoMapForWeapons(STARTER_WEAPONS),
       aiWanderT: 0,
       buildingId: null,
       lastHitByPosseId: null,
@@ -727,6 +786,7 @@ export class GameWorld {
       gender: starter.gender,
       ownedWeapons: new Set(STARTER_WEAPONS),
       ownedArmors: new Set(["none"]),
+      weaponAmmo: ammoMapForWeapons(STARTER_WEAPONS),
       aiWanderT: 0,
       buildingId: null,
       lastHitByPosseId: null,
@@ -826,6 +886,9 @@ export class GameWorld {
         break;
       case "shop.buyUpgrade":
         this.cmdBuyUpgrade(session, posse, msg.upgradeId, msg.unitId);
+        break;
+      case "shop.buyAmmo":
+        this.cmdBuyAmmo(session, posse, msg.weaponId, msg.unitId);
         break;
       case "shop.close":
         posse.shop = null;
@@ -1636,19 +1699,48 @@ export class GameWorld {
     if (shooter.incapacitated) return;
     // No lethal combat in safe downtown
     if (this.unitInSafeZone(shooter) || this.unitInSafeZone(target)) return;
+
+    const isAi =
+      shooter.kind === "ai_boss" || shooter.kind === "ai_goon" || shooter.kind === "npc";
+
+    // Player ammo: specials dry; auto-fall back to pistol/melee so auto-fire never stalls
+    if (!isAi) {
+      const was = shooter.weapon;
+      if (!ensureFireableWeapon(shooter)) {
+        shooter.fireCd = 0.28;
+        if (session) {
+          this.log(
+            session,
+            `${shooter.name}: OUT OF AMMO — all limited guns dry. Refill at Pawn-O-Matic.`,
+          );
+        }
+        return;
+      }
+      if (session && shooter.weapon !== was) {
+        this.log(
+          session,
+          `${shooter.name} swaps to ${WEAPONS[shooter.weapon].name} (dry ${WEAPONS[was].name}).`,
+        );
+      }
+    }
+
     const w = WEAPONS[shooter.weapon];
     const d = dist(shooter.x, shooter.y, target.x, target.y);
     if (d > w.range + 0.55) return;
 
-    // Speed shortens fire cooldown (runners re-engage faster)
-    shooter.fireCd = w.fireCooldown * fireCooldownFactor(shooter.stats.speed);
-    shooter.facing = facingFromDelta(target.x - shooter.x, target.y - shooter.y);
-
     const weapon = shooter.weapon;
     const isMelee = weapon === "pipe" || weapon === "switchblade";
     const isFlame = weapon === "flamethrower";
-    const isAi =
-      shooter.kind === "ai_boss" || shooter.kind === "ai_goon" || shooter.kind === "npc";
+
+    // Consume a round on every fire attempt (hit, miss, or brick)
+    if (!isAi && !isUnlimitedAmmo(w)) {
+      const have = shooter.weaponAmmo.get(weapon) ?? 0;
+      shooter.weaponAmmo.set(weapon, Math.max(0, have - w.ammoPerShot));
+    }
+
+    // Speed shortens fire cooldown (runners re-engage faster)
+    shooter.fireCd = w.fireCooldown * fireCooldownFactor(shooter.stats.speed);
+    shooter.facing = facingFromDelta(target.x - shooter.x, target.y - shooter.y);
 
     // True LoS: walls/void eat the round (melee only needs clear path when not adjacent)
     const needLos = !isMelee || d > 1.15;
@@ -2149,6 +2241,7 @@ export class GameWorld {
       u.ownedArmors = new Set(["none"]);
       u.weapon = "pipe";
       u.armor = "none";
+      stripLimitedAmmo(u);
     }
     victim.fallenWeapons.clear();
     victim.fallenArmors.clear();
@@ -2188,7 +2281,11 @@ export class GameWorld {
     // Give carried loot to killer members; equip best on leader
     const living = this.members(killer);
     for (const m of living) {
-      for (const w of weapons) m.ownedWeapons.add(w);
+      for (const w of weapons) {
+        const had = m.ownedWeapons.has(w);
+        m.ownedWeapons.add(w);
+        if (!had) grantWeaponAmmo(m, w);
+      }
       for (const a of armors) m.ownedArmors.add(a);
     }
     const leader = this.leader(killer);
@@ -2701,6 +2798,7 @@ export class GameWorld {
       const unit = this.leader(posse);
       if (unit && Math.random() < 0.4 && !unit.ownedWeapons.has("uzi")) {
         unit.ownedWeapons.add("uzi");
+        grantWeaponAmmo(unit, "uzi");
         this.log(session, "Crate says 'farm equipment'. Contains an Uzi. Farming is evolving.");
       } else {
         const cash = 25 + Math.floor(Math.random() * 50);
@@ -2926,6 +3024,7 @@ export class GameWorld {
     }
     posse.stashOpen = true;
     u.ownedWeapons.add(weaponId);
+    grantWeaponAmmo(u, weaponId);
     if (u.weapon === "pipe" || weaponScore(weaponId) > weaponScore(u.weapon)) {
       u.weapon = weaponId;
     }
@@ -3689,6 +3788,7 @@ export class GameWorld {
         gender: "male",
         ownedWeapons: new Set(["pipe", "pistol", "switchblade", "shotgun"]),
         ownedArmors: new Set(["none", "leather"]),
+        weaponAmmo: new Map(), // AI ignores ammo economy
         aiWanderT: 0.5,
         buildingId: layer,
         lastHitByPosseId: null,
@@ -4132,6 +4232,7 @@ export class GameWorld {
       gender: profile.gender,
       ownedWeapons,
       ownedArmors: new Set(["none"]),
+      weaponAmmo: ammoMapForWeapons(ownedWeapons),
       aiWanderT: 0,
       buildingId: posse.insideBuildingId,
       lastHitByPosseId: null,
@@ -4172,6 +4273,7 @@ export class GameWorld {
     npc.armor = npc.armor === "none" ? "none" : npc.armor;
     npc.ownedWeapons = new Set(STARTER_WEAPONS);
     npc.ownedArmors = new Set(["none", ...(npc.armor !== "none" ? [npc.armor] : [])]);
+    npc.weaponAmmo = ammoMapForWeapons(npc.ownedWeapons);
     npc.buildingId = posse.insideBuildingId;
     npc.moveMode = "idle";
     npc.dirX = 0;
@@ -4253,7 +4355,54 @@ export class GameWorld {
     if (price > 0) posse.cash -= price;
     unit.ownedWeapons.add(weaponId);
     unit.weapon = weaponId;
-    this.log(session, `Bought ${def.name} for ${unit.name} ($${price}).`);
+    grantWeaponAmmo(unit, weaponId);
+    const ammoNote =
+      !isUnlimitedAmmo(def) && def.maxAmmo != null
+        ? ` · ${unit.weaponAmmo.get(weaponId) ?? 0}/${def.maxAmmo} rounds`
+        : "";
+    this.log(session, `Bought ${def.name} for ${unit.name} ($${price})${ammoNote}.`);
+  }
+
+  private cmdBuyAmmo(
+    session: CharacterSession,
+    posse: Posse,
+    weaponId: WeaponId,
+    unitId: string,
+  ): void {
+    if (!posse.shop) {
+      this.log(session, "You're not in the shop.");
+      return;
+    }
+    const unit = this.resolveShopUnit(posse, unitId);
+    if (!unit) {
+      this.log(session, "No crew member to buy for.");
+      return;
+    }
+    const def = WEAPONS[weaponId];
+    if (!def || isUnlimitedAmmo(def) || def.maxAmmo == null) {
+      this.log(session, `${def?.name ?? "That iron"} never needs a refill.`);
+      return;
+    }
+    if (!unit.ownedWeapons.has(weaponId)) {
+      this.log(session, `${unit.name} doesn't own a ${def.name}.`);
+      return;
+    }
+    const cur = unit.weaponAmmo.get(weaponId) ?? 0;
+    if (cur >= def.maxAmmo) {
+      this.log(session, `${unit.name}'s ${def.name} is already topped off (${cur}/${def.maxAmmo}).`);
+      return;
+    }
+    const price = this.effectiveShopPrice(def.refillPrice, posse);
+    if (price > 0 && posse.cash < price) {
+      this.log(session, `Not enough cash for ammo (need $${price}).`);
+      return;
+    }
+    if (price > 0) posse.cash -= price;
+    unit.weaponAmmo.set(weaponId, def.maxAmmo);
+    this.log(
+      session,
+      `Refilled ${def.name} for ${unit.name} → ${def.maxAmmo}/${def.maxAmmo} (−$${price}).`,
+    );
   }
 
   private cmdBuyArmor(session: CharacterSession, posse: Posse, armorId: ArmorId, unitId: string): void {
@@ -4850,6 +4999,11 @@ export class GameWorld {
       if (u.posseId === posse.id) {
         pub.ownedWeapons = [...u.ownedWeapons];
         pub.ownedArmors = [...u.ownedArmors];
+        if (u.weaponAmmo.size > 0) {
+          const ammo: Partial<Record<WeaponId, number>> = {};
+          for (const [wid, n] of u.weaponAmmo) ammo[wid] = n;
+          pub.weaponAmmo = ammo;
+        }
       }
       units.push(pub);
     }

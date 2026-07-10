@@ -19,6 +19,19 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-11 — cycle 16 (M5 ammo clarity / balance pass)
+- Focus: Ammo economy + HUD clarity + balance numbers in STATUS
+- Done:
+  - Shared `WeaponDef`: `ammoPerShot` / `maxAmmo` / `startingAmmo` / `refillPrice`; helpers `isUnlimitedAmmo`, `formatWeaponAmmo`, `weaponIdealDps`, `startingAmmoMap`
+  - Protocol: `unit.weaponAmmo` (own posse); `shop.buyAmmo`
+  - Server: per-unit ammo map; consume on fire; dry auto-swap to best fireable gun; AI unlimited; buy/loot/stash grant; pawn full refill (heat tax); wipe strips ammo
+  - Client: ammo badges (low/empty), detail DPS + ammo readout, shop Ammo rows, dossier ammo line
+  - Balance table: ∞ pistol/melee; limited uzi/shotgun/tommy(100/150)/minigun/flame; documented in STATUS
+  - Smoke: asserts starter tommy ammo + no pistol key
+- Verify: `npm run build` OK; `npm run smoke` → SMOKE_OK (clean server; prior polluted runs had pathing/chop flakes)
+- Next: **M4 parties** (invite/leave/shared objective within a realm)
+- Blocked: none
+
 ### 2026-07-11 — cycle 15 (M6 HUD/event-log + mobile touch polish)
 - Focus: Event-log / HUD readability + mobile move/fire reliability
 - Done:
