@@ -2,7 +2,13 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Loose Cannon</title>
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
@@ -26,8 +32,9 @@
           <button id="joinBtn" type="button" class="login-cta">Hit the Streets</button>
           <p id="loginError" class="error"></p>
           <div class="login-hints glass-inset">
-            <div><kbd>WASD</kbd> move · <kbd>RMB</kbd> attack-move</div>
-            <div><kbd>E</kbd> interact · <kbd>1–4</kbd> crew · <kbd>5–0</kbd> weapons</div>
+            <div class="hint-desktop"><kbd>WASD</kbd> move · <kbd>RMB</kbd> attack-move</div>
+            <div class="hint-desktop"><kbd>E</kbd> interact · <kbd>1–4</kbd> crew · <kbd>5–0</kbd> weapons</div>
+            <div class="hint-mobile">Tap to move · long-press to attack · use bottom buttons</div>
           </div>
         </div>
       </div>
@@ -36,8 +43,13 @@
         <canvas id="canvas"></canvas>
 
         <aside id="possePanel">
-          <div class="panel-title">POSSE</div>
-          <div id="cashRep"></div>
+          <div class="posse-panel-head">
+            <div class="panel-title">POSSE</div>
+            <div id="cashRep"></div>
+            <button type="button" id="possePanelToggle" class="tiny-btn mobile-only" aria-label="Toggle crew panel">
+              CREW
+            </button>
+          </div>
           <div id="posseList"></div>
 
           <div id="gearEditor" class="hidden">
@@ -47,13 +59,13 @@
             </div>
             <div id="statsView"></div>
 
-            <div class="equip-section">
+            <div class="equip-section desktop-gear">
               <div class="equip-label">WEAPONS <span class="hint-inline">click to equip</span></div>
               <div id="weaponBar" class="icon-bar" role="toolbar" aria-label="Weapons"></div>
               <div id="weaponDetail" class="equip-detail"></div>
             </div>
 
-            <div class="equip-section">
+            <div class="equip-section desktop-gear">
               <div class="equip-label">ARMOR</div>
               <div id="armorBar" class="icon-bar" role="toolbar" aria-label="Armor"></div>
               <div id="armorDetail" class="equip-detail"></div>
@@ -88,10 +100,12 @@
           </div>
         </div>
 
-        <div id="objective">SKIDROW — walk, talk, buy, survive</div>
-        <div id="actionBanner">
-          <span id="actionStatus">IDLE</span>
-          <span id="actionDetail" class="action-detail"></span>
+        <div id="topStatusBar">
+          <div id="actionBanner">
+            <span id="actionStatus">IDLE</span>
+            <span id="actionDetail" class="action-detail"></span>
+          </div>
+          <div id="objective">SKIDROW — walk, talk, buy, survive</div>
         </div>
 
         <div id="minimap"></div>
@@ -99,11 +113,19 @@
         <div id="eventLog"></div>
 
         <div id="chatBox">
-          <div id="chatLog"></div>
-          <form id="chatForm">
-            <input id="chatInput" maxlength="160" placeholder="Proximity chat…" autocomplete="off" />
-            <button type="submit">Say</button>
-          </form>
+          <div class="chat-head">
+            <span class="chat-title">CHAT</span>
+            <button type="button" id="chatToggle" class="tiny-btn" aria-expanded="true" aria-controls="chatBody">
+              Hide
+            </button>
+          </div>
+          <div id="chatBody">
+            <div id="chatLog"></div>
+            <form id="chatForm">
+              <input id="chatInput" maxlength="160" placeholder="Proximity chat…" autocomplete="off" />
+              <button type="submit">Say</button>
+            </form>
+          </div>
         </div>
 
         <div id="respawnOverlay" class="hidden">
@@ -115,8 +137,30 @@
 
         <div id="notifyToasts" aria-live="polite"></div>
 
-        <div id="help">
+        <div id="help" class="help-desktop">
           WASD move · RMB attack-move · E interact · 1-4 crew · 5-0/- weapons
+        </div>
+
+        <!-- Touch / phone controls -->
+        <div id="mobileControls" aria-label="Touch controls">
+          <button type="button" id="mobChat" class="mob-btn">
+            <span class="mob-ico">💬</span>
+            <span class="mob-lab">Chat</span>
+          </button>
+          <button type="button" id="mobInteract" class="mob-btn">
+            <span class="mob-ico">E</span>
+            <span class="mob-lab">Use</span>
+          </button>
+          <button type="button" id="mobAttack" class="mob-btn attack" aria-pressed="false">
+            <span class="mob-ico">⚔</span>
+            <span class="mob-lab">Attack</span>
+          </button>
+          <button type="button" id="mobStop" class="mob-btn">
+            <span class="mob-ico">■</span>
+            <span class="mob-lab">Stop</span>
+          </button>
+          <button type="button" id="mobZoomIn" class="mob-btn slim">+</button>
+          <button type="button" id="mobZoomOut" class="mob-btn slim">−</button>
         </div>
 
         <div id="dialogueModal" class="modal hidden">

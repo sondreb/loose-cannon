@@ -76,6 +76,17 @@ const shopClose = $("shopClose");
 const respawnOverlay = $("respawnOverlay");
 const respawnCount = $("respawnCount");
 const notifyToasts = $("notifyToasts");
+const mobileControls = document.getElementById("mobileControls") as HTMLElement | null;
+const mobInteract = document.getElementById("mobInteract") as HTMLButtonElement | null;
+const mobAttack = document.getElementById("mobAttack") as HTMLButtonElement | null;
+const mobStop = document.getElementById("mobStop") as HTMLButtonElement | null;
+const mobZoomIn = document.getElementById("mobZoomIn") as HTMLButtonElement | null;
+const mobZoomOut = document.getElementById("mobZoomOut") as HTMLButtonElement | null;
+const possePanel = document.getElementById("possePanel") as HTMLElement | null;
+const possePanelToggle = document.getElementById("possePanelToggle") as HTMLButtonElement | null;
+const chatBox = document.getElementById("chatBox") as HTMLElement | null;
+const chatToggle = document.getElementById("chatToggle") as HTMLButtonElement | null;
+const mobChat = document.getElementById("mobChat") as HTMLButtonElement | null;
 
 let snap: WorldSnapshot | null = null;
 let myName = "";
@@ -97,6 +108,149 @@ const DIR_RESEND_MS = 50;
 
 /** After click-to-interact: walk here then send intent.interact */
 let pendingInteract: { x: number; y: number } | null = null;
+
+/** Mobile: next map tap is attack-move instead of walk */
+let mobileAttackMode = false;
+let touchStart: { x: number; y: number; t: number; id: number } | null = null;
+const LONG_PRESS_MS = 420;
+const TAP_SLOP_PX = 18;
+
+function isCoarsePointer(): boolean {
+  return window.matchMedia("(pointer: coarse), (max-width: 900px)").matches;
+}
+
+function isMobileLayout(): boolean {
+  return window.matchMedia("(max-width: 900px)").matches;
+}
+
+function setChatCollapsed(collapsed: boolean): void {
+  if (!chatBox) return;
+  chatBox.classList.toggle("collapsed", collapsed);
+  if (chatToggle) {
+    chatToggle.textContent = collapsed ? "Show" : "Hide";
+    chatToggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  }
+  if (mobChat) {
+    mobChat.classList.toggle("active", !collapsed);
+    const lab = mobChat.querySelector(".mob-lab");
+    if (lab) lab.textContent = collapsed ? "Chat" : "Hide";
+  }
+}
+
+function toggleChat(): void {
+  if (!chatBox) return;
+  setChatCollapsed(!chatBox.classList.contains("collapsed"));
+  if (!chatBox.classList.contains("collapsed")) {
+    // focus input when opening
+    window.setTimeout(() => chatInput.focus(), 50);
+  } else {
+    chatInput.blur();
+  }
+}
+
+function setMobileAttackMode(on: boolean): void {
+  mobileAttackMode = on;
+  if (mobAttack) {
+    mobAttack.setAttribute("aria-pressed", on ? "true" : "false");
+    mobAttack.classList.toggle("active", on);
+  }
+}
+
+function fireAttackAtClient(clientX: number, clientY: number): void {
+  if (!snap || !socket || !view) return;
+  if (snap.you.respawnIn != null && snap.you.respawnIn > 0) return;
+  if (snap.dialogue || snap.shop) return;
+  pendingInteract = null;
+  const w = view.screenToWorld(clientX, clientY);
+  let best: { id: string; d: number } | null = null;
+  for (const u of snap.units) {
+    if (!u.alive || u.posseId === snap.you.posseId) continue;
+    const d = Math.hypot(u.x - w.x, u.y - w.y);
+    if (d < 3.2 && (!best || d < best.d)) best = { id: u.id, d };
+  }
+  const s = snap;
+  const shooter =
+    s.units.find((u) => u.id === s.you.selectedUnitId) ??
+    s.units.find((u) => u.posseId === s.you.posseId && u.alive);
+  const from = view.leaderWorldPos();
+  const weapon = (shooter?.weapon ?? "pistol") as WeaponId;
+  if (best) {
+    const tgt = s.units.find((u) => u.id === best!.id);
+    if (from && tgt) {
+      view.playLocalShot(from.x, from.y, tgt.x, tgt.y, weapon);
+      weaponFireSfx(weapon);
+    }
+    socket.send({ type: "intent.fire", targetId: best.id });
+  } else {
+    if (from) {
+      view.playLocalShot(from.x, from.y, w.x, w.y, weapon);
+      weaponFireSfx(weapon);
+    }
+    socket.send({ type: "intent.fire", x: w.x, y: w.y });
+  }
+  setMobileAttackMode(false);
+}
+
+function handlePrimaryPointer(clientX: number, clientY: number, asAttack: boolean): void {
+  const s = snap;
+  if (!s || !socket || !view) return;
+  if (s.you.respawnIn != null && s.you.respawnIn > 0) return;
+  if (s.dialogue || s.shop) return;
+
+  if (asAttack || mobileAttackMode) {
+    fireAttackAtClient(clientX, clientY);
+    return;
+  }
+
+  const unitId = view.pickUnit(clientX, clientY);
+  if (unitId) {
+    const u = s.units.find((x) => x.id === unitId);
+    if (u && u.posseId === s.you.posseId) {
+      pendingInteract = null;
+      socket.send({ type: "intent.select", unitId });
+      return;
+    }
+    if (u && u.kind === "npc") {
+      clickInteractAt(u.x, u.y);
+      return;
+    }
+    if (u && u.posseId !== s.you.posseId) {
+      // Tap enemy on mobile = attack them
+      if (isCoarsePointer()) {
+        fireAttackAtClient(clientX, clientY);
+      }
+      return;
+    }
+  }
+
+  const building = view.pickBuilding(clientX, clientY);
+  if (building) {
+    if (s.you.insideBuildingId) {
+      const ex = building.exitX ?? building.doorX;
+      const ey = building.exitY ?? building.doorY;
+      clickInteractAt(ex + 0.5, ey + 0.5);
+    } else {
+      clickInteractAt(building.doorX + 0.5, building.doorY + 0.5);
+    }
+    return;
+  }
+
+  const prop = view.pickProp(clientX, clientY);
+  if (prop) {
+    clickInteractAt(prop.x, prop.y);
+    return;
+  }
+
+  pendingInteract = null;
+  keys.up = keys.down = keys.left = keys.right = false;
+  if (keyMoving) {
+    keyMoving = false;
+    socket.send({ type: "intent.dir", dx: 0, dy: 0 });
+  }
+  const w = view.screenToWorld(clientX, clientY);
+  view.predictClickMove(w.x, w.y);
+  socket.send({ type: "intent.move", x: w.x, y: w.y });
+}
 
 function pushEvent(text: string): void {
   const d = document.createElement("div");
@@ -751,24 +905,38 @@ function updateActionBanner(s: WorldSnapshot): void {
 }
 
 function updateZoneObjective(s: WorldSnapshot): void {
+  const compact = isMobileLayout();
   if (s.you.insideBuildingId) {
     const b = s.buildings.find((bb) => bb.id === s.you.insideBuildingId);
     objective.textContent = b
-      ? `INSIDE: ${b.name.toUpperCase()} — E to exit near door`
+      ? compact
+        ? `INSIDE · ${b.name.toUpperCase()}`
+        : `INSIDE: ${b.name.toUpperCase()} — E to exit near door`
       : "INSIDE";
     objective.classList.remove("zone-safe", "zone-war");
     objective.classList.add("zone-safe");
     return;
   }
   if (s.you.inSafeZone) {
-    objective.textContent = "SAFE DOWNTOWN (PvE) — recruit · shop · no murders";
+    objective.textContent = compact
+      ? "SAFE DOWNTOWN (PvE)"
+      : "SAFE DOWNTOWN (PvE) — recruit · shop · no murders";
     objective.classList.remove("zone-war");
     objective.classList.add("zone-safe");
   } else {
-    objective.textContent = "WAR ZONE (PvP) — rival gangs · RMB attack · survive";
+    objective.textContent = compact
+      ? "WAR ZONE (PvP)"
+      : "WAR ZONE (PvP) — rival gangs · RMB attack · survive";
     objective.classList.remove("zone-safe");
     objective.classList.add("zone-war");
   }
+}
+
+/** Keep status bar just under the mobile posse strip (height changes when collapsed). */
+function syncMobileHudTop(): void {
+  if (!possePanel) return;
+  const h = possePanel.getBoundingClientRect().height;
+  document.documentElement.style.setProperty("--mobile-hud-top", `${Math.ceil(h)}px`);
 }
 
 function onSnapshot(s: WorldSnapshot): void {
@@ -1001,13 +1169,21 @@ async function startGame(): Promise<void> {
 
   socket.connect(myName);
   bindInput();
+  // Phones: chat starts hidden so it never covers the map / zone pill
+  if (isMobileLayout()) setChatCollapsed(true);
+  syncMobileHudTop();
+  if (possePanel && typeof ResizeObserver !== "undefined") {
+    const ro = new ResizeObserver(() => syncMobileHudTop());
+    ro.observe(possePanel);
+  }
+  window.addEventListener("resize", () => syncMobileHudTop());
 }
 
 function bindInput(): void {
   canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
   canvas.addEventListener("mousemove", (e) => {
-    if (!view || !snap) return;
+    if (!view || !snap || isCoarsePointer()) return;
     const cursor = view.updateHover(e.clientX, e.clientY);
     canvas.style.cursor = cursor;
   });
@@ -1024,98 +1200,126 @@ function bindInput(): void {
     { passive: false },
   );
 
+  // Mouse (desktop) — skip synthetic mouse events after touch
+  let lastTouchAt = 0;
   canvas.addEventListener("mousedown", (e) => {
-    const s = snap;
-    if (!s) return;
-    if (s.you.respawnIn != null && s.you.respawnIn > 0) return;
-    if (s.dialogue || s.shop) return;
+    if (performance.now() - lastTouchAt < 500) return;
     if (e.button === 0) {
-      // LMB: select posse / talk NPC / enter building / search prop / move
-      const unitId = view.pickUnit(e.clientX, e.clientY);
-      if (unitId) {
-        const u = s.units.find((x) => x.id === unitId);
-        if (u && u.posseId === s.you.posseId) {
-          pendingInteract = null;
-          socket.send({ type: "intent.select", unitId });
-          return;
-        }
-        if (u && u.kind === "npc") {
-          // Click NPC → walk over and talk/recruit
-          clickInteractAt(u.x, u.y);
-          return;
-        }
-        // Click enemy: don't LMB-attack (RMB does that); just ignore or face them
-        if (u && u.posseId !== s.you.posseId) {
-          return;
-        }
-      }
-
-      const building = view.pickBuilding(e.clientX, e.clientY);
-      if (building) {
-        // Outdoors → walk to entrance; indoors → walk to exit
-        if (s.you.insideBuildingId) {
-          const ex = building.exitX ?? building.doorX;
-          const ey = building.exitY ?? building.doorY;
-          clickInteractAt(ex + 0.5, ey + 0.5);
-        } else {
-          clickInteractAt(building.doorX + 0.5, building.doorY + 0.5);
-        }
-        return;
-      }
-
-      const prop = view.pickProp(e.clientX, e.clientY);
-      if (prop) {
-        clickInteractAt(prop.x, prop.y);
-        return;
-      }
-
-      // Ground click-to-move: predict instantly + blue marker
-      pendingInteract = null;
-      keys.up = keys.down = keys.left = keys.right = false;
-      if (keyMoving) {
-        keyMoving = false;
-        socket.send({ type: "intent.dir", dx: 0, dy: 0 });
-      }
-      const w = view.screenToWorld(e.clientX, e.clientY);
-      view.predictClickMove(w.x, w.y);
-      socket.send({ type: "intent.move", x: w.x, y: w.y });
+      handlePrimaryPointer(e.clientX, e.clientY, false);
     } else if (e.button === 2) {
-      pendingInteract = null;
-      // RMB: attack-move — pick enemy with generous radius, or fire at ground point
-      const w = view.screenToWorld(e.clientX, e.clientY);
-      let best: { id: string; d: number } | null = null;
-      for (const u of s.units) {
-        if (!u.alive || u.posseId === s.you.posseId) continue;
-        const d = Math.hypot(u.x - w.x, u.y - w.y);
-        if (d < 2.8 && (!best || d < best.d)) best = { id: u.id, d };
-      }
-      const shooter =
-        s.units.find((u) => u.id === s.you.selectedUnitId) ??
-        s.units.find((u) => u.posseId === s.you.posseId && u.alive);
-      const from = view.leaderWorldPos();
-      const weapon = (shooter?.weapon ?? "pistol") as WeaponId;
-      // Instant local muzzle so combat reads immediately; server streams ongoing FX
-      if (best) {
-        const tgt = s.units.find((u) => u.id === best!.id);
-        if (from && tgt) {
-          view.playLocalShot(from.x, from.y, tgt.x, tgt.y, weapon);
-          weaponFireSfx(weapon);
-        }
-        socket.send({ type: "intent.fire", targetId: best.id });
-      } else if (from) {
-        view.playLocalShot(from.x, from.y, w.x, w.y, weapon);
-        weaponFireSfx(weapon);
-        socket.send({ type: "intent.fire", x: w.x, y: w.y });
-      } else {
-        socket.send({ type: "intent.fire", x: w.x, y: w.y });
-      }
+      fireAttackAtClient(e.clientX, e.clientY);
     }
+  });
+
+  // Touch: tap = move / interact, long-press = attack, attack-mode button sticky
+  canvas.addEventListener(
+    "touchstart",
+    (e) => {
+      lastTouchAt = performance.now();
+      if (e.touches.length !== 1) return;
+      const t = e.touches[0]!;
+      touchStart = { x: t.clientX, y: t.clientY, t: performance.now(), id: t.identifier };
+      if (view) view.updateHover(t.clientX, t.clientY);
+    },
+    { passive: true },
+  );
+
+  canvas.addEventListener(
+    "touchmove",
+    (e) => {
+      if (!touchStart || e.touches.length !== 1) return;
+      const t = e.touches[0]!;
+      const dx = t.clientX - touchStart.x;
+      const dy = t.clientY - touchStart.y;
+      if (Math.hypot(dx, dy) > TAP_SLOP_PX * 2) {
+        // Drag cancel long-press intent; still allow release as move if short drag
+      }
+    },
+    { passive: true },
+  );
+
+  canvas.addEventListener(
+    "touchend",
+    (e) => {
+      if (!touchStart) return;
+      const t =
+        Array.from(e.changedTouches).find((c) => c.identifier === touchStart!.id) ??
+        e.changedTouches[0];
+      if (!t) {
+        touchStart = null;
+        return;
+      }
+      e.preventDefault();
+      const dt = performance.now() - touchStart.t;
+      const dist = Math.hypot(t.clientX - touchStart.x, t.clientY - touchStart.y);
+      const longPress = dt >= LONG_PRESS_MS && dist < TAP_SLOP_PX * 1.5;
+      if (dist < TAP_SLOP_PX * 2.5) {
+        handlePrimaryPointer(t.clientX, t.clientY, longPress);
+      }
+      touchStart = null;
+    },
+    { passive: false },
+  );
+
+  canvas.addEventListener("touchcancel", () => {
+    touchStart = null;
+  });
+
+  // Mobile chrome buttons
+  mobInteract?.addEventListener("click", (e) => {
+    e.preventDefault();
+    fireInteract();
+  });
+  mobAttack?.addEventListener("click", (e) => {
+    e.preventDefault();
+    setMobileAttackMode(!mobileAttackMode);
+    if (mobileAttackMode) pushEvent("Attack mode — tap a target or the ground.");
+  });
+  mobStop?.addEventListener("click", (e) => {
+    e.preventDefault();
+    pendingInteract = null;
+    keys.up = keys.down = keys.left = keys.right = false;
+    keyMoving = false;
+    setMobileAttackMode(false);
+    view?.clearLocalPrediction();
+    socket?.send({ type: "intent.dir", dx: 0, dy: 0 });
+    socket?.send({ type: "intent.stop" });
+  });
+  mobZoomIn?.addEventListener("click", (e) => {
+    e.preventDefault();
+    view?.adjustZoom(0.12);
+  });
+  mobZoomOut?.addEventListener("click", (e) => {
+    e.preventDefault();
+    view?.adjustZoom(-0.12);
+  });
+  possePanelToggle?.addEventListener("click", (e) => {
+    e.preventDefault();
+    possePanel?.classList.toggle("collapsed");
+    // next frame after layout
+    requestAnimationFrame(() => syncMobileHudTop());
+  });
+
+  chatToggle?.addEventListener("click", (e) => {
+    e.preventDefault();
+    toggleChat();
+  });
+  mobChat?.addEventListener("click", (e) => {
+    e.preventDefault();
+    toggleChat();
+  });
+
+  // Keep chat collapsed when rotating into mobile layout
+  window.matchMedia("(max-width: 900px)").addEventListener("change", (ev) => {
+    if (ev.matches) setChatCollapsed(true);
+    else setChatCollapsed(false);
   });
 
   // Browsers block audio until a gesture — unlock often so combat SFX always work
   const unlockAudio = () => sfx.unlock();
   window.addEventListener("pointerdown", unlockAudio);
   window.addEventListener("keydown", unlockAudio);
+  window.addEventListener("touchstart", unlockAudio, { passive: true });
 
   window.addEventListener("keydown", (e) => {
     if (chatFocused) {
