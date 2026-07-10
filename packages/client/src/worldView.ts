@@ -262,23 +262,40 @@ export class WorldView {
   /** Instant click-to-move prediction toward world point */
   predictClickMove(wx: number, wy: number): void {
     if (!this.lastSnap || !this.localPosseId) return;
-    let i = 0;
-    for (const u of this.lastSnap.units) {
-      if (u.posseId !== this.localPosseId || !u.alive) continue;
+    // Boss to center; bodyguards predict circle around him (matches server formation)
+    const mine = this.lastSnap.units.filter(
+      (u) => u.posseId === this.localPosseId && u.alive,
+    );
+    const boss =
+      mine.find((u) => u.isPlayerLeader || u.kind === "player") ?? mine[0];
+    const goons = mine.filter((u) => u !== boss);
+    const rad =
+      goons.length <= 1 ? 0.95 : goons.length === 2 ? 1.05 : goons.length === 3 ? 1.15 : 1.28;
+
+    if (boss) {
+      const v = this.visuals.get(boss.id);
+      if (v) {
+        v.tx = wx;
+        v.ty = wy;
+        v.predicted = true;
+        v.predMode = "click";
+        v.predDirX = 0;
+        v.predDirY = 0;
+        v.moving = true;
+      }
+    }
+    goons.forEach((u, i) => {
       const v = this.visuals.get(u.id);
-      if (!v) continue;
-      const isLead = u.isPlayerLeader || u.kind === "player";
-      const ox = (i % 2 === 0 ? -0.45 : 0.45) * (isLead ? 0 : 1);
-      const oy = (i >= 2 ? 0.45 : -0.15) * (isLead ? 0 : 1);
-      v.tx = wx + ox;
-      v.ty = wy + oy;
+      if (!v) return;
+      const ang = -Math.PI / 2 + (i / Math.max(1, goons.length)) * Math.PI * 2;
+      v.tx = wx + Math.cos(ang) * rad;
+      v.ty = wy + Math.sin(ang) * rad;
       v.predicted = true;
       v.predMode = "click";
       v.predDirX = 0;
       v.predDirY = 0;
       v.moving = true;
-      i++;
-    }
+    });
     this.moveMarker = { x: wx, y: wy, life: 2.5 };
   }
 

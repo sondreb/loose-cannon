@@ -352,11 +352,14 @@ export class GameWorld {
       });
     };
 
+    // Boss dead-center; goons on a protective circle
     make(leaderId, `${name} Boss`, "ai_boss", x, y, threat);
     const g1 = `${id}_g1`;
     const g2 = `${id}_g2`;
-    make(g1, randomGoonName(), "ai_goon", x + 0.8, y + 0.4, Math.max(1, threat - 1));
-    make(g2, randomGoonName(), "ai_goon", x - 0.6, y + 0.5, Math.max(1, threat - 1));
+    const s0 = this.circleSlot(x, y, 0, 2, 1.05);
+    const s1 = this.circleSlot(x, y, 1, 2, 1.05);
+    make(g1, randomGoonName(), "ai_goon", s0.x, s0.y, Math.max(1, threat - 1));
+    make(g2, randomGoonName(), "ai_goon", s1.x, s1.y, Math.max(1, threat - 1));
     memberIds.push(g1, g2);
     this.posses.get(id)!.memberIds = memberIds;
   }
@@ -441,16 +444,17 @@ export class GameWorld {
       lastHitByPosseId: null,
     });
 
+    const starterSlot = this.circleSlot(spawn.x, spawn.y, 0, 1, 1.0);
     this.units.set(goon1, {
       id: goon1,
       name: randomGoonName(),
       kind: "goon",
       ownerId: characterId,
       posseId,
-      x: spawn.x - 0.8,
-      y: spawn.y + 0.4,
-      tx: spawn.x - 0.8,
-      ty: spawn.y + 0.4,
+      x: starterSlot.x,
+      y: starterSlot.y,
+      tx: starterSlot.x,
+      ty: starterSlot.y,
       dirX: 0,
       dirY: 0,
       moveMode: "idle",
@@ -575,6 +579,182 @@ export class GameWorld {
     return posse.memberIds.map((id) => this.units.get(id)).filter((u): u is Unit => !!u && u.alive);
   }
 
+  /** Living bodyguards (everyone except the boss/leader). */
+  private goons(posse: Posse): Unit[] {
+    const lid = posse.leaderId;
+    return this.members(posse).filter((u) => u.id !== lid);
+  }
+
+  private formationRadius(goonCount: number): number {
+    if (goonCount <= 1) return 0.95;
+    if (goonCount === 2) return 1.05;
+    if (goonCount === 3) return 1.15;
+    return 1.28;
+  }
+
+  /** Even circle slots around the boss (index 0 starts "north"). */
+  private circleSlot(
+    cx: number,
+    cy: number,
+    index: number,
+    count: number,
+    radius: number,
+  ): { x: number; y: number } {
+    if (count <= 0) return { x: cx, y: cy };
+    const ang = -Math.PI / 2 + (index / count) * Math.PI * 2;
+    return { x: cx + Math.cos(ang) * radius, y: cy + Math.sin(ang) * radius };
+  }
+
+  /**
+   * Front wall between boss and threat — bodyguards line up to shield the boss.
+   * index 0..n-1 spread along the perpendicular axis.
+   */
+  private frontSlot(
+    bossX: number,
+    bossY: number,
+    threatX: number,
+    threatY: number,
+    index: number,
+    count: number,
+    lineDist = 1.2,
+    spacing = 0.78,
+  ): { x: number; y: number } {
+    const dx = threatX - bossX;
+    const dy = threatY - bossY;
+    const d = Math.hypot(dx, dy) || 1;
+    const fx = dx / d;
+    const fy = dy / d;
+    const lx = -fy;
+    const ly = fx;
+    const midX = bossX + fx * lineDist;
+    const midY = bossY + fy * lineDist;
+    const offset = (index - (count - 1) / 2) * spacing;
+    // Mild crescent: outer goons a hair farther forward
+    const arc = 1 + Math.abs(offset) * 0.06;
+    return {
+      x: midX + lx * offset + fx * (arc - 1) * 0.35,
+      y: midY + ly * offset + fy * (arc - 1) * 0.35,
+    };
+  }
+
+  private clampWorld(x: number, y: number): { x: number; y: number } {
+    return {
+      x: clamp(x, 0.4, this.map.width - 0.4),
+      y: clamp(y, 0.4, this.map.height - 0.4),
+    };
+  }
+
+  /** Boss at center, goons in a protective circle. */
+  private assignCircleFormation(
+    posse: Posse,
+    centerX: number,
+    centerY: number,
+    opts?: { moveBoss?: boolean; radius?: number },
+  ): void {
+    const leader = this.leader(posse);
+    if (!leader?.alive) return;
+    const goons = this.goons(posse);
+    const c = this.clampWorld(centerX, centerY);
+    const rad = opts?.radius ?? this.formationRadius(goons.length);
+    const moveBoss = opts?.moveBoss !== false;
+
+    if (moveBoss) {
+      leader.moveMode = "target";
+      leader.dirX = 0;
+      leader.dirY = 0;
+      leader.tx = c.x;
+      leader.ty = c.y;
+    }
+
+    goons.forEach((u, i) => {
+      const slot = this.circleSlot(c.x, c.y, i, goons.length, rad);
+      const p = this.clampWorld(slot.x, slot.y);
+      u.moveMode = "target";
+      u.dirX = 0;
+      u.dirY = 0;
+      u.tx = p.x;
+      u.ty = p.y;
+    });
+  }
+
+  /**
+   * Combat formation: goons form a front line facing the threat;
+   * boss holds behind them (middle / rear).
+   */
+  private assignFrontFormation(posse: Posse, threatX: number, threatY: number): void {
+    const leader = this.leader(posse);
+    if (!leader?.alive) return;
+    const goons = this.goons(posse);
+    const dx = threatX - leader.x;
+    const dy = threatY - leader.y;
+    const d = Math.hypot(dx, dy) || 1;
+    const fx = dx / d;
+    const fy = dy / d;
+
+    if (goons.length === 0) {
+      // Solo boss — engage at weapon range
+      const range = Math.max(1.1, WEAPONS[leader.weapon].range * 0.78);
+      leader.moveMode = "target";
+      leader.dirX = 0;
+      leader.dirY = 0;
+      if (d > range) {
+        const p = this.clampWorld(threatX - fx * range * 0.92, threatY - fy * range * 0.92);
+        leader.tx = p.x;
+        leader.ty = p.y;
+      } else {
+        leader.moveMode = "idle";
+        leader.tx = leader.x;
+        leader.ty = leader.y;
+      }
+      return;
+    }
+
+    // Boss stays in the middle-rear; approach but don't lead the charge
+    const bossHold = Math.max(2.05, Math.min(WEAPONS[leader.weapon].range * 0.55, 3.2));
+    leader.moveMode = "target";
+    leader.dirX = 0;
+    leader.dirY = 0;
+    if (d > bossHold + 0.35 || d < bossHold - 0.55) {
+      const p = this.clampWorld(threatX - fx * bossHold, threatY - fy * bossHold);
+      leader.tx = p.x;
+      leader.ty = p.y;
+    } else {
+      leader.moveMode = "idle";
+      leader.tx = leader.x;
+      leader.ty = leader.y;
+    }
+
+    // Anchor the wall on the boss's current position so the shield moves with him
+    const bx = leader.x;
+    const by = leader.y;
+    const spacing = goons.length <= 2 ? 0.88 : goons.length === 3 ? 0.75 : 0.65;
+    const lineDist = 1.25;
+
+    goons.forEach((u, i) => {
+      const w = WEAPONS[u.weapon];
+      const engage = Math.max(1.05, w.range * 0.78);
+      // Advance toward threat if still out of range; keep line facing threat
+      let slot: { x: number; y: number };
+      if (d > engage + 1.4) {
+        // Closing: wall between boss path and enemy
+        const midX = threatX - fx * engage;
+        const midY = threatY - fy * engage;
+        const lx = -fy;
+        const ly = fx;
+        const offset = (i - (goons.length - 1) / 2) * spacing;
+        slot = { x: midX + lx * offset, y: midY + ly * offset };
+      } else {
+        slot = this.frontSlot(bx, by, threatX, threatY, i, goons.length, lineDist, spacing);
+      }
+      const p = this.clampWorld(slot.x, slot.y);
+      u.moveMode = "target";
+      u.dirX = 0;
+      u.dirY = 0;
+      u.tx = p.x;
+      u.ty = p.y;
+    });
+  }
+
   private tileAt(x: number, y: number) {
     const tx = Math.floor(x);
     const ty = Math.floor(y);
@@ -606,30 +786,15 @@ export class GameWorld {
     return t === "grass" || t === "road" || t === "sidewalk" || t === "parking" || t === "door";
   }
 
-  private cmdMove(posse: Posse, x: number, y: number, unitIds?: string[]): void {
+  private cmdMove(posse: Posse, x: number, y: number, _unitIds?: string[]): void {
     if (posse.dialogue || posse.shop) return;
     const leader = this.leader(posse);
     if (!leader || !leader.alive) return;
     posse.attackTargetId = null;
     posse.moveLabel = "GOING";
-    const ids = unitIds?.length ? unitIds.filter((id) => posse.memberIds.includes(id)) : posse.memberIds;
-    // Clamp target near walkable
-    const tx = clamp(x, 0.3, this.map.width - 0.3);
-    const ty = clamp(y, 0.3, this.map.height - 0.3);
-    let i = 0;
-    for (const id of ids) {
-      const u = this.units.get(id);
-      if (!u || !u.alive) continue;
-      // formation offset for goons
-      const ox = (i % 2 === 0 ? -0.45 : 0.45) * (u.isPlayerLeader ? 0 : 1);
-      const oy = (i >= 2 ? 0.45 : -0.15) * (u.isPlayerLeader ? 0 : 1);
-      u.moveMode = "target";
-      u.dirX = 0;
-      u.dirY = 0;
-      u.tx = tx + ox;
-      u.ty = ty + oy;
-      i++;
-    }
+    // Boss walks to the click; bodyguards take circle slots around him
+    const c = this.clampWorld(x, y);
+    this.assignCircleFormation(posse, c.x, c.y, { moveBoss: true });
   }
 
   /** Continuous free movement in world axes (client sends screen-aligned vectors). */
@@ -645,36 +810,45 @@ export class GameWorld {
     if (len >= 0.001) {
       posse.attackTargetId = null;
       posse.moveLabel = "MOVING";
-    }
-
-    for (const u of this.members(posse)) {
-      if (len < 0.001) {
-        u.moveMode = "idle";
-        u.dirX = 0;
-        u.dirY = 0;
-        u.tx = u.x;
-        u.ty = u.y;
-        if (!posse.attackTargetId) posse.moveLabel = null;
-      } else {
-        u.moveMode = "dir";
-        u.dirX = ndx;
-        u.dirY = ndy;
-        // Keep target parked so we don't mix modes
-        u.tx = u.x;
-        u.ty = u.y;
-      }
+      // Only the boss steers free; goons escort in a circle (updated each tick)
+      leader.moveMode = "dir";
+      leader.dirX = ndx;
+      leader.dirY = ndy;
+      leader.tx = leader.x;
+      leader.ty = leader.y;
+      this.assignCircleFormation(posse, leader.x, leader.y, { moveBoss: false });
+    } else {
+      // Stop → settle into protective circle around boss
+      if (!posse.attackTargetId) posse.moveLabel = null;
+      leader.dirX = 0;
+      leader.dirY = 0;
+      this.assignCircleFormation(posse, leader.x, leader.y, { moveBoss: true });
+      // Boss already at center — park him
+      leader.moveMode = "idle";
+      leader.tx = leader.x;
+      leader.ty = leader.y;
     }
   }
 
   private cmdStop(posse: Posse): void {
     posse.attackTargetId = null;
     posse.moveLabel = null;
-    for (const u of this.members(posse)) {
-      u.moveMode = "idle";
-      u.dirX = 0;
-      u.dirY = 0;
-      u.tx = u.x;
-      u.ty = u.y;
+    const leader = this.leader(posse);
+    if (leader?.alive) {
+      this.assignCircleFormation(posse, leader.x, leader.y, { moveBoss: true });
+      leader.moveMode = "idle";
+      leader.dirX = 0;
+      leader.dirY = 0;
+      leader.tx = leader.x;
+      leader.ty = leader.y;
+    } else {
+      for (const u of this.members(posse)) {
+        u.moveMode = "idle";
+        u.dirX = 0;
+        u.dirY = 0;
+        u.tx = u.x;
+        u.ty = u.y;
+      }
     }
   }
 
@@ -701,17 +875,8 @@ export class GameWorld {
       tp.hostile = true;
       tp.combatUntil = this.tick + TICK_HZ * 20;
     }
-    let i = 0;
-    for (const u of this.members(posse)) {
-      const ang = (i / Math.max(1, posse.memberIds.length)) * Math.PI * 2;
-      const spread = 0.55;
-      u.moveMode = "target";
-      u.dirX = 0;
-      u.dirY = 0;
-      u.tx = target.x + Math.cos(ang) * spread;
-      u.ty = target.y + Math.sin(ang) * spread;
-      i++;
-    }
+    // Bodyguards line up in front; boss stays in the middle/rear
+    this.assignFrontFormation(posse, target.x, target.y);
     return true;
   }
 
@@ -911,13 +1076,16 @@ export class GameWorld {
     }
   }
 
-  /** Per-tick: chase attack targets and auto-fire when in range */
+  /** Per-tick: chase attack targets in front-line formation and auto-fire when in range */
   private updateAttackOrders(): void {
     for (const posse of this.posses.values()) {
       if (!posse.attackTargetId) continue;
       const target = this.units.get(posse.attackTargetId);
       if (!target || !target.alive) {
         posse.attackTargetId = null;
+        // Reform protective circle on boss
+        const leader = this.leader(posse);
+        if (leader?.alive) this.assignCircleFormation(posse, leader.x, leader.y, { moveBoss: false });
         continue;
       }
       // Wrong layer (entered building) — cancel
@@ -929,34 +1097,67 @@ export class GameWorld {
         }
       }
 
-      let i = 0;
-      for (const id of posse.memberIds) {
-        const u = this.units.get(id);
-        if (!u || !u.alive) continue;
+      // Keep re-issuing front wall so goons stay between boss and threat
+      this.assignFrontFormation(posse, target.x, target.y);
+
+      const session = posse.isPlayer
+        ? [...this.sessions.values()].find((s) => s.posseId === posse.id)
+        : undefined;
+
+      for (const u of this.members(posse)) {
         const w = WEAPONS[u.weapon];
         const d = dist(u.x, u.y, target.x, target.y);
-        const engageRange = Math.max(1.1, w.range * 0.82);
-
-        if (d > engageRange) {
-          // Close distance — keep re-issuing target near the enemy
-          const ang = (i / Math.max(1, posse.memberIds.length)) * Math.PI * 2;
-          u.moveMode = "target";
-          u.dirX = 0;
-          u.dirY = 0;
-          u.tx = target.x + Math.cos(ang) * 0.5;
-          u.ty = target.y + Math.sin(ang) * 0.5;
-        } else {
-          // Hold and fire
-          u.moveMode = "idle";
-          u.tx = u.x;
-          u.ty = u.y;
-          const session = posse.isPlayer
-            ? [...this.sessions.values()].find((s) => s.posseId === posse.id)
-            : undefined;
+        const engageRange = Math.max(1.1, w.range * 0.88);
+        if (d <= engageRange) {
+          // Hold fire position (don't idle-clear formation every shot)
+          if (dist(u.x, u.y, u.tx, u.ty) < 0.35) {
+            u.moveMode = "idle";
+          }
           this.resolveShot(u, target, session);
         }
-        i++;
       }
+    }
+  }
+
+  /**
+   * While the boss is on the move (WASD or walking to a click), bodyguards
+   * keep a live circle around him so he stays in the middle.
+   */
+  private updateEscortFormations(): void {
+    for (const posse of this.posses.values()) {
+      if (posse.attackTargetId) continue;
+      if (posse.dialogue || posse.shop) continue;
+      const leader = this.leader(posse);
+      if (!leader?.alive) continue;
+      const goons = this.goons(posse);
+      if (goons.length === 0) continue;
+
+      const movingDir =
+        leader.moveMode === "dir" && (leader.dirX !== 0 || leader.dirY !== 0);
+      const movingTarget =
+        leader.moveMode === "target" && dist(leader.x, leader.y, leader.tx, leader.ty) > 0.12;
+      if (!movingDir && !movingTarget) continue;
+
+      const fx = movingDir
+        ? leader.dirX
+        : (leader.tx - leader.x) / Math.max(0.001, dist(leader.x, leader.y, leader.tx, leader.ty));
+      const fy = movingDir
+        ? leader.dirY
+        : (leader.ty - leader.y) / Math.max(0.001, dist(leader.x, leader.y, leader.tx, leader.ty));
+
+      // Circle center tracks the boss (slightly ahead so escorts don't lag into him)
+      const cx = leader.x + fx * 0.12;
+      const cy = leader.y + fy * 0.12;
+      const rad = this.formationRadius(goons.length);
+      goons.forEach((u, i) => {
+        const slot = this.circleSlot(cx, cy, i, goons.length, rad);
+        const p = this.clampWorld(slot.x - fx * 0.1, slot.y - fy * 0.1);
+        u.moveMode = "target";
+        u.dirX = 0;
+        u.dirY = 0;
+        u.tx = p.x;
+        u.ty = p.y;
+      });
     }
   }
 
@@ -1670,22 +1871,24 @@ export class GameWorld {
     posse.dialogue = null;
   }
 
-  /** Spawn a fresh goon at the leader (bar "hire muscle"). Returns name. */
+  /** Spawn a fresh goon on the protective circle around the boss. Returns name. */
   private hireGoon(session: CharacterSession, posse: Posse): string {
     const leader = this.leader(posse);
     if (!leader) return "Nobody";
     const id = this.nextId("unit");
     const name = randomGoonName();
+    const nextCount = this.goons(posse).length + 1;
+    const slot = this.circleSlot(leader.x, leader.y, nextCount - 1, nextCount, this.formationRadius(nextCount));
     const goon: Unit = {
       id,
       name,
       kind: "goon",
       ownerId: session.characterId,
       posseId: posse.id,
-      x: leader.x + 0.5,
-      y: leader.y + 0.5,
-      tx: leader.x + 0.5,
-      ty: leader.y + 0.5,
+      x: slot.x,
+      y: slot.y,
+      tx: slot.x,
+      ty: slot.y,
       dirX: 0,
       dirY: 0,
       moveMode: "idle",
@@ -1710,6 +1913,8 @@ export class GameWorld {
     };
     this.units.set(id, goon);
     posse.memberIds.push(id);
+    // Re-space full circle so the boss stays centered
+    this.assignCircleFormation(posse, leader.x, leader.y, { moveBoss: false });
     return name;
   }
 
@@ -1745,16 +1950,28 @@ export class GameWorld {
     npc.dirX = 0;
     npc.dirY = 0;
     npc.lastHitByPosseId = null;
-    if (leader) {
-      npc.x = leader.x + 0.6;
-      npc.y = leader.y + 0.4;
-      npc.tx = npc.x;
-      npc.ty = npc.y;
-      npc.facing = leader.facing;
-    }
 
     if (!posse.memberIds.includes(npc.id)) {
       posse.memberIds.push(npc.id);
+    }
+
+    // Slot onto the circle around the boss
+    if (leader) {
+      const goons = this.goons(posse);
+      const idx = Math.max(0, goons.findIndex((g) => g.id === npc.id));
+      const slot = this.circleSlot(
+        leader.x,
+        leader.y,
+        idx >= 0 ? idx : goons.length - 1,
+        Math.max(1, goons.length),
+        this.formationRadius(goons.length),
+      );
+      npc.x = slot.x;
+      npc.y = slot.y;
+      npc.tx = slot.x;
+      npc.ty = slot.y;
+      npc.facing = leader.facing;
+      this.assignCircleFormation(posse, leader.x, leader.y, { moveBoss: false });
     }
 
     // Mark spawn used so they don't keep an ambient world slot (future: respawn timer)
@@ -1982,7 +2199,10 @@ export class GameWorld {
       }
     }
 
-    // Player attack-move / continuous engage
+    // Escort circle while boss free-moves
+    this.updateEscortFormations();
+
+    // Player attack-move / continuous engage (front-line shield)
     this.updateAttackOrders();
 
     // AI posse behavior
@@ -2067,17 +2287,9 @@ export class GameWorld {
       if (posse.hostile && nearestPlayer) {
         const pl = this.leader(nearestPlayer);
         if (pl) {
-          // Chase and shoot
-          let i = 0;
-          for (const id of posse.memberIds) {
-            const u = this.units.get(id);
-            if (!u || !u.alive) continue;
-            u.moveMode = "target";
-            u.dirX = 0;
-            u.dirY = 0;
-            u.tx = pl.x + Math.cos(i) * 1.2;
-            u.ty = pl.y + Math.sin(i) * 1.2;
-            // shoot nearest player member
+          // AI uses same front-line shield: goons up front, boss middle/rear
+          this.assignFrontFormation(posse, pl.x, pl.y);
+          for (const u of this.members(posse)) {
             let best: Unit | null = null;
             let bd = Infinity;
             for (const mid of nearestPlayer.memberIds) {
@@ -2090,12 +2302,14 @@ export class GameWorld {
               }
             }
             if (best) this.resolveShot(u, best);
-            i++;
           }
-          // player goons auto-return fire if hostile
+          // Player posse auto-return fire if hostile (keep own front if attacking, else circle fire)
+          if (!nearestPlayer.attackTargetId) {
+            this.assignFrontFormation(nearestPlayer, leader.x, leader.y);
+          }
           for (const id of nearestPlayer.memberIds) {
             const u = this.units.get(id);
-            if (!u || !u.alive || u.kind === "player") continue;
+            if (!u || !u.alive) continue;
             let best: Unit | null = null;
             let bd = Infinity;
             for (const eid of posse.memberIds) {
@@ -2111,25 +2325,23 @@ export class GameWorld {
           }
         }
       } else {
-        // Wander
-        for (const id of posse.memberIds) {
-          const u = this.units.get(id);
-          if (!u || !u.alive) continue;
-          u.aiWanderT -= dt;
-          if (u.aiWanderT <= 0) {
-            u.aiWanderT = 2 + Math.random() * 4;
-            const ang = Math.random() * Math.PI * 2;
-            const rad = 1 + Math.random() * 3;
-            u.moveMode = "target";
-            u.dirX = 0;
-            u.dirY = 0;
-            u.tx = clamp(leader.x + Math.cos(ang) * rad, 1, this.map.width - 2);
-            u.ty = clamp(leader.y + Math.sin(ang) * rad, 1, this.map.height - 2);
-            // keep outdoors
-            if (!this.canWalk(u.tx, u.ty, null)) {
-              u.tx = leader.x;
-              u.ty = leader.y;
-            }
+        // Wander: boss drifts; bodyguards keep circle around him
+        leader.aiWanderT -= dt;
+        if (leader.aiWanderT <= 0) {
+          leader.aiWanderT = 2.5 + Math.random() * 4;
+          const ang = Math.random() * Math.PI * 2;
+          const rad = 1.2 + Math.random() * 3.5;
+          const tx = clamp(leader.x + Math.cos(ang) * rad, 1, this.map.width - 2);
+          const ty = clamp(leader.y + Math.sin(ang) * rad, 1, this.map.height - 2);
+          if (this.canWalk(tx, ty, null)) {
+            this.assignCircleFormation(posse, tx, ty, { moveBoss: true });
+          } else {
+            this.assignCircleFormation(posse, leader.x, leader.y, { moveBoss: false });
+          }
+        } else {
+          // Soft maintain circle while idle-wandering
+          if (leader.moveMode === "idle" || dist(leader.x, leader.y, leader.tx, leader.ty) < 0.2) {
+            this.assignCircleFormation(posse, leader.x, leader.y, { moveBoss: false });
           }
         }
       }
