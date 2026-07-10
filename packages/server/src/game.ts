@@ -1026,21 +1026,20 @@ export class GameWorld {
     if (!leader || !leader.alive) return;
     posse.attackTargetId = null;
     posse.moveLabel = "GOING";
-    // Boss walks to the click; bodyguards take circle slots around him
+    // Free roam: never clamp outdoor walks by district rep (that felt like a broken map).
+    // Snap click to nearest walkable outdoor tile so building shells don't cancel the order.
     let c = this.clampWorld(x, y);
-    // Soft-block walks into locked districts — snap target to nearest open turf
     if (!posse.insideBuildingId) {
+      c = this.nearestWalkableOutdoor(c.x, c.y) ?? c;
       const dest = districtAt(c.x, c.y);
-      if (!isDistrictUnlocked(dest, posse.rep)) {
-        const blocked = dest;
-        c = this.clampToUnlockedDistrict(c.x, c.y, posse.rep);
-        // Prefer the closest unlocked point along the ray from leader → click
-        // so long-distance clicks don't collapse to a tiny border hop.
-        c = this.projectMoveToUnlocked(leader.x, leader.y, x, y, posse.rep) ?? c;
-        if (session) {
+      if (session && !isDistrictUnlocked(dest, posse.rep)) {
+        // Informational only — hot zones still walkable; shops/jobs may still gate gear
+        const last = this.districtWarnAt.get(posse.id) ?? 0;
+        if (this.tick - last > TICK_HZ * 4) {
+          this.districtWarnAt.set(posse.id, this.tick);
           this.log(
             session,
-            `${blocked.name} is locked (need rep ${blocked.minRep}, you have ${posse.rep}). Heading as far as the line allows.`,
+            `${dest.name}: tough turf (rep ${dest.minRep}+ recommended, you have ${posse.rep}). You can still walk — watch your back.`,
           );
         }
       }
@@ -1048,41 +1047,20 @@ export class GameWorld {
     this.assignCircleFormation(posse, c.x, c.y, { moveBoss: true });
   }
 
-  /**
-   * Walk the segment from (x0,y0) toward (x1,y1) and stop at the last unlocked tile.
-   * Avoids the "click far, only inch forward" feel of pure AABB clamp.
-   */
-  private projectMoveToUnlocked(
-    x0: number,
-    y0: number,
-    x1: number,
-    y1: number,
-    rep: number,
-  ): { x: number; y: number } | null {
-    const dx = x1 - x0;
-    const dy = y1 - y0;
-    const len = Math.hypot(dx, dy);
-    if (len < 0.01) return null;
-    const steps = Math.max(8, Math.ceil(len * 2));
-    let lastOk = { x: x0, y: y0 };
-    let found = false;
-    for (let i = 1; i <= steps; i++) {
-      const t = i / steps;
-      const x = x0 + dx * t;
-      const y = y0 + dy * t;
-      const c = this.clampWorld(x, y);
-      const def = districtAt(c.x, c.y);
-      if (!isDistrictUnlocked(def, rep)) break;
-      // Prefer walkable outdoor tiles when possible
-      if (this.canWalk(c.x, c.y, null)) {
-        lastOk = c;
-        found = true;
-      } else if (!found) {
-        lastOk = c;
-        found = true;
+  /** Spiral search for a walkable outdoor tile near (x,y). */
+  private nearestWalkableOutdoor(x: number, y: number, maxR = 6): { x: number; y: number } | null {
+    const c0 = this.clampWorld(x, y);
+    if (this.canWalk(c0.x, c0.y, null)) return c0;
+    for (let r = 1; r <= maxR; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+          const p = this.clampWorld(c0.x + dx, c0.y + dy);
+          if (this.canWalk(p.x, p.y, null)) return p;
+        }
       }
     }
-    return found ? lastOk : null;
+    return null;
   }
 
   private cmdMapPing(session: CharacterSession, posse: Posse, x: number, y: number): void {
@@ -1092,15 +1070,15 @@ export class GameWorld {
       return;
     }
     const dest = districtAt(c.x, c.y);
-    if (!isDistrictUnlocked(dest, posse.rep)) {
-      this.log(
-        session,
-        `${dest.name} is locked (need rep ${dest.minRep}, you have ${posse.rep}). Earn street rep on jobs.`,
-      );
-      return;
-    }
-    this.log(session, `Map ping: ${dest.short} (${Math.round(c.x)}, ${Math.round(c.y)}) — on your way.`);
-    this.cmdMove(posse, c.x, c.y);
+    const note =
+      !isDistrictUnlocked(dest, posse.rep)
+        ? ` (hot — rep ${dest.minRep}+ recommended)`
+        : "";
+    this.log(
+      session,
+      `Map ping: ${dest.short} (${Math.round(c.x)}, ${Math.round(c.y)})${note} — on your way.`,
+    );
+    this.cmdMove(posse, c.x, c.y, undefined, session);
   }
 
   /** Nudge a point into any unlocked district (prefer downtown hub). */
@@ -1147,7 +1125,11 @@ export class GameWorld {
     }));
   }
 
-  /** Soft-kick players who walk into locked outdoor districts. */
+  /**
+   * District access is advisory only for free roam (no teleport soft-kicks).
+   * Soft-kicks made south/east travel feel like the world was broken.
+   * Rep still gates shop stock / mission unlocks; map UI shows recommended rep.
+   */
   private enforceDistrictAccess(): void {
     for (const posse of this.posses.values()) {
       if (!posse.isPlayer) continue;
@@ -1156,54 +1138,16 @@ export class GameWorld {
       if (!leader?.alive) continue;
       const def = districtAt(leader.x, leader.y);
       if (isDistrictUnlocked(def, posse.rep)) continue;
-
-      // Hysteresis: only kick once clearly inside locked turf (not on the 1-tile border).
-      // Border thrash made WASD/click feel like stuttering micro-steps.
-      if (!this.deepInsideDistrict(leader.x, leader.y, def, 1.25)) continue;
-
       const session = [...this.sessions.values()].find((s) => s.posseId === posse.id);
-      const safe =
-        this.projectMoveToUnlocked(leader.x, leader.y, 40, 28, posse.rep) ??
-        this.clampToUnlockedDistrict(leader.x, leader.y, posse.rep);
-      // Nudge whole posse back into open turf (one clean teleport, not every-frame jitter)
-      let i = 0;
-      for (const u of this.members(posse)) {
-        u.x = safe.x + (i % 2) * 0.35;
-        u.y = safe.y + Math.floor(i / 2) * 0.35;
-        u.tx = u.x;
-        u.ty = u.y;
-        u.dirX = 0;
-        u.dirY = 0;
-        u.moveMode = "idle";
-        i++;
-      }
-      posse.attackTargetId = null;
-      posse.moveLabel = null;
-
       const last = this.districtWarnAt.get(posse.id) ?? 0;
-      if (session && this.tick - last > TICK_HZ * 2.5) {
+      if (session && this.tick - last > TICK_HZ * 8) {
         this.districtWarnAt.set(posse.id, this.tick);
         this.log(
           session,
-          `TURNED BACK — ${def.name} needs rep ${def.minRep} (you have ${posse.rep}). ${def.blurb}`,
+          `${def.name} — hot zone (rep ${def.minRep}+ recommended). You can walk freely; jobs & gear still gate on rep.`,
         );
       }
     }
-  }
-
-  /** True if (x,y) is at least `margin` tiles inside the district AABB. */
-  private deepInsideDistrict(
-    x: number,
-    y: number,
-    d: { x0: number; y0: number; x1: number; y1: number },
-    margin: number,
-  ): boolean {
-    return (
-      x >= d.x0 + margin &&
-      x <= d.x1 - margin &&
-      y >= d.y0 + margin &&
-      y <= d.y1 - margin
-    );
   }
 
   /** Continuous free movement in world axes (client sends screen-aligned vectors). */
@@ -1347,21 +1291,33 @@ export class GameWorld {
     let moved = false;
     const dx = nx - u.x;
     const dy = ny - u.y;
+    // Axis-separated slide so long click-paths graze building shells instead of dying on contact
     if (this.canWalk(nx, u.y, bid)) {
       u.x = nx;
       moved = true;
-    } else if (Math.abs(dx) > 0.001 && this.canWalk(nx, u.y + Math.sign(dy || 1) * 0.25, bid)) {
-      u.x = nx;
-      u.y += Math.sign(dy || 1) * 0.1;
-      moved = true;
+    } else if (Math.abs(dx) > 0.001) {
+      // Micro-slide along wall in Y to keep X progress when possible
+      for (const sy of [0.35, -0.35, 0.55, -0.55]) {
+        if (this.canWalk(nx, u.y + sy, bid)) {
+          u.x = nx;
+          u.y += sy * 0.45;
+          moved = true;
+          break;
+        }
+      }
     }
     if (this.canWalk(u.x, ny, bid)) {
       u.y = ny;
       moved = true;
-    } else if (Math.abs(dy) > 0.001 && this.canWalk(u.x + Math.sign(dx || 1) * 0.25, ny, bid)) {
-      u.y = ny;
-      u.x += Math.sign(dx || 1) * 0.1;
-      moved = true;
+    } else if (Math.abs(dy) > 0.001) {
+      for (const sx of [0.35, -0.35, 0.55, -0.55]) {
+        if (this.canWalk(u.x + sx, ny, bid)) {
+          u.y = ny;
+          u.x += sx * 0.45;
+          moved = true;
+          break;
+        }
+      }
     }
     return moved;
   }
@@ -4042,14 +3998,37 @@ export class GameWorld {
         const step = Math.min(d, speed * dt);
         const nx = u.x + (dx / d) * step;
         const ny = u.y + (dy / d) * step;
+        const ox = u.x;
+        const oy = u.y;
         const moved = this.tryMoveUnit(u, nx, ny, bid);
         if (!moved) {
-          // Blocked by wall/void — give up instead of spinning forever on a dead target
-          // (caused "tiny stutter steps" when path hit building shells).
-          if (d < 0.55 || !this.canWalk(nx, ny, bid)) {
+          // Only abandon the order if we are basically on the target, or stuck with no escape.
+          // Never cancel a long-range click just because one step hit a wall (slide keeps going).
+          if (d < 0.4) {
             u.tx = u.x;
             u.ty = u.y;
             u.moveMode = "idle";
+          } else {
+            // Nudge target sideways toward nearest walkable if current tx/ty is inside a shell
+            if (!bid && !this.canWalk(u.tx, u.ty, null)) {
+              const alt = this.nearestWalkableOutdoor(u.tx, u.ty, 8);
+              if (alt) {
+                u.tx = alt.x;
+                u.ty = alt.y;
+              }
+            }
+            // If we made zero progress this tick and can't step any cardinal, stop
+            const stuck =
+              Math.hypot(u.x - ox, u.y - oy) < 1e-6 &&
+              !this.canWalk(u.x + 0.2, u.y, bid) &&
+              !this.canWalk(u.x - 0.2, u.y, bid) &&
+              !this.canWalk(u.x, u.y + 0.2, bid) &&
+              !this.canWalk(u.x, u.y - 0.2, bid);
+            if (stuck) {
+              u.tx = u.x;
+              u.ty = u.y;
+              u.moveMode = "idle";
+            }
           }
         }
         u.facing = facingFromDelta(dx, dy);

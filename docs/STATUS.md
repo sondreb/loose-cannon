@@ -38,7 +38,7 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Overseer: [OVERSEER.md](./OVERSEE
 | **Tutorial / first-session flow** | **Done** | Server coach: bar → hire → Rita → job → pay |
 | **Heat meter** | **Done** | 0–100; kills/jobs/protection; decay; Vince lay low |
 | **Rep gates (shop stock)** | **Done** | minRep on weapons/armor/upgrades; heat price markup |
-| **District unlock / map UI** | **Done** | M key / MAP btn; soft-gates deep war + docks (neon open at rep 0) |
+| **District unlock / map UI** | **Done** | M map; free roam all outdoor turf; rep is advisory + shop/job gates |
 | **Memorial wall** | Not started | MASTER_PLAN M3 |
 | **Parties / co-op jobs** | Not started | MASTER_PLAN M4 |
 | Automated overseer scaffolding | Done | AGENTS.md + scripts/overseer |
@@ -90,13 +90,14 @@ HUD: `Heat N` next to cash/rep (cool/warm/hot/wanted colors).
 |----|------|--------|-------|
 | `downtown` | Safe Downtown | 0 | Always open |
 | `war_fringe` | War Fringe | 0 | Just south of tracks |
-| `neon_edge` | Neon Edge | 0 | East neon / Titty Twister (open; gear still rep-gated) |
-| `war_deep` | Deep War Zone | 3 | Far south |
-| `docks` | Pier District | 5 | East piers |
+| `neon_edge` | Neon Edge | 0 | East neon / Titty Twister |
+| `war_deep` | Deep War Zone | 3* | Far south (*advisory — free walk) |
+| `docks` | Pier District | 5* | East piers (*advisory — free walk) |
 
 - Snapshot: `districts[]`, `you.districtId/Name/Unlocked`
-- Soft-kick if you walk into locked turf; map ping only to unlocked centers
-- UI: **M** or **MAP** button → sketch + list; click open district to walk
+- **Free roam:** outdoor walking never soft-kicked or clamped by district rep
+- Rep still gates shop gear / some jobs; map shows recommended rep
+- UI: **M** or **MAP** → sketch + list; click any district to walk there
 
 ## Next for overseer (priority)
 

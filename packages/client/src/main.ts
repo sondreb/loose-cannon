@@ -1086,20 +1086,19 @@ function renderDistrictMap(): void {
     row.innerHTML = `
       <div class="district-row-top">
         <strong>${escapeHtml(d.short)}</strong>
-        <span class="district-badge">${d.unlocked ? "OPEN" : `REP ${d.minRep}`}</span>
+        <span class="district-badge">${d.unlocked ? "OPEN" : `HOT · REP ${d.minRep}+`}</span>
       </div>
       <div class="district-name">${escapeHtml(d.name)}</div>
       <p class="district-blurb">${escapeHtml(d.blurb)}</p>
       ${d.landmark ? `<p class="muted tiny">${escapeHtml(d.landmark)}</p>` : ""}
     `;
-    if (d.unlocked) {
-      row.addEventListener("click", () => {
-        const cx = (d.x0 + d.x1) / 2;
-        const cy = (d.y0 + d.y1) / 2;
-        socket.send({ type: "map.ping", x: cx, y: cy });
-        closeDistrictMap();
-      });
-    }
+    // Free roam: every district is walkable; badge is advisory danger only
+    row.addEventListener("click", () => {
+      const cx = (d.x0 + d.x1) / 2;
+      const cy = (d.y0 + d.y1) / 2;
+      socket.send({ type: "map.ping", x: cx, y: cy });
+      closeDistrictMap();
+    });
     districtMapList.appendChild(row);
   }
 
@@ -1134,12 +1133,15 @@ function renderDistrictMap(): void {
     const y = pad + d.y0 * scaleY;
     const w = (d.x1 - d.x0 + 1) * scaleX;
     const h = (d.y1 - d.y0 + 1) * scaleY;
-    ctx.fillStyle = d.unlocked ? colors[d.danger] ?? "#444" : "rgba(40,40,50,0.7)";
+    // All districts walkable; dim only means "hot / recommended rep"
+    ctx.fillStyle = colors[d.danger] ?? "#444";
+    if (!d.unlocked) ctx.globalAlpha = 0.75;
     ctx.fillRect(x, y, w, h);
+    ctx.globalAlpha = 1;
     ctx.strokeStyle = d.id === snap.you.districtId ? "#f0c040" : "rgba(255,255,255,0.12)";
     ctx.lineWidth = d.id === snap.you.districtId ? 2 : 1;
     ctx.strokeRect(x, y, w, h);
-    ctx.fillStyle = d.unlocked ? "#e8e0d4" : "#666";
+    ctx.fillStyle = "#e8e0d4";
     ctx.font = "10px system-ui,sans-serif";
     ctx.fillText(d.short, x + 4, y + 12);
   }

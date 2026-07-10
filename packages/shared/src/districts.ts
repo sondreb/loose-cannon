@@ -44,6 +44,7 @@ export const DISTRICTS: DistrictDef[] = [
     y0: 42,
     x1: 109,
     y1: 89,
+    /** Advisory rep for UI; free walk always allowed (see enforceDistrictAccess). */
     minRep: 5,
     danger: "hot",
     landmark: "East piers",
@@ -71,6 +72,7 @@ export const DISTRICTS: DistrictDef[] = [
     y0: 55,
     x1: 81,
     y1: 89,
+    /** Advisory only for free roam (walking never blocked). Used for map UI / warnings. */
     minRep: 3,
     danger: "hot",
     landmark: "Lots & dumpsters",
