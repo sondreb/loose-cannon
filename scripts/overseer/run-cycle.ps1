@@ -248,38 +248,42 @@ if ($DryRun) {
   exit 0
 }
 
-# Prefer ProcessStartInfo + ArgumentList (correct quoting) over string ArgumentList
+# Async stdout/stderr via C# handlers (NOT PowerShell scriptblocks).
+# Scriptblock OutputDataReceived handlers run on a thread-pool thread with no
+# Runspace and crash: "There is no Runspace available to run scripts in this thread".
+if (-not ("GrokLinePump" -as [type])) {
+  Add-Type -Language CSharp -TypeDefinition @"
+using System;
+using System.Diagnostics;
+using System.Collections.Concurrent;
+public static class GrokLinePump {
+  public static void Attach(Process p, ConcurrentQueue<string> stdoutQ, ConcurrentQueue<string> stderrQ) {
+    p.OutputDataReceived += (sender, e) => { if (e.Data != null) stdoutQ.Enqueue(e.Data); };
+    p.ErrorDataReceived  += (sender, e) => { if (e.Data != null) stderrQ.Enqueue(e.Data); };
+  }
+}
+"@
+}
+
+$outQueue = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
+$errQueue = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
+
 $psi = [System.Diagnostics.ProcessStartInfo]::new()
 $psi.FileName = $grokCmd.Source
 $psi.WorkingDirectory = $RepoRoot
 $psi.UseShellExecute = $false
+$psi.CreateNoWindow = $true
 $psi.RedirectStandardOutput = $true
 $psi.RedirectStandardError = $true
-$psi.CreateNoWindow = $true
+$psi.StandardOutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$psi.StandardErrorEncoding = [System.Text.UTF8Encoding]::new($false)
 foreach ($a in $argsList) {
   [void]$psi.ArgumentList.Add($a)
 }
 
 $proc = [System.Diagnostics.Process]::new()
 $proc.StartInfo = $psi
-$proc.EnableRaisingEvents = $true
-
-# Thread-safe line queues for async stdout/stderr
-$outQueue = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
-$errQueue = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
-
-$outHandler = {
-  param($sender, $e)
-  if ($null -ne $e.Data) { [void]$outQueue.Enqueue($e.Data) }
-}
-$errHandler = {
-  param($sender, $e)
-  if ($null -ne $e.Data) { [void]$errQueue.Enqueue($e.Data) }
-}
-
-$proc.add_OutputDataReceived($outHandler)
-$proc.add_ErrorDataReceived($errHandler)
-
+[GrokLinePump]::Attach($proc, $outQueue, $errQueue)
 [void]$proc.Start()
 $proc.BeginOutputReadLine()
 $proc.BeginErrorReadLine()
@@ -296,7 +300,8 @@ $forceStopped = $false
 $stallKilled = $false
 $startedUtc = [DateTime]::UtcNow
 
-function Write-OutLine([string]$line) {
+function Write-OutLine {
+  param([string]$line)
   $script:lastOutputUtc = [DateTime]::UtcNow
   $logWriter.WriteLine($line)
   # Compact console: show type + short snippet for streaming-json
@@ -331,7 +336,6 @@ function Write-OutLine([string]$line) {
         Write-Host "[error] $($obj.message)"
       }
       default {
-        # unknown event types: show raw truncated
         if ($line.Length -gt 200) {
           Write-Host ($line.Substring(0, 200) + "...")
         } else {
@@ -390,11 +394,10 @@ try {
 
     if ($forceStopped) { break }
 
-    # Stall detection: auth+load should produce events quickly; bloated resume hangs with silence
+    # Stall detection: bloated resume hangs with silence
     if ($StallTimeoutSeconds -gt 0) {
       $silentFor = ([DateTime]::UtcNow - $script:lastOutputUtc).TotalSeconds
       $aliveFor = ([DateTime]::UtcNow - $startedUtc).TotalSeconds
-      # Grace period 20s for startup before stall clock matters; use lastOutput which starts at launch
       if ($silentFor -ge $StallTimeoutSeconds) {
         Write-Host ""
         Write-Host "STALL: no grok output for ${StallTimeoutSeconds}s (alive ${aliveFor}s)."
@@ -408,21 +411,17 @@ try {
       }
     }
 
-    Start-Sleep -Milliseconds 200
+    Start-Sleep -Milliseconds 150
   }
 
   # Final drain after exit
-  Start-Sleep -Milliseconds 300
+  Start-Sleep -Milliseconds 400
   Drain-Queues
-  try { $proc.WaitForExit(5000) | Out-Null } catch { }
+  try { $null = $proc.WaitForExit(5000) } catch { }
 }
 finally {
   try { $logWriter.Flush(); $logWriter.Dispose() } catch { }
   try { $errWriter.Flush(); $errWriter.Dispose() } catch { }
-  try {
-    $proc.remove_OutputDataReceived($outHandler)
-    $proc.remove_ErrorDataReceived($errHandler)
-  } catch { }
 }
 
 if ($forceStopped -or $stallKilled) {
