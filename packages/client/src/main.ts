@@ -66,6 +66,22 @@ const dlgName = $("dlgName");
 const dlgText = $("dlgText");
 const dlgChoices = $("dlgChoices");
 const dlgClose = $("dlgClose");
+const dlgPortraitWrap = $("dlgPortraitWrap");
+const dlgPortrait = $("dlgPortrait") as HTMLImageElement;
+
+/** Static NPC art for dialogue (public/art). */
+const DIALOGUE_PORTRAITS: Record<string, string> = {
+  npc_bartender: "/art/bartender-male.jpg",
+  npc_club: "/art/bartender-female.jpg",
+};
+
+function dialoguePortraitUrl(npcId: string, npcName: string): string | null {
+  if (DIALOGUE_PORTRAITS[npcId]) return DIALOGUE_PORTRAITS[npcId];
+  const n = npcName.toLowerCase();
+  if (n.includes("vince") || n.includes("barman")) return "/art/bartender-male.jpg";
+  if (n.includes("venus") || n.includes("static")) return "/art/bartender-female.jpg";
+  return null;
+}
 const shopModal = $("shopModal");
 const shopTitle = $("shopTitle");
 const shopUnitName = $("shopUnitName");
@@ -788,6 +804,21 @@ function renderDialogue(): void {
   dialogueModal.classList.remove("hidden");
   if (key === lastDialogueKey) return;
   lastDialogueKey = key;
+
+  const portrait = dialoguePortraitUrl(d.npcId, d.npcName);
+  if (portrait) {
+    dlgPortraitWrap.classList.remove("hidden");
+    if (dlgPortrait.getAttribute("src") !== portrait) {
+      dlgPortrait.src = portrait;
+    }
+    dlgPortrait.alt = d.npcName;
+    dialogueModal.querySelector(".dialogue-card")?.classList.add("has-portrait");
+  } else {
+    dlgPortraitWrap.classList.add("hidden");
+    dlgPortrait.removeAttribute("src");
+    dlgPortrait.alt = "";
+    dialogueModal.querySelector(".dialogue-card")?.classList.remove("has-portrait");
+  }
 
   dlgName.textContent = d.npcName;
   dlgText.textContent = d.text;

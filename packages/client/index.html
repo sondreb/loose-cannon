@@ -16,7 +16,7 @@
     <div id="app">
       <div id="login">
         <div class="login-bg" aria-hidden="true">
-          <img class="login-splash" src="/art/splash.jpg" alt="" />
+          <img class="login-splash" src="/art/splash.jpg?v=2" alt="" />
           <div class="login-splash-shade"></div>
           <div class="login-orb o1"></div>
           <div class="login-orb o2"></div>
@@ -210,11 +210,18 @@
         </div>
 
         <div id="dialogueModal" class="modal hidden">
-          <div class="modal-card">
-            <h2 id="dlgName"></h2>
-            <p id="dlgText"></p>
-            <div id="dlgChoices"></div>
-            <button type="button" id="dlgClose" class="ghost">Walk away</button>
+          <div class="modal-card dialogue-card">
+            <div class="dialogue-layout">
+              <div id="dlgPortraitWrap" class="dialogue-portrait-wrap hidden">
+                <img id="dlgPortrait" class="dialogue-portrait" alt="" />
+              </div>
+              <div class="dialogue-body">
+                <h2 id="dlgName"></h2>
+                <p id="dlgText"></p>
+                <div id="dlgChoices"></div>
+                <button type="button" id="dlgClose" class="ghost">Walk away</button>
+              </div>
+            </div>
           </div>
         </div>
 

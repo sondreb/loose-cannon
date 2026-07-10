@@ -2251,10 +2251,14 @@ export class GameWorld {
 
     if (role === "bartender") {
       const cost = layLowCost(heat);
+      const female = npc.gender === "female";
+      const text = female
+        ? `${npc.name} leans over the sticky bar, neon catching every curve. "Hire some meat, buy a round, or keep staring — clock's ticking, boss."`
+        : `${npc.name} wipes a glass that will never be clean. "You lookin' to hire muscle or start a funeral?"`;
       return {
         npcId: npc.id,
         npcName: npc.name,
-        text: "Vince wipes a glass that will never be clean. \"You lookin' to hire muscle or start a funeral?\"",
+        text,
         choices: [
           { id: "hire", label: "I need a warm body for the crew. ($150)", tone: "business" },
           {
@@ -2266,7 +2270,11 @@ export class GameWorld {
             tone: "smooth",
           },
           { id: "rumor", label: "What's the word on the street?", tone: "smooth" },
-          { id: "insult", label: "Nice dump. Rats pay rent?", tone: "insult" },
+          {
+            id: "insult",
+            label: female ? "Nice outfit. Tips pay the rent?" : "Nice dump. Rats pay rent?",
+            tone: "insult",
+          },
           { id: "bye", label: "Later.", tone: "smooth" },
         ],
       };
