@@ -135,7 +135,8 @@ export type HoverTarget =
   | null;
 
 const FLOOR_PX = 18;
-const PRED_SPEED = MOVE_SPEED;
+/** Client prediction base; matches server formula with default speed stat 5 */
+const PRED_SPEED = MOVE_SPEED * (0.7 + 5 * 0.06);
 const MIN_ZOOM = 0.65;
 const MAX_ZOOM = 1.4;
 /** Interiors can zoom in tighter so the whole room fills the view */
@@ -981,32 +982,52 @@ export class WorldView {
     g.rect(camSx - halfW, camSy - halfH, halfW * 2, halfH * 2);
     g.fill({ color: base });
 
-    const inView = (x: number, y: number): boolean => {
-      const p = worldToScreen(x, y);
+    // Spatial cull in WORLD space (never scan the full 110×90 map every redraw —
+    // that tanked FPS / made movement stutter in the deep south).
+    // Iso: screen distance ≈ (Δx+Δy)*TILE_H/2; use a generous tile radius from camera.
+    const tileR = Math.ceil(
+      Math.max(halfW / (TILE_W * 0.45), halfH / (TILE_H * 0.45)) + 4,
+    );
+    const x0 = Math.floor(this.followX - tileR);
+    const x1 = Math.ceil(this.followX + tileR);
+    const y0 = Math.floor(this.followY - tileR);
+    const y1 = Math.ceil(this.followY + tileR);
+
+    const inViewScreen = (x: number, y: number): boolean => {
+      const p = worldToScreen(x + 0.5, y + 0.5);
       return Math.abs(p.sx - camSx) < halfW && Math.abs(p.sy - camSy) < halfH;
     };
 
-    // Draw EVERY outdoor floor tile (solid streets — no sparse grass grid)
-    for (const f of this.cachedFloors ?? []) {
-      if (f.type === "floor") continue; // interiors off-map
-      if (!inView(f.x, f.y)) continue;
-      this.drawGroundTile(g, f.x, f.y, f.type);
-    }
-    for (const b of this.cachedBlocked ?? []) {
-      if (!inView(b.x, b.y)) continue;
-      if (b.type === "void") continue;
-      if (b.type === "wall") {
-        this.drawGroundTile(g, b.x, b.y, "sidewalk");
-        continue;
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const type = this.tileType(x, y);
+        if (!type || type === "void" || type === "floor") continue;
+        // Interiors live off-map on rim tiles — skip outdoor draws of indoor shells
+        if (type === "bar" || type === "shop" || type === "hospital" || type === "gym") {
+          // only draw if they're part of outdoor (they shouldn't be) — skip
+          // Actually bar tiles only exist indoors; still skip non-walk outdoor types that are interior-only
+        }
+        // Skip pure interior functional tiles if any leaked
+        if (
+          type === "bar" ||
+          type === "shop" ||
+          type === "hospital" ||
+          type === "gym" ||
+          type === "door"
+        ) {
+          // doors on exterior shells should still draw
+          if (type !== "door") continue;
+        }
+        if (!inViewScreen(x, y)) continue;
+        if (type === "wall") {
+          this.drawGroundTile(g, x, y, "sidewalk");
+        } else {
+          this.drawGroundTile(g, x, y, type);
+        }
+        if (type === "road" || type === "sidewalk" || type === "parking") {
+          this.drawStreetDressing(g, x, y, type);
+        }
       }
-      this.drawGroundTile(g, b.x, b.y, b.type);
-    }
-
-    // Street dressing layer (cones, manholes, trash) — pure visual
-    for (const f of this.cachedFloors ?? []) {
-      if (!inView(f.x, f.y)) continue;
-      if (f.type !== "road" && f.type !== "sidewalk" && f.type !== "parking") continue;
-      this.drawStreetDressing(g, f.x, f.y, f.type);
     }
   }
 
@@ -1231,8 +1252,8 @@ export class WorldView {
     const h = this.app.renderer.height / this.zoom;
     const t = this.time;
 
-    // Diagonal rain streaks (stable pseudo-random field)
-    const count = 110;
+    // Diagonal rain streaks (stable pseudo-random field) — keep light for FPS
+    const count = 55;
     for (let i = 0; i < count; i++) {
       const h1 = ((i * 1103515245 + 12345) >>> 0) / 0xffffffff;
       const h2 = ((i * 1664525 + 1013904223) >>> 0) / 0xffffffff;
@@ -2460,9 +2481,10 @@ export class WorldView {
     this.root.x = -this.camX * this.zoom + ox;
     this.root.y = -this.camY * this.zoom + oy;
 
-    const cellX = Math.floor(this.followX / 4);
-    const cellY = Math.floor(this.followY / 4);
-    const zCell = Math.round(this.zoom * 10);
+    // Larger cells = fewer full map rebuilds while moving (was /4 and stuttered south)
+    const cellX = Math.floor(this.followX / 8);
+    const cellY = Math.floor(this.followY / 8);
+    const zCell = Math.round(this.zoom * 8);
     if (cellX !== this.mapCamCellX || cellY !== this.mapCamCellY || zCell !== this.mapZoomCell) {
       this.mapCamCellX = cellX;
       this.mapCamCellY = cellY;
@@ -2493,8 +2515,10 @@ export class WorldView {
     for (const u of snap.units) {
       if (!u.alive) continue;
       const v = this.visuals.get(u.id) ?? u;
+      // Prefer taller dancer sprites (easier to click on stage)
+      const r = u.npcRole === "dancer" || u.dancerKey ? Math.max(radius, 2.1) : radius;
       const d = Math.hypot(v.x - w.x, v.y - w.y);
-      if (d < bestD) {
+      if (d < r && d < bestD) {
         bestD = d;
         best = u;
       }

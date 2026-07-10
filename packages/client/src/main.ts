@@ -70,6 +70,10 @@ const dlgChoices = $("dlgChoices");
 const dlgClose = $("dlgClose");
 const dlgPortraitWrap = $("dlgPortraitWrap");
 const dlgPortrait = $("dlgPortrait") as HTMLImageElement;
+const dlgProfileMeta = $("dlgProfileMeta");
+const dlgProfileRole = $("dlgProfileRole");
+const dlgProfileStage = $("dlgProfileStage");
+const dlgProfileHeader = $("dlgProfileHeader");
 
 /** Static named-NPC art for dialogue (public/art). */
 const DIALOGUE_PORTRAITS: Record<string, string> = {
@@ -92,6 +96,13 @@ function unitFaceUrl(
   return crewPortraitUrl(key, female);
 }
 
+/** Realistic (clothed) profile photos for Titty Twister talent — stage 0..2 */
+function dancerProfileUrl(key: string, stage: number): string {
+  const k = ["a", "b", "c"].includes(key) ? key : "a";
+  const s = Math.max(0, Math.min(2, Math.floor(stage)));
+  return `/art/club/profiles/portrait-${k}-${s}.jpg`;
+}
+
 function dialoguePortraitUrl(
   npcId: string,
   npcName: string,
@@ -99,8 +110,7 @@ function dialoguePortraitUrl(
   opts?: { dancerKey?: string; revealStage?: number },
 ): string {
   if (opts?.dancerKey) {
-    const stage = Math.max(0, Math.min(2, Math.floor(opts.revealStage ?? 0)));
-    return `/art/sprites/club/dancer-${opts.dancerKey}-${stage}.png`;
+    return dancerProfileUrl(opts.dancerKey, opts.revealStage ?? 0);
   }
   if (DIALOGUE_PORTRAITS[npcId]) return DIALOGUE_PORTRAITS[npcId]!;
   const n = npcName.toLowerCase();
@@ -108,12 +118,18 @@ function dialoguePortraitUrl(
   if (n.includes("venus") || n.includes("static")) return "/art/bartender-female.jpg";
   if (n.includes("rita")) return "/art/club-female-2.jpg";
   if (n.includes("kate") || n.includes("caliber")) return "/art/bartender-female-2.jpg";
-  if (n.includes("cherry")) return "/art/sprites/club/dancer-a-0.png";
-  if (n.includes("sable")) return "/art/sprites/club/dancer-b-0.png";
-  if (n.includes("lola")) return "/art/sprites/club/dancer-c-0.png";
+  if (n.includes("cherry")) return dancerProfileUrl("a", 0);
+  if (n.includes("sable")) return dancerProfileUrl("b", 0);
+  if (n.includes("lola")) return dancerProfileUrl("c", 0);
   // Hireable street meat / generic talkers — painted crew faces
   return crewPortraitUrl(npcId + npcName, isFemaleUnit(gender, npcName));
 }
+
+const DANCER_STAGE_LABELS = [
+  "Stage look · full dress",
+  "After tips · more skin",
+  "Floor show · max stagewear",
+] as const;
 const shopModal = $("shopModal");
 const shopTitle = $("shopTitle");
 const shopUnitName = $("shopUnitName");
@@ -288,7 +304,8 @@ function handlePrimaryPointer(clientX: number, clientY: number, asAttack: boolea
     return;
   }
 
-  const unitId = view.pickUnit(clientX, clientY);
+  // Dancers get a larger pick radius (taller sprites / stage glow)
+  const unitId = view.pickUnit(clientX, clientY, 1.75);
   if (unitId) {
     const u = s.units.find((x) => x.id === unitId);
     if (u && u.posseId === s.you.posseId) {
@@ -297,6 +314,7 @@ function handlePrimaryPointer(clientX: number, clientY: number, asAttack: boolea
       return;
     }
     if (u && u.kind === "npc") {
+      // Walk up and open chat / profile (dancers include tip options)
       clickInteractAt(u.x, u.y);
       return;
     }
@@ -844,6 +862,9 @@ function renderDialogue(): void {
   if (!snap?.dialogue) {
     if (!dialogueModal.classList.contains("hidden")) voice.stop();
     dialogueModal.classList.add("hidden");
+    dialogueModal.querySelector(".dialogue-card")?.classList.remove("is-dancer", "has-portrait");
+    dlgProfileHeader?.classList.add("hidden");
+    dlgProfileMeta?.classList.add("hidden");
     lastDialogueKey = "";
     return;
   }
@@ -867,7 +888,20 @@ function renderDialogue(): void {
     dlgPortrait.src = portrait;
   }
   dlgPortrait.alt = d.npcName;
-  dialogueModal.querySelector(".dialogue-card")?.classList.add("has-portrait");
+  const card = dialogueModal.querySelector(".dialogue-card");
+  card?.classList.add("has-portrait");
+  const isDancer = !!d.dancerKey;
+  card?.classList.toggle("is-dancer", isDancer);
+  if (isDancer) {
+    dlgProfileHeader.classList.remove("hidden");
+    dlgProfileMeta.classList.remove("hidden");
+    dlgProfileRole.textContent = "Featured talent";
+    const st = Math.max(0, Math.min(2, Math.floor(d.revealStage ?? 0)));
+    dlgProfileStage.textContent = DANCER_STAGE_LABELS[st] ?? DANCER_STAGE_LABELS[0]!;
+  } else {
+    dlgProfileHeader.classList.add("hidden");
+    dlgProfileMeta.classList.add("hidden");
+  }
 
   dlgName.textContent = d.npcName;
   dlgText.textContent = d.text;
@@ -875,7 +909,15 @@ function renderDialogue(): void {
   for (const c of d.choices) {
     const b = document.createElement("button");
     b.type = "button";
-    b.textContent = `[${c.tone}] ${c.label}`;
+    // Friendlier labels for club talent
+    const toneTag = isDancer
+      ? c.id === "tip_dancer"
+        ? "💵"
+        : c.id === "flirt_dancer"
+          ? "💋"
+          : "·"
+      : `[${c.tone}]`;
+    b.textContent = isDancer ? `${toneTag} ${c.label}` : `[${c.tone}] ${c.label}`;
     b.addEventListener("click", (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
