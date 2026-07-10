@@ -17,6 +17,7 @@ import {
   type WorldSnapshot,
 } from "@loose-cannon/shared";
 import { sfx } from "./audio.js";
+import { voice } from "./voice.js";
 import { portraitDataUrl, statBonus, upgradeTier } from "./avatar.js";
 import {
   ARMOR_BAR_ORDER,
@@ -814,15 +815,21 @@ let lastDialogueKey = "";
 
 function renderDialogue(): void {
   if (!snap?.dialogue) {
+    if (!dialogueModal.classList.contains("hidden")) voice.stop();
     dialogueModal.classList.add("hidden");
     lastDialogueKey = "";
     return;
   }
   const d = snap.dialogue;
-  const key = `${d.npcId}|${d.text}|${d.choices.map((c) => c.id + ":" + c.label).join(";")}`;
+  const key = `${d.npcId}|${d.text}|${d.choices.map((c) => c.id + ":" + c.label).join(";")}|${d.voiceLineId ?? ""}`;
   dialogueModal.classList.remove("hidden");
   if (key === lastDialogueKey) return;
   lastDialogueKey = key;
+
+  if (d.voiceLineId) {
+    sfx.unlock();
+    voice.play(d.voiceLineId, { force: true });
+  }
 
   const portrait = dialoguePortraitUrl(d.npcId, d.npcName);
   if (portrait) {
@@ -1205,10 +1212,13 @@ function onStashClick(e: MouseEvent): void {
   }
 }
 
+let lastShopVoiceKey = "";
+
 function renderShop(): void {
   if (!snap?.shop) {
     shopModal.classList.add("hidden");
     lastShopKey = "";
+    lastShopVoiceKey = "";
     return;
   }
   shopModal.classList.remove("hidden");
@@ -1216,6 +1226,14 @@ function renderShop(): void {
   shopCash.textContent = `$${snap.you.cash}`;
   const u = selectedUnit();
   shopUnitName.textContent = u?.name ?? "—";
+
+  // Play open bark once per shop session
+  const shopVoiceKey = `${snap.shop.buildingId}|${snap.shop.voiceLineId ?? ""}`;
+  if (snap.shop.voiceLineId && shopVoiceKey !== lastShopVoiceKey) {
+    lastShopVoiceKey = shopVoiceKey;
+    sfx.unlock();
+    voice.play(snap.shop.voiceLineId, { force: true });
+  }
 
   const ownedW = (u?.ownedWeapons ?? []).slice().sort().join(",");
   const ownedA = (u?.ownedArmors ?? []).slice().sort().join(",");
@@ -1714,6 +1732,10 @@ async function startGame(): Promise<void> {
     onEvent: pushEvent,
     onChat: pushChat,
     onNotify: showNotify,
+    onVoicePlay: (lineId) => {
+      sfx.unlock();
+      voice.play(lineId, { force: true });
+    },
     onClose: () => {
       pushEvent("Disconnected from server.");
     },

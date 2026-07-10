@@ -116,11 +116,15 @@ export interface DialogueState {
   npcName: string;
   text: string;
   choices: DialogueChoice[];
+  /** Offline Grok TTS clip under /voice/{id}.mp3 */
+  voiceLineId?: string;
 }
 
 export interface ShopState {
   buildingId: string;
   shopName: string;
+  /** Optional bark when the counter opens */
+  voiceLineId?: string;
 }
 
 /** Crash Pad stash UI (safehouse storage — not looted on wipe) */
@@ -366,4 +370,6 @@ export type ServerMessage =
       body: string;
       cash?: number;
       rep?: number;
-    };
+    }
+  /** Play a prebaked NPC voice line (/voice/{lineId}.mp3) */
+  | { type: "voice.play"; lineId: string };

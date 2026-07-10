@@ -37,6 +37,7 @@ import {
   UPGRADES,
   WEAPONS,
   createSkidrowMap,
+  pickVoiceLineId,
   type ArmorId,
   type ChatLine,
   type ClientMessage,
@@ -2099,12 +2100,23 @@ export class GameWorld {
       const spawn = this.map.npcSpawns.find((n) => n.id === u.id);
       if (spawn?.role === "dealer") {
         const b = this.map.buildings.find((bb) => bb.id === (u.buildingId ?? posse.insideBuildingId));
+        const n = u.name.toLowerCase();
+        let openLine = "phil_open";
+        let greetLog = "Cash only. No refunds on regrets.";
+        if (n.includes("kate") || n.includes("caliber")) {
+          openLine = "kate_open";
+          greetLog = "Show me the cash, I'll show you the hardware.";
+        } else if (n.includes("bob") || n.includes("bottle")) {
+          openLine = "bob_open";
+          greetLog = "Drink special is whatever I haven't spilled yet.";
+        }
         posse.shop = {
           buildingId: b?.id ?? "shop_pawn",
           shopName: b?.name ?? "Pawn-O-Matic",
+          voiceLineId: openLine,
         };
         posse.dialogue = null;
-        this.log(session, `${u.name}: "Cash only. No refunds on regrets."`);
+        this.log(session, `${u.name}: "${greetLog}"`);
         return;
       }
       if (spawn?.role === "doc") {
@@ -2156,6 +2168,7 @@ export class GameWorld {
     const cost = 80;
     if (posse.cash < cost) {
       this.log(session, "Doc Bandage: \"Come back when your wallet's breathing.\"");
+      session.conn?.send({ type: "voice.play", lineId: "doc_greet" });
       return;
     }
     posse.cash -= cost;
@@ -2168,6 +2181,7 @@ export class GameWorld {
       }
       healed += u.health - before;
     }
+    session.conn?.send({ type: "voice.play", lineId: "doc_heal" });
     this.log(
       session,
       `Doc Bandage stitches the crew for $${cost}. (+${Math.round(healed)} HP total) "Try not to leak on the floor."`,
@@ -2184,6 +2198,7 @@ export class GameWorld {
     if (!unit || !unit.alive) return;
     if (posse.cash < cost) {
       this.log(session, "Coach Brick: \"Guts ain't free, champ.\"");
+      session.conn?.send({ type: "voice.play", lineId: "coach_greet" });
       return;
     }
     posse.cash -= cost;
@@ -2194,6 +2209,7 @@ export class GameWorld {
       unit.stats.maxHealth += 5;
       unit.health = Math.min(unit.stats.maxHealth, unit.health + 5);
     }
+    session.conn?.send({ type: "voice.play", lineId: "coach_train" });
     this.log(
       session,
       `Coach Brick screams at ${unit.name} until +1 ${pick.toUpperCase()} appears. (−$${cost}) "Pain is just weakness leaving the bullet holes."`,
@@ -2547,21 +2563,55 @@ export class GameWorld {
     }
   }
 
+  /** Map NPC identity → greeter voice line ids (random pick). */
+  private greeterVoiceIds(npc: Unit, role: string): string[] {
+    const name = npc.name.toLowerCase();
+    const female = npc.gender === "female";
+    if (role === "bartender") {
+      if (female || name.includes("venus")) return ["venus_greet_1", "venus_greet_2", "venus_greet_3"];
+      return ["vince_greet_1", "vince_greet_2"];
+    }
+    if (role === "fixer") return ["rita_greet"];
+    if (role === "dealer") {
+      if (name.includes("kate") || name.includes("caliber")) return ["kate_greet"];
+      if (name.includes("bob") || name.includes("bottle")) return ["bob_greet"];
+      return ["phil_greet"];
+    }
+    if (role === "doc") return ["doc_greet"];
+    if (role === "coach") return ["coach_greet"];
+    if (role === "priest") return ["priest_greet"];
+    if (role === "mechanic") return ["tony_greet"];
+    if (role === "thug") return female ? ["thug_greet_f"] : ["thug_greet_m"];
+    return ["generic_bye"];
+  }
+
+  private isFemaleBartender(npc: Unit | undefined): boolean {
+    if (!npc) return false;
+    return npc.gender === "female" || /venus/i.test(npc.name);
+  }
+
+  private setDialogueVoice(d: DialogueState, lineId: string | undefined): void {
+    if (lineId) d.voiceLineId = lineId;
+    else delete d.voiceLineId;
+  }
+
   private buildDialogue(npc: Unit, playerPosse?: Posse): DialogueState {
     const spawn = this.map.npcSpawns.find((n) => n.id === npc.id);
     const role = spawn?.role ?? "thug";
     const heat = playerPosse?.heat ?? 0;
+    const voiceLineId = pickVoiceLineId(this.greeterVoiceIds(npc, role));
 
     if (role === "bartender") {
       const cost = layLowCost(heat);
-      const female = npc.gender === "female";
+      const female = this.isFemaleBartender(npc);
       const text = female
-        ? `${npc.name} leans over the sticky bar, neon catching every curve. "Hire some meat, buy a round, or keep staring — clock's ticking, boss."`
+        ? `${npc.name} leans over the sticky bar, neon catching every curve. "Hello daddy — drink, hire, or stare? Clock's ticking."`
         : `${npc.name} wipes a glass that will never be clean. "You lookin' to hire muscle or start a funeral?"`;
       return {
         npcId: npc.id,
         npcName: npc.name,
         text,
+        voiceLineId,
         choices: [
           { id: "hire", label: "I need a warm body for the crew. ($150)", tone: "business" },
           {
@@ -2587,6 +2637,7 @@ export class GameWorld {
         npcId: npc.id,
         npcName: npc.name,
         text: "Rita doesn't look up from her notepad. \"Jobs, tips, or trouble. Pick one.\"",
+        voiceLineId,
         choices: [
           { id: "job", label: "Got work?", tone: "business" },
           { id: "tip", label: "Who should I watch for?", tone: "smooth" },
@@ -2600,6 +2651,7 @@ export class GameWorld {
         npcId: npc.id,
         npcName: npc.name,
         text: `${npc.name} grins. "Guns, jackets, miracles. Cash only. Browse the counter when you're ready."`,
+        voiceLineId,
         choices: [
           { id: "open_shop", label: "Show me the goods.", tone: "business" },
           { id: "haggle", label: "Prices are criminal.", tone: "insult" },
@@ -2613,6 +2665,7 @@ export class GameWorld {
         npcId: npc.id,
         npcName: npc.name,
         text: "Father Trouble lights a cigarette on a candle. \"Confession is $50. Absolution is extra.\"",
+        voiceLineId,
         choices: [
           {
             id: "memorial",
@@ -2631,6 +2684,7 @@ export class GameWorld {
         npcId: npc.id,
         npcName: npc.name,
         text: "Grease Tony wipes his hands on something that used to be a shirt. \"You need wheels or just moral support?\"",
+        voiceLineId,
         choices: [
           { id: "tip", label: "What's hot on the lot?", tone: "smooth" },
           { id: "insult", label: "Your cars look terminal.", tone: "insult" },
@@ -2646,6 +2700,7 @@ export class GameWorld {
           role === "doc"
             ? "Doc Bandage snaps on gloves that have seen things. \"Bleed on the mat, not the furniture.\""
             : "Coach Brick flexes a vein the size of a garden hose. \"Pain builds character. Or corpses.\"",
+        voiceLineId,
         choices: [
           { id: "bye", label: "I'll… use the equipment.", tone: "business" },
         ],
@@ -2655,6 +2710,7 @@ export class GameWorld {
       npcId: npc.id,
       npcName: npc.name,
       text: `${npc.name} spits on the sidewalk. "You hiring or wasting oxygen?"`,
+      voiceLineId,
       choices: [
         { id: "hire_street", label: "Join the crew. ($100)", tone: "business" },
         { id: "insult", label: "You're the waste.", tone: "insult" },
@@ -2676,13 +2732,22 @@ export class GameWorld {
     if (choiceId === "open_shop") {
       posse.dialogue = null;
       const b = this.map.buildings.find((bb) => bb.id === (npc?.buildingId ?? posse.insideBuildingId));
-      posse.shop = { buildingId: b?.id ?? "shop_pawn", shopName: b?.name ?? "Shop" };
+      const name = (npc?.name ?? "").toLowerCase();
+      let openLine = "phil_open";
+      if (name.includes("kate") || name.includes("caliber")) openLine = "kate_open";
+      else if (name.includes("bob") || name.includes("bottle")) openLine = "bob_open";
+      posse.shop = {
+        buildingId: b?.id ?? "shop_pawn",
+        shopName: b?.name ?? "Shop",
+        voiceLineId: openLine,
+      };
       return;
     }
 
     if (choiceId === "bless") {
       if (posse.cash < 50) {
         d.text = "\"Faith without funds is just hope.\"";
+        this.setDialogueVoice(d, "priest_broke");
         d.choices = [{ id: "bye", label: "I'll pass the plate later.", tone: "smooth" }];
         return;
       }
@@ -2691,6 +2756,7 @@ export class GameWorld {
         u.health = Math.min(u.stats.maxHealth, u.health + 15);
       }
       d.text = "\"You're blessed. Marginally. Don't test it in traffic.\"";
+      this.setDialogueVoice(d, "priest_bless");
       d.choices = [{ id: "bye", label: "Thanks, Padre.", tone: "smooth" }];
       this.log(session, "Crew blessed (+15 HP). Probably placebo. (−$50)");
       return;
@@ -2710,14 +2776,17 @@ export class GameWorld {
     }
 
     if (choiceId === "lay_low") {
+      const femaleBar = this.isFemaleBartender(npc);
       if (posse.heat < 5) {
         d.text = "\"You're already a nobody. Congrats.\"";
+        this.setDialogueVoice(d, femaleBar ? "venus_laylow_ok" : "vince_laylow_cool");
         d.choices = [{ id: "bye", label: "I'll take that as a compliment.", tone: "smooth" }];
         return;
       }
       const cost = layLowCost(posse.heat);
       if (posse.cash < cost) {
         d.text = `"Cooling off costs $${cost}. Your wallet is still hot."`;
+        this.setDialogueVoice(d, femaleBar ? "venus_hire_broke" : "vince_laylow_broke");
         d.choices = [{ id: "bye", label: "I'll be back with cash.", tone: "business" }];
         return;
       }
@@ -2725,20 +2794,25 @@ export class GameWorld {
       const before = Math.round(posse.heat);
       posse.heat = Math.max(0, posse.heat - LAY_LOW_HEAT_REDUCE);
       d.text = `"Sit. Drink water. Forget your name for twenty minutes." Heat ${before} → ${Math.round(posse.heat)}.`;
-      d.choices = [{ id: "bye", label: "Thanks, Vince.", tone: "smooth" }];
+      this.setDialogueVoice(d, femaleBar ? "venus_laylow_ok" : "vince_laylow_ok");
+      d.choices = [{ id: "bye", label: femaleBar ? "Thanks, Venus." : "Thanks, Vince.", tone: "smooth" }];
       this.log(session, `Laid low (−$${cost}). Heat ${before} → ${Math.round(posse.heat)}.`);
       return;
     }
 
     if (choiceId === "hire" || choiceId === "hire_street") {
       const cost = choiceId === "hire" ? 150 : 100;
+      const femaleBar = this.isFemaleBartender(npc);
+      const femaleNpc = npc?.gender === "female";
       if (posse.memberIds.length >= MAX_ACTIVE_GOONS + 1) {
         d.text = "\"Crew's full, boss. Fire someone first.\"";
+        this.setDialogueVoice(d, femaleBar ? "venus_hire_broke" : "vince_hire_full");
         d.choices = [{ id: "bye", label: "Alright.", tone: "smooth" }];
         return;
       }
       if (posse.cash < cost) {
         d.text = "\"Come back when your pockets ain't empty.\"";
+        this.setDialogueVoice(d, femaleBar ? "venus_hire_broke" : "vince_hire_broke");
         d.choices = [{ id: "bye", label: "Whatever.", tone: "insult" }];
         return;
       }
@@ -2753,25 +2827,29 @@ export class GameWorld {
       if (recruitNpc) {
         const name = this.recruitNpcAsGoon(session, posse, recruitNpc);
         d.text = `"${name}" cracks their neck. "Alright boss. I'm with you."`;
+        this.setDialogueVoice(d, femaleNpc ? "thug_join_f" : "thug_join");
         this.log(session, `${name} joined the posse for $${cost}.`);
       } else {
         const name = this.hireGoon(session, posse);
         d.text = "\"They're yours. Try not to get 'em killed in the first five minutes.\"";
+        this.setDialogueVoice(d, femaleBar ? "venus_hire_ok" : "vince_hire_ok");
         this.log(session, `Hired ${name} for $${cost}.`);
       }
       d.choices = [{ id: "bye", label: "Welcome to the posse.", tone: "business" }];
       posse.dialogue = d;
       this.advanceTutorial(session, posse, "hire_vince");
-      // Close talk after hire so we don't re-open on a deleted NPC
-      if (recruitNpc) {
-        // keep brief farewell text one more frame — next choice "bye" closes
-      }
       return;
     }
 
     if (choiceId === "rumor" || choiceId === "tip") {
+      const femaleBar = this.isFemaleBartender(npc);
+      const isRita = /rita/i.test(npc?.name ?? d.npcName);
       d.text =
         "\"Dumpster Dogs prowl the west road. Silk Street plays nice until they don't. Watch the warehouse.\"";
+      this.setDialogueVoice(
+        d,
+        isRita ? "rita_tip" : femaleBar ? "venus_rumor" : "vince_rumor",
+      );
       d.choices = [{ id: "bye", label: "Good looking out.", tone: "smooth" }];
       posse.rep += 1;
       return;
@@ -2781,6 +2859,7 @@ export class GameWorld {
       if (posse.mission) {
         const cur = MISSIONS[posse.mission.defId];
         d.text = `"You're already on \"${cur?.title ?? "a job"}.\" Finish it or abandon first — I don't double-book amateurs."`;
+        this.setDialogueVoice(d, "rita_busy");
         d.choices = [
           { id: "abandon_hint", label: "How do I walk?", tone: "smooth" },
           { id: "bye", label: "Right.", tone: "business" },
@@ -2796,6 +2875,7 @@ export class GameWorld {
         title: "Rita's Job Book",
         offers: listMissionOffers(),
       };
+      session.conn?.send({ type: "voice.play", lineId: "rita_job_open" });
       this.log(session, `${d.npcName} flips open a greasy notepad of contracts.`);
       this.advanceTutorial(session, posse, "talk_rita");
       return;
@@ -2803,12 +2883,28 @@ export class GameWorld {
 
     if (choiceId === "abandon_hint") {
       d.text = "\"Hit abandon on the contract, or ask me again when you're done.\" (Esc / abandon from the job HUD.)";
+      this.setDialogueVoice(d, "rita_abandon_hint");
       d.choices = [{ id: "bye", label: "Got it.", tone: "smooth" }];
       return;
     }
 
     if (choiceId === "insult" || choiceId === "threat" || choiceId === "haggle") {
-      d.text = "\"I will fucking bury you.\" He means it as a greeting and a promise.";
+      const femaleBar = this.isFemaleBartender(npc);
+      const isRita = /rita/i.test(npc?.name ?? d.npcName);
+      const name = (npc?.name ?? "").toLowerCase();
+      if (choiceId === "haggle") {
+        d.text = "\"Prices are criminal? Buddy, look around. You're shopping in a crime scene.\"";
+        this.setDialogueVoice(d, "phil_haggle");
+      } else if (isRita) {
+        d.text = "\"I will fucking bury you.\" She means it as a greeting and a promise.";
+        this.setDialogueVoice(d, "rita_threat");
+      } else if (femaleBar) {
+        d.text = "\"Keep talking, honey. I'll bury you heels first.\"";
+        this.setDialogueVoice(d, "venus_insult");
+      } else {
+        d.text = "\"I will fucking bury you.\" He means it as a greeting and a promise.";
+        this.setDialogueVoice(d, name.includes("vince") ? "vince_insult" : "generic_bury");
+      }
       d.choices = [{ id: "bye", label: "(Back off)", tone: "smooth" }];
       if (npc && Math.random() < 0.35) {
         this.log(session, "That could have gone better.");

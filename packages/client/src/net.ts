@@ -12,6 +12,7 @@ export type NetHandlers = {
   onEvent: (text: string) => void;
   onChat: (from: string, text: string, system?: boolean) => void;
   onNotify: (msg: Extract<ServerMessage, { type: "notify" }>) => void;
+  onVoicePlay?: (lineId: string) => void;
   onClose: () => void;
 };
 
@@ -54,6 +55,9 @@ export class GameSocket {
           break;
         case "notify":
           this.handlers.onNotify(msg);
+          break;
+        case "voice.play":
+          this.handlers.onVoicePlay?.(msg.lineId);
           break;
         case "reject":
           this.handlers.onEvent(`Rejected: ${msg.reason}`);

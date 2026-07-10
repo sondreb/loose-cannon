@@ -1231,12 +1231,18 @@ body {
   transform: translateY(-4px);
 }
 
+/* Desktop: session chat top-right. Mobile overrides to bottom bar. */
 #chatBox {
   position: absolute;
-  left: 292px;
-  bottom: 14px;
-  width: min(420px, calc(100% - 320px));
-  z-index: 6;
+  top: 52px;
+  right: 14px;
+  left: auto;
+  bottom: auto;
+  width: min(320px, calc(100vw - 300px));
+  max-height: min(42vh, 320px);
+  display: flex;
+  flex-direction: column;
+  z-index: 9;
   background: rgba(10, 10, 16, 0.55);
   backdrop-filter: blur(16px) saturate(140%);
   -webkit-backdrop-filter: blur(16px) saturate(140%);
@@ -1246,12 +1252,20 @@ body {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
 }
 
+#chatBox #chatBody {
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+
 .chat-head {
-  display: none;
+  display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
   margin-bottom: 0.25rem;
+  flex: 0 0 auto;
 }
 
 .chat-title {
@@ -1270,7 +1284,9 @@ body {
 }
 
 #chatLog {
-  height: 72px;
+  flex: 1 1 auto;
+  min-height: 56px;
+  max-height: 140px;
   overflow-y: auto;
   font-size: 0.78rem;
   margin-bottom: 0.3rem;
@@ -2593,11 +2609,13 @@ body {
 
   /* Chat: collapsed by default on phones; expands above the control bar */
   #chatBox {
+    top: auto;
     left: 8px;
     right: 8px;
     bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
     width: auto;
     max-width: none;
+    max-height: 28vh;
     padding: 0.35rem 0.45rem;
     border-radius: 12px;
     z-index: 11;
@@ -2614,7 +2632,13 @@ body {
 
   #chatLog {
     height: 52px;
+    max-height: 52px;
     font-size: 0.7rem;
+  }
+
+  .minimap-btn {
+    top: 56px;
+    right: 14px;
   }
 
   #chatForm input {
@@ -2622,11 +2646,12 @@ body {
     padding: 0.45rem 0.5rem;
   }
 
+/* Desktop: MAP sits left of the chat column; mobile uses absolute top-right */
 .minimap-btn {
   position: absolute;
-  top: 56px;
+  top: 12px;
   right: 14px;
-  z-index: 8;
+  z-index: 10;
   background: rgba(10, 14, 22, 0.78);
   backdrop-filter: blur(12px);
   border: 1px solid rgba(240, 192, 64, 0.4);
@@ -2638,6 +2663,14 @@ body {
   border-radius: 10px;
   cursor: pointer;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+@media (min-width: 901px) {
+  .minimap-btn {
+    /* clear the chat panel (~320 + 14 + gap) */
+    right: calc(14px + min(320px, calc(100vw - 300px)) + 10px);
+    top: 52px;
+  }
 }
 
 .minimap-btn:hover {

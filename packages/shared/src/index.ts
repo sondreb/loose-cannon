@@ -7,3 +7,4 @@ export * from "./tutorial.js";
 export * from "./progression.js";
 export * from "./districts.js";
 export * from "./memorial.js";
+export * from "./voiceLines.js";
