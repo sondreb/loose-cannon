@@ -1,23 +1,49 @@
 # Loose Cannon
 
-Browser-based MMO crime game — isometric squad tactics (*Syndicate*), disposable crew comedy (*Cannon Fodder*), gangster recruitment fantasy (*Kingpin*).
+Browser-based crime game — isometric squad tactics (*Syndicate*), crew comedy (*Cannon Fodder*), gangster recruitment (*Kingpin*).
+
+## Play (local)
+
+```bash
+npm install
+npm run dev
+```
+
+- Client: http://localhost:5173  
+- Server: ws://localhost:3001 (in-memory, reset on restart)
+
+### Controls
+
+| Input | Action |
+|-------|--------|
+| **WASD / arrow keys** | Free movement (screen-aligned; diagonals work) |
+| Left click | Click-to-move / select your unit |
+| Right click | Fire (pistol / machine gun / etc.) at NPCs, rivals, players |
+| E | Interact (doors, NPCs, shop counter) |
+| 1–4 | Select posse member |
+| 5–0 / - | Quick-equip weapons (Syndicate-style slots) |
+| FULL (panel) | Open full crew loadout editor |
+| Enter | Focus proximity chat |
+| Esc | Close dialogue / shop / editor |
+
+Death: **3 second** respawn delay, then a random outdoor spot with few other players.
+
+### What works
+
+- Walk Skidrow (isometric map)
+- Enter bar, shop, safehouse, warehouse
+- Talk to NPCs, hire goons, open shop
+- Buy weapons, armor, upgrades; equip gear; view stats
+- AI rival posses patrol; often turn hostile when close
+- Proximity chat (players near each other hear messages)
 
 ## Docs
 
-Planning and design live in [`docs/`](./docs/):
-
 - [Game design](./docs/game-design.md)
 - [Architecture](./docs/architecture.md)
-- [PRD / task backlog](./docs/prd.md)
+- [PRD](./docs/prd.md)
 
 ## Inspiration
 
-Reference notes and screenshots: [`inspiration/`](./inspiration/).
+[`inspiration/`](./inspiration/)
 
-## Backend (planned)
-
-Local **Node.js** WebSocket game server with **in-memory** state (reset on restart). Focus is frontend and gameplay; production infra is deferred. See [docs/architecture.md](./docs/architecture.md).
-
-## Status
-
-Pre-implementation. Design docs only; no runtime code yet.

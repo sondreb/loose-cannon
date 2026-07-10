@@ -1,0 +1,883 @@
+import {
+  ARMORS,
+  SHOP_ARMOR_ORDER,
+  SHOP_UPGRADE_ORDER,
+  SHOP_WEAPON_ORDER,
+  UPGRADES,
+  WEAPONS,
+  type ArmorId,
+  type UnitPublic,
+  type UpgradeId,
+  type WeaponId,
+  type WorldSnapshot,
+} from "@loose-cannon/shared";
+import { portraitDataUrl, statBonus, upgradeTier } from "./avatar.js";
+import {
+  ARMOR_BAR_ORDER,
+  armorIconDataUrl,
+  WEAPON_BAR_ORDER,
+  weaponIconDataUrl,
+} from "./icons.js";
+import { GameSocket } from "./net.js";
+import { WorldView } from "./worldView.js";
+
+const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+
+const loginEl = $("login");
+const gameEl = $("game");
+const nameInput = $("nameInput") as HTMLInputElement;
+const joinBtn = $("joinBtn");
+const loginError = $("loginError");
+const canvas = $("canvas") as HTMLCanvasElement;
+const posseList = $("posseList");
+const cashRep = $("cashRep");
+const gearEditor = $("gearEditor");
+const statsView = $("statsView");
+const weaponBar = $("weaponBar");
+const armorBar = $("armorBar");
+const weaponDetail = $("weaponDetail");
+const armorDetail = $("armorDetail");
+const openFullEditor = $("openFullEditor");
+const crewEditorModal = $("crewEditorModal");
+const crewEditorClose = $("crewEditorClose");
+const crewEditorRoster = $("crewEditorRoster");
+const crewEditorProfile = $("crewEditorProfile");
+const crewWeaponBar = $("crewWeaponBar");
+const crewArmorBar = $("crewArmorBar");
+const crewWeaponDetail = $("crewWeaponDetail");
+const crewArmorDetail = $("crewArmorDetail");
+const crewEditorStats = $("crewEditorStats");
+const eventLog = $("eventLog");
+const chatLog = $("chatLog");
+const chatForm = $("chatForm") as HTMLFormElement;
+const chatInput = $("chatInput") as HTMLInputElement;
+const objective = $("objective");
+const dialogueModal = $("dialogueModal");
+const dlgName = $("dlgName");
+const dlgText = $("dlgText");
+const dlgChoices = $("dlgChoices");
+const dlgClose = $("dlgClose");
+const shopModal = $("shopModal");
+const shopTitle = $("shopTitle");
+const shopUnitName = $("shopUnitName");
+const shopCash = $("shopCash");
+const shopWeapons = $("shopWeapons");
+const shopArmor = $("shopArmor");
+const shopUpgrades = $("shopUpgrades");
+const shopClose = $("shopClose");
+const respawnOverlay = $("respawnOverlay");
+const respawnCount = $("respawnCount");
+
+let snap: WorldSnapshot | null = null;
+let myName = "";
+let view: WorldView;
+let socket: GameSocket;
+let chatFocused = false;
+
+/** Keyboard movement state */
+const keys = {
+  up: false,
+  down: false,
+  left: false,
+  right: false,
+};
+let lastKeyMoveSent = 0;
+let keyMoving = false;
+
+function pushEvent(text: string): void {
+  const d = document.createElement("div");
+  d.textContent = text;
+  eventLog.appendChild(d);
+  while (eventLog.children.length > 8) eventLog.removeChild(eventLog.firstChild!);
+}
+
+function pushChat(from: string, text: string, system?: boolean): void {
+  const d = document.createElement("div");
+  if (system) {
+    d.className = "sys";
+    d.textContent = text;
+  } else {
+    d.innerHTML = `<span class="${from === myName ? "me" : ""}">${escapeHtml(from)}:</span> ${escapeHtml(text)}`;
+  }
+  chatLog.appendChild(d);
+  chatLog.scrollTop = chatLog.scrollHeight;
+  while (chatLog.children.length > 50) chatLog.removeChild(chatLog.firstChild!);
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function myUnits(): UnitPublic[] {
+  if (!snap) return [];
+  // Only living posse members (dead goons are removed server-side; leader may show while respawning)
+  return snap.units.filter(
+    (u) =>
+      u.posseId === snap!.you.posseId &&
+      (u.alive || u.isPlayerLeader || u.kind === "player"),
+  );
+}
+
+function selectedUnit(): UnitPublic | undefined {
+  if (!snap) return undefined;
+  return myUnits().find((u) => u.id === snap!.you.selectedUnitId) ?? myUnits()[0];
+}
+
+function tierLabel(tier: number): string {
+  if (tier <= 0) return "Street";
+  if (tier === 1) return "Hardened";
+  if (tier === 2) return "Trained";
+  if (tier === 3) return "Veteran";
+  if (tier === 4) return "Elite";
+  return "Legend";
+}
+
+function tierStars(tier: number): string {
+  if (tier <= 0) return "○ ○ ○";
+  return "★".repeat(tier) + "☆".repeat(Math.max(0, 5 - tier));
+}
+
+function formatBonus(n: number): string {
+  if (n > 0) return `<span class="bonus">+${n}</span>`;
+  if (n < 0) return `<span class="malus">${n}</span>`;
+  return `<span class="flat">·</span>`;
+}
+
+function miniStat(label: string, value: number, baseline = 5): string {
+  const b = statBonus(value, baseline);
+  const cls = b > 0 ? "up" : b < 0 ? "down" : "";
+  return `<div class="mini-stat ${cls}" title="${label} ${value} (${b >= 0 ? "+" : ""}${b} vs baseline)"><span class="k">${label}</span><span class="v">${value}</span>${b > 0 ? `<span class="pip">▲${b}</span>` : ""}</div>`;
+}
+
+let lastPosseKey = "";
+
+function renderPosse(): void {
+  if (!snap) return;
+  cashRep.innerHTML = `<span class="cash">$${snap.you.cash}</span> <span class="rep">Rep ${snap.you.rep}</span>`;
+  const units = myUnits();
+  const key = units
+    .map(
+      (u) =>
+        `${u.id}:${u.health}:${u.weapon}:${u.armor}:${u.alive}:${u.stats.aim},${u.stats.guts},${u.stats.muscle},${u.stats.speed},${u.stats.maxHealth}`,
+    )
+    .join("|") + `|sel:${snap.you.selectedUnitId}`;
+  if (key === lastPosseKey) {
+    renderGear();
+    return;
+  }
+  lastPosseKey = key;
+
+  posseList.innerHTML = "";
+  units.forEach((u, i) => {
+    const tier = upgradeTier(u.stats);
+    const portrait = portraitDataUrl(u.id + u.name, {
+      leader: !!(u.isPlayerLeader || u.kind === "player"),
+      dead: !u.alive,
+      upgradeTier: tier,
+    });
+    const card = document.createElement("div");
+    card.className =
+      "posse-card" +
+      (u.id === snap!.you.selectedUnitId ? " selected" : "") +
+      (tier > 0 ? " upgraded" : "") +
+      (!u.alive ? " dead" : "");
+    card.innerHTML = `
+      <div class="card-top">
+        <div class="portrait-wrap tier-${tier}">
+          <img class="portrait" src="${portrait}" alt="" width="48" height="48" draggable="false" />
+          <span class="slot-num">${i + 1}</span>
+        </div>
+        <div class="card-main">
+          <div class="name-row">
+            <span class="name">${escapeHtml(u.name)}</span>
+            ${u.isPlayerLeader || u.kind === "player" ? '<span class="badge boss">BOSS</span>' : ""}
+            ${tier > 0 ? `<span class="badge up-tier t${tier}">${tierLabel(tier)}</span>` : '<span class="badge street">Street</span>'}
+          </div>
+          <div class="stars" title="Upgrade tier">${tierStars(tier)}</div>
+          <div class="meta gear-line">
+            <span class="wep">🔫 ${escapeHtml(WEAPONS[u.weapon].name)}</span>
+            <span class="arm">🛡 ${escapeHtml(ARMORS[u.armor].name)}</span>
+          </div>
+          ${!u.alive ? '<div class="status-dead">RESPAWNING…</div>' : ""}
+        </div>
+      </div>
+      <div class="mini-stats">
+        ${miniStat("AIM", u.stats.aim)}
+        ${miniStat("GUT", u.stats.guts)}
+        ${miniStat("MUS", u.stats.muscle)}
+        ${miniStat("SPD", u.stats.speed)}
+      </div>
+      <div class="hp" title="HP ${Math.round(u.health)} / ${u.maxHealth}">
+        <span style="width:${Math.max(0, (u.health / u.maxHealth) * 100)}%"></span>
+      </div>
+      <div class="hp-label">${Math.round(u.health)}/${u.maxHealth} HP</div>
+    `;
+    card.addEventListener("click", () => {
+      socket.send({ type: "intent.select", unitId: u.id });
+    });
+    posseList.appendChild(card);
+  });
+  renderGear();
+}
+
+function fillWeaponBar(
+  container: HTMLElement,
+  detailEl: HTMLElement,
+  u: UnitPublic,
+  large = false,
+): void {
+  const owned = new Set(u.ownedWeapons ?? [u.weapon]);
+  container.innerHTML = "";
+  for (const id of WEAPON_BAR_ORDER) {
+    const has = owned.has(id);
+    const active = u.weapon === id;
+    const def = WEAPONS[id];
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "icon-btn" + (active ? " active" : "") + (!has ? " locked" : "");
+    btn.dataset.equip = "weapon";
+    btn.dataset.itemId = id;
+    btn.disabled = !has;
+    btn.title = has
+      ? `${def.name} — DMG ${def.damage} · RNG ${def.range} · CD ${def.fireCooldown}s`
+      : `${def.name} (not owned — buy at Pawn-O-Matic)`;
+    const img = document.createElement("img");
+    img.src = weaponIconDataUrl(id, { active, locked: !has });
+    img.alt = def.name;
+    img.width = large ? 48 : 40;
+    img.height = large ? 48 : 40;
+    img.draggable = false;
+    btn.appendChild(img);
+    if (has && active) {
+      const tag = document.createElement("span");
+      tag.className = "icon-eq";
+      tag.textContent = "EQ";
+      btn.appendChild(tag);
+    }
+    container.appendChild(btn);
+  }
+  const w = WEAPONS[u.weapon];
+  detailEl.innerHTML = `<b>${escapeHtml(w.name)}</b> · DMG ${w.damage} · RNG ${w.range} · ROF ${(1 / w.fireCooldown).toFixed(1)}/s`;
+}
+
+function fillArmorBar(
+  container: HTMLElement,
+  detailEl: HTMLElement,
+  u: UnitPublic,
+  large = false,
+): void {
+  const owned = new Set(u.ownedArmors ?? [u.armor]);
+  container.innerHTML = "";
+  for (const id of ARMOR_BAR_ORDER) {
+    const has = owned.has(id);
+    const active = u.armor === id;
+    const def = ARMORS[id];
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "icon-btn" + (active ? " active" : "") + (!has ? " locked" : "");
+    btn.dataset.equip = "armor";
+    btn.dataset.itemId = id;
+    btn.disabled = !has;
+    btn.title = has
+      ? `${def.name} — −${Math.round(def.damageReduce * 100)}% dmg`
+      : `${def.name} (not owned)`;
+    const img = document.createElement("img");
+    img.src = armorIconDataUrl(id, { active, locked: !has });
+    img.alt = def.name;
+    img.width = large ? 48 : 40;
+    img.height = large ? 48 : 40;
+    img.draggable = false;
+    btn.appendChild(img);
+    if (has && active) {
+      const tag = document.createElement("span");
+      tag.className = "icon-eq";
+      tag.textContent = "EQ";
+      btn.appendChild(tag);
+    }
+    container.appendChild(btn);
+  }
+  const a = ARMORS[u.armor];
+  detailEl.innerHTML = `<b>${escapeHtml(a.name)}</b> · −${Math.round(a.damageReduce * 100)}% damage taken`;
+}
+
+function statBarHtml(label: string, value: number, max = 20, baseline = 5): string {
+  const b = statBonus(value, baseline);
+  const pct = Math.min(100, Math.round((value / max) * 100));
+  const boostPct = Math.min(100, Math.round((Math.max(0, baseline) / max) * 100));
+  return `
+    <div class="stat-bar-row ${b > 0 ? "boosted" : ""}">
+      <span class="stat-bar-label">${label}</span>
+      <div class="stat-bar-track" title="${value} (baseline ${baseline})">
+        <div class="stat-bar-base" style="width:${boostPct}%"></div>
+        <div class="stat-bar-fill" style="width:${pct}%"></div>
+      </div>
+      <b class="stat-bar-val">${value}</b>
+      ${formatBonus(b)}
+    </div>`;
+}
+
+let lastGearKey = "";
+let crewEditorOpen = false;
+
+function renderGear(): void {
+  const u = selectedUnit();
+  if (!u) {
+    gearEditor.classList.add("hidden");
+    return;
+  }
+  gearEditor.classList.remove("hidden");
+  const tier = upgradeTier(u.stats);
+  const ownedW = (u.ownedWeapons ?? []).slice().sort().join(",");
+  const ownedA = (u.ownedArmors ?? []).slice().sort().join(",");
+  const key = `${u.id}|${u.weapon}|${u.armor}|${ownedW}|${ownedA}|${u.stats.aim},${u.stats.guts},${u.stats.muscle},${u.stats.brains},${u.stats.speed},${u.stats.maxHealth}|${u.health}|${crewEditorOpen}`;
+  if (key === lastGearKey) return;
+  lastGearKey = key;
+
+  const portrait = portraitDataUrl(u.id + u.name, {
+    leader: !!(u.isPlayerLeader || u.kind === "player"),
+    dead: !u.alive,
+    upgradeTier: tier,
+  });
+
+  statsView.innerHTML = `
+    <div class="gear-profile">
+      <img class="portrait lg" src="${portrait}" alt="" width="56" height="56" draggable="false" />
+      <div>
+        <div class="gear-name">${escapeHtml(u.name)}</div>
+        <div class="badge up-tier t${tier}">${tierLabel(tier)} ${tierStars(tier)}</div>
+        <div class="muted tiny">Slot keys 1–4 · Icon bar equip · FULL for loadout desk</div>
+      </div>
+    </div>
+    <div class="stat-bars">
+      ${statBarHtml("Aim", u.stats.aim)}
+      ${statBarHtml("Guts", u.stats.guts)}
+      ${statBarHtml("Muscle", u.stats.muscle)}
+      ${statBarHtml("Brains", u.stats.brains)}
+      ${statBarHtml("Speed", u.stats.speed)}
+      ${statBarHtml("Max HP", u.stats.maxHealth, 200, 100)}
+    </div>
+  `;
+
+  fillWeaponBar(weaponBar, weaponDetail, u, false);
+  fillArmorBar(armorBar, armorDetail, u, false);
+
+  if (crewEditorOpen) renderCrewEditor();
+}
+
+function renderCrewEditor(): void {
+  if (!snap || !crewEditorOpen) return;
+  const u = selectedUnit();
+  if (!u) return;
+  const units = myUnits();
+  const tier = upgradeTier(u.stats);
+  const portrait = portraitDataUrl(u.id + u.name, {
+    leader: !!(u.isPlayerLeader || u.kind === "player"),
+    dead: !u.alive,
+    upgradeTier: tier,
+  });
+
+  crewEditorRoster.innerHTML = "";
+  units.forEach((member, i) => {
+    const t = upgradeTier(member.stats);
+    const img = portraitDataUrl(member.id + member.name, {
+      leader: !!(member.isPlayerLeader || member.kind === "player"),
+      dead: !member.alive,
+      upgradeTier: t,
+    });
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className =
+      "crew-roster-card" + (member.id === u.id ? " active" : "") + (!member.alive ? " dead" : "");
+    btn.innerHTML = `
+      <img src="${img}" alt="" width="40" height="40" draggable="false" />
+      <div>
+        <div class="name">${i + 1}. ${escapeHtml(member.name)}</div>
+        <div class="muted tiny">${tierLabel(t)} · ${escapeHtml(WEAPONS[member.weapon].name)}</div>
+      </div>
+    `;
+    btn.addEventListener("click", () => {
+      socket.send({ type: "intent.select", unitId: member.id });
+    });
+    crewEditorRoster.appendChild(btn);
+  });
+
+  crewEditorProfile.innerHTML = `
+    <div class="crew-profile-hero">
+      <img class="portrait xl" src="${portrait}" alt="" width="72" height="72" draggable="false" />
+      <div>
+        <h3>${escapeHtml(u.name)}</h3>
+        <div class="badge up-tier t${tier}">${tierLabel(tier)} ${tierStars(tier)}</div>
+        <p class="muted">HP ${Math.round(u.health)}/${u.maxHealth} · ${u.alive ? "Active" : "Respawning"}</p>
+        <p class="muted tiny">Owned weapons unlock icon slots. Buy more at Pawn-O-Matic.</p>
+      </div>
+    </div>
+  `;
+
+  fillWeaponBar(crewWeaponBar, crewWeaponDetail, u, true);
+  fillArmorBar(crewArmorBar, crewArmorDetail, u, true);
+
+  crewEditorStats.innerHTML = `
+    <div class="equip-label">ATTRIBUTES</div>
+    <div class="stat-bars wide">
+      ${statBarHtml("Aim", u.stats.aim)}
+      ${statBarHtml("Guts", u.stats.guts)}
+      ${statBarHtml("Muscle", u.stats.muscle)}
+      ${statBarHtml("Brains", u.stats.brains)}
+      ${statBarHtml("Speed", u.stats.speed)}
+      ${statBarHtml("Max HP", u.stats.maxHealth, 200, 100)}
+    </div>
+  `;
+}
+
+function openCrewEditor(): void {
+  crewEditorOpen = true;
+  lastGearKey = "";
+  crewEditorModal.classList.remove("hidden");
+  renderCrewEditor();
+}
+
+function closeCrewEditor(): void {
+  crewEditorOpen = false;
+  crewEditorModal.classList.add("hidden");
+}
+
+function onEquipBarClick(ev: MouseEvent): void {
+  const btn = (ev.target as HTMLElement | null)?.closest?.("button[data-equip]") as
+    | HTMLButtonElement
+    | null;
+  if (!btn || btn.disabled || !socket) return;
+  const u = selectedUnit();
+  if (!u) return;
+  const kind = btn.dataset.equip;
+  const itemId = btn.dataset.itemId;
+  if (!kind || !itemId) return;
+  if (kind === "weapon") {
+    socket.send({ type: "posse.setWeapon", unitId: u.id, weaponId: itemId as WeaponId });
+  } else if (kind === "armor") {
+    socket.send({ type: "posse.setArmor", unitId: u.id, armorId: itemId as ArmorId });
+  }
+}
+
+/** Avoid rebuilding dialogue buttons every snapshot (was eating clicks). */
+let lastDialogueKey = "";
+
+function renderDialogue(): void {
+  if (!snap?.dialogue) {
+    dialogueModal.classList.add("hidden");
+    lastDialogueKey = "";
+    return;
+  }
+  const d = snap.dialogue;
+  const key = `${d.npcId}|${d.text}|${d.choices.map((c) => c.id + ":" + c.label).join(";")}`;
+  dialogueModal.classList.remove("hidden");
+  if (key === lastDialogueKey) return;
+  lastDialogueKey = key;
+
+  dlgName.textContent = d.npcName;
+  dlgText.textContent = d.text;
+  dlgChoices.innerHTML = "";
+  for (const c of d.choices) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = `[${c.tone}] ${c.label}`;
+    b.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      socket.send({ type: "dialogue.choice", choiceId: c.id });
+    });
+    dlgChoices.appendChild(b);
+  }
+}
+
+/** Avoid rebuilding shop buttons every snapshot (was eating all clicks). */
+let lastShopKey = "";
+
+function shopTargetUnitId(): string | null {
+  if (!snap) return null;
+  const u = selectedUnit();
+  if (u) return u.id;
+  return snap.you.selectedUnitId || null;
+}
+
+function renderShop(): void {
+  if (!snap?.shop) {
+    shopModal.classList.add("hidden");
+    lastShopKey = "";
+    return;
+  }
+  shopModal.classList.remove("hidden");
+  shopTitle.textContent = snap.shop.shopName;
+  shopCash.textContent = `$${snap.you.cash}`;
+  const u = selectedUnit();
+  shopUnitName.textContent = u?.name ?? "—";
+
+  const ownedW = (u?.ownedWeapons ?? []).slice().sort().join(",");
+  const ownedA = (u?.ownedArmors ?? []).slice().sort().join(",");
+  const key = `${snap.shop.shopName}|${u?.id ?? ""}|${ownedW}|${ownedA}|${snap.you.cash}`;
+  if (key === lastShopKey) return;
+  lastShopKey = key;
+
+  shopWeapons.innerHTML = "";
+  for (const id of SHOP_WEAPON_ORDER) {
+    const w = WEAPONS[id];
+    const owned = u?.ownedWeapons?.includes(id);
+    const b = document.createElement("button");
+    b.type = "button";
+    b.dataset.shopAction = "weapon";
+    b.dataset.itemId = id;
+    b.textContent = owned
+      ? `${w.name} (owned — equip)`
+      : `${w.name} — $${w.price} · ${w.description}`;
+    shopWeapons.appendChild(b);
+  }
+
+  shopArmor.innerHTML = "";
+  for (const id of SHOP_ARMOR_ORDER) {
+    const a = ARMORS[id];
+    const owned = u?.ownedArmors?.includes(id);
+    const b = document.createElement("button");
+    b.type = "button";
+    b.dataset.shopAction = "armor";
+    b.dataset.itemId = id;
+    b.textContent = owned
+      ? `${a.name} (owned — equip)`
+      : `${a.name} — $${a.price} · ${a.description}`;
+    shopArmor.appendChild(b);
+  }
+
+  shopUpgrades.innerHTML = "";
+  for (const id of SHOP_UPGRADE_ORDER) {
+    const up = UPGRADES[id];
+    const b = document.createElement("button");
+    b.type = "button";
+    b.dataset.shopAction = "upgrade";
+    b.dataset.itemId = id;
+    b.textContent = `${up.name} — $${up.price} · ${up.description}`;
+    shopUpgrades.appendChild(b);
+  }
+}
+
+function onShopClick(ev: MouseEvent): void {
+  const btn = (ev.target as HTMLElement | null)?.closest?.("button[data-shop-action]") as
+    | HTMLButtonElement
+    | null;
+  if (!btn || !socket) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+
+  const unitId = shopTargetUnitId();
+  if (!unitId) {
+    pushEvent("Select a posse member first.");
+    return;
+  }
+  const action = btn.dataset.shopAction;
+  const itemId = btn.dataset.itemId;
+  if (!action || !itemId) return;
+
+  if (action === "weapon") {
+    socket.send({ type: "shop.buyWeapon", weaponId: itemId as WeaponId, unitId });
+  } else if (action === "armor") {
+    socket.send({ type: "shop.buyArmor", armorId: itemId as ArmorId, unitId });
+  } else if (action === "upgrade") {
+    socket.send({ type: "shop.buyUpgrade", upgradeId: itemId as UpgradeId, unitId });
+  }
+}
+
+function onSnapshot(s: WorldSnapshot): void {
+  snap = s;
+  view.applySnapshot(s);
+  renderPosse();
+  renderDialogue();
+  renderShop();
+  if (s.you.respawnIn != null && s.you.respawnIn > 0) {
+    respawnOverlay.classList.remove("hidden");
+    respawnCount.textContent = Math.ceil(s.you.respawnIn).toString();
+  } else {
+    respawnOverlay.classList.add("hidden");
+  }
+  if (s.you.insideBuildingId) {
+    const b = s.buildings.find((bb) => bb.id === s.you.insideBuildingId);
+    objective.textContent = b ? `INSIDE: ${b.name.toUpperCase()} — E to exit near door` : "INSIDE";
+  } else {
+    objective.textContent = "SKIDROW — WASD/click move · E: doors/NPCs · RMB: fire";
+  }
+}
+
+function setKeyFromCode(code: string, down: boolean): boolean {
+  switch (code) {
+    case "KeyW":
+    case "ArrowUp":
+      keys.up = down;
+      return true;
+    case "KeyS":
+    case "ArrowDown":
+      keys.down = down;
+      return true;
+    case "KeyA":
+    case "ArrowLeft":
+      keys.left = down;
+      return true;
+    case "KeyD":
+    case "ArrowRight":
+      keys.right = down;
+      return true;
+    default:
+      return false;
+  }
+}
+
+/**
+ * Map screen directions to world axes for the fixed isometric camera.
+ * worldToScreen: sx=(x-y)*tw/2, sy=(x+y)*th/2
+ * - Screen up  => decrease x and y
+ * - Screen down => increase x and y
+ * - Screen left => decrease x, increase y
+ * - Screen right => increase x, decrease y
+ */
+function keyboardMoveLoop(): void {
+  requestAnimationFrame(keyboardMoveLoop);
+  if (!snap || !socket || chatFocused) {
+    if (keyMoving) {
+      socket?.send({ type: "intent.dir", dx: 0, dy: 0 });
+      keyMoving = false;
+    }
+    return;
+  }
+  if (snap.dialogue || snap.shop) {
+    if (keyMoving) {
+      socket.send({ type: "intent.dir", dx: 0, dy: 0 });
+      keyMoving = false;
+    }
+    return;
+  }
+  if (snap.you.respawnIn != null && snap.you.respawnIn > 0) {
+    if (keyMoving) {
+      socket.send({ type: "intent.dir", dx: 0, dy: 0 });
+      keyMoving = false;
+    }
+    return;
+  }
+
+  // Screen-space input → world-space free movement
+  let wx = 0;
+  let wy = 0;
+  if (keys.up) {
+    wx -= 1;
+    wy -= 1;
+  }
+  if (keys.down) {
+    wx += 1;
+    wy += 1;
+  }
+  if (keys.left) {
+    wx -= 1;
+    wy += 1;
+  }
+  if (keys.right) {
+    wx += 1;
+    wy -= 1;
+  }
+
+  const now = performance.now();
+  if (wx === 0 && wy === 0) {
+    if (keyMoving) {
+      socket.send({ type: "intent.dir", dx: 0, dy: 0 });
+      keyMoving = false;
+      lastKeyMoveSent = now;
+    }
+    return;
+  }
+
+  if (now - lastKeyMoveSent < 33) return; // ~30 Hz continuous steer
+  lastKeyMoveSent = now;
+  keyMoving = true;
+
+  const len = Math.hypot(wx, wy) || 1;
+  socket.send({
+    type: "intent.dir",
+    dx: wx / len,
+    dy: wy / len,
+  });
+}
+
+async function startGame(): Promise<void> {
+  loginEl.classList.add("hidden");
+  gameEl.classList.remove("hidden");
+  view = new WorldView(canvas);
+  await view.init();
+
+  socket = new GameSocket({
+    onAuthOk: () => {
+      pushEvent("You're on the street. Try not to die.");
+      window.dispatchEvent(new Event("resize"));
+    },
+    onAuthFail: (reason) => {
+      loginError.textContent = reason;
+      gameEl.classList.add("hidden");
+      loginEl.classList.remove("hidden");
+    },
+    onSnapshot,
+    onEvent: pushEvent,
+    onChat: pushChat,
+    onClose: () => {
+      pushEvent("Disconnected from server.");
+    },
+  });
+
+  socket.connect(myName);
+  bindInput();
+}
+
+function bindInput(): void {
+  canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
+  canvas.addEventListener("mousedown", (e) => {
+    if (!snap) return;
+    if (snap.you.respawnIn != null && snap.you.respawnIn > 0) return;
+    if (e.button === 0) {
+      const unitId = view.pickUnit(e.clientX, e.clientY);
+      if (unitId) {
+        const u = snap.units.find((x) => x.id === unitId);
+        if (u && u.posseId === snap.you.posseId) {
+          socket.send({ type: "intent.select", unitId });
+          return;
+        }
+      }
+      const w = view.screenToWorld(e.clientX, e.clientY);
+      socket.send({ type: "intent.move", x: w.x, y: w.y });
+    } else if (e.button === 2) {
+      const unitId = view.pickUnit(e.clientX, e.clientY);
+      const w = view.screenToWorld(e.clientX, e.clientY);
+      if (unitId) {
+        const u = snap.units.find((x) => x.id === unitId);
+        if (u && u.posseId !== snap.you.posseId) {
+          socket.send({ type: "intent.fire", targetId: unitId });
+          return;
+        }
+      }
+      socket.send({ type: "intent.fire", x: w.x, y: w.y });
+    }
+  });
+
+  window.addEventListener("keydown", (e) => {
+    if (chatFocused) {
+      if (e.key === "Escape") {
+        chatInput.blur();
+      }
+      return;
+    }
+    if (setKeyFromCode(e.code, true)) {
+      e.preventDefault();
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      chatInput.focus();
+      return;
+    }
+    if (e.key === "e" || e.key === "E") {
+      // Stop keyboard walk so interact doesn't keep sliding
+      keys.up = keys.down = keys.left = keys.right = false;
+      keyMoving = false;
+      socket.send({ type: "intent.dir", dx: 0, dy: 0 });
+      socket.send({ type: "intent.stop" });
+      socket.send({ type: "intent.interact" });
+    }
+    if (e.key === "Escape") {
+      if (crewEditorOpen) {
+        closeCrewEditor();
+        return;
+      }
+      if (snap?.dialogue) socket.send({ type: "dialogue.close" });
+      if (snap?.shop) socket.send({ type: "shop.close" });
+    }
+    // Syndicate-style: number row 5–0 / - for weapon slots when unit selected
+    if (!crewEditorOpen && !snap?.dialogue && !snap?.shop) {
+      const wepKeys: Record<string, number> = {
+        Digit5: 0,
+        Digit6: 1,
+        Digit7: 2,
+        Digit8: 3,
+        Digit9: 4,
+        Digit0: 5,
+        Minus: 6,
+      };
+      if (e.code in wepKeys) {
+        const u = selectedUnit();
+        if (u) {
+          const id = WEAPON_BAR_ORDER[wepKeys[e.code]!]!;
+          if ((u.ownedWeapons ?? []).includes(id)) {
+            socket.send({ type: "posse.setWeapon", unitId: u.id, weaponId: id });
+          }
+        }
+      }
+    }
+    if (e.key >= "1" && e.key <= "4") {
+      const units = myUnits();
+      const u = units[Number(e.key) - 1];
+      if (u) socket.send({ type: "intent.select", unitId: u.id });
+    }
+  });
+
+  window.addEventListener("keyup", (e) => {
+    if (setKeyFromCode(e.code, false)) e.preventDefault();
+  });
+
+  window.addEventListener("blur", () => {
+    keys.up = keys.down = keys.left = keys.right = false;
+  });
+
+  requestAnimationFrame(keyboardMoveLoop);
+
+  chatInput.addEventListener("focus", () => {
+    chatFocused = true;
+  });
+  chatInput.addEventListener("blur", () => {
+    chatFocused = false;
+  });
+
+  chatForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = chatInput.value.trim();
+    if (text) {
+      socket.send({ type: "chat", text });
+      chatInput.value = "";
+    }
+    chatInput.blur();
+  });
+
+  dlgClose.addEventListener("click", () => socket.send({ type: "dialogue.close" }));
+  shopClose.addEventListener("click", () => socket.send({ type: "shop.close" }));
+
+  // Event delegation — survives re-renders and only wires once
+  shopWeapons.addEventListener("click", onShopClick);
+  shopArmor.addEventListener("click", onShopClick);
+  shopUpgrades.addEventListener("click", onShopClick);
+
+  weaponBar.addEventListener("click", onEquipBarClick);
+  armorBar.addEventListener("click", onEquipBarClick);
+  crewWeaponBar.addEventListener("click", onEquipBarClick);
+  crewArmorBar.addEventListener("click", onEquipBarClick);
+
+  openFullEditor.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openCrewEditor();
+  });
+  crewEditorClose.addEventListener("click", () => closeCrewEditor());
+  crewEditorModal.addEventListener("click", (e) => {
+    if (e.target === crewEditorModal) closeCrewEditor();
+  });
+}
+
+joinBtn.addEventListener("click", () => {
+  myName = nameInput.value.trim() || "Thug";
+  loginError.textContent = "";
+  void startGame();
+});
+
+nameInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") joinBtn.click();
+});
+
+nameInput.focus();

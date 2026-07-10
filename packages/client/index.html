@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Loose Cannon</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="login">
+        <div class="login-card">
+          <h1>LOOSE CANNON</h1>
+          <p class="tagline">Crime has never been so much fun.</p>
+          <label>
+            Your name
+            <input id="nameInput" maxlength="20" placeholder="e.g. Nikki" autocomplete="off" />
+          </label>
+          <button id="joinBtn" type="button">Hit the Streets</button>
+          <p id="loginError" class="error"></p>
+          <p class="hint">
+            WASD / arrows or LMB move · RMB fire · E interact · 1-4 select · Enter chat<br />
+            Server: local WebSocket (in-memory)
+          </p>
+        </div>
+      </div>
+
+      <div id="game" class="hidden">
+        <canvas id="canvas"></canvas>
+
+        <aside id="possePanel">
+          <div class="panel-title">POSSE</div>
+          <div id="cashRep"></div>
+          <div id="posseList"></div>
+
+          <div id="gearEditor" class="hidden">
+            <div class="sub-row">
+              <div class="sub">CREW EDITOR</div>
+              <button type="button" id="openFullEditor" class="tiny-btn">FULL</button>
+            </div>
+            <div id="statsView"></div>
+
+            <div class="equip-section">
+              <div class="equip-label">WEAPONS <span class="hint-inline">click to equip</span></div>
+              <div id="weaponBar" class="icon-bar" role="toolbar" aria-label="Weapons"></div>
+              <div id="weaponDetail" class="equip-detail"></div>
+            </div>
+
+            <div class="equip-section">
+              <div class="equip-label">ARMOR</div>
+              <div id="armorBar" class="icon-bar" role="toolbar" aria-label="Armor"></div>
+              <div id="armorDetail" class="equip-detail"></div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Full-screen crew editor (Syndicate-style loadout) -->
+        <div id="crewEditorModal" class="modal hidden">
+          <div class="modal-card crew-editor-card">
+            <div class="crew-editor-header">
+              <h2>CREW LOADOUT</h2>
+              <button type="button" id="crewEditorClose" class="tiny-btn">CLOSE</button>
+            </div>
+            <div class="crew-editor-body">
+              <div class="crew-editor-roster" id="crewEditorRoster"></div>
+              <div class="crew-editor-main">
+                <div id="crewEditorProfile"></div>
+                <div class="equip-section">
+                  <div class="equip-label">WEAPON SELECT</div>
+                  <div id="crewWeaponBar" class="icon-bar large"></div>
+                  <div id="crewWeaponDetail" class="equip-detail"></div>
+                </div>
+                <div class="equip-section">
+                  <div class="equip-label">ARMOR SELECT</div>
+                  <div id="crewArmorBar" class="icon-bar large"></div>
+                  <div id="crewArmorDetail" class="equip-detail"></div>
+                </div>
+                <div id="crewEditorStats" class="crew-editor-stats"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="objective">SKIDROW — walk, talk, buy, survive</div>
+
+        <div id="minimap"></div>
+
+        <div id="eventLog"></div>
+
+        <div id="chatBox">
+          <div id="chatLog"></div>
+          <form id="chatForm">
+            <input id="chatInput" maxlength="160" placeholder="Proximity chat…" autocomplete="off" />
+            <button type="submit">Say</button>
+          </form>
+        </div>
+
+        <div id="respawnOverlay" class="hidden">
+          <div class="respawn-card">
+            <h2>YOU'RE DOWN</h2>
+            <p>Respawning in <span id="respawnCount">3</span>s…</p>
+          </div>
+        </div>
+
+        <div id="help">
+          WASD move · RMB fire · E interact · 1-4 crew · 5-0/- weapons · FULL loadout
+        </div>
+
+        <div id="dialogueModal" class="modal hidden">
+          <div class="modal-card">
+            <h2 id="dlgName"></h2>
+            <p id="dlgText"></p>
+            <div id="dlgChoices"></div>
+            <button type="button" id="dlgClose" class="ghost">Walk away</button>
+          </div>
+        </div>
+
+        <div id="shopModal" class="modal hidden">
+          <div class="modal-card wide">
+            <h2 id="shopTitle">Pawn-O-Matic</h2>
+            <p class="muted">Buying for: <span id="shopUnitName"></span> · Cash: <span id="shopCash"></span></p>
+            <div class="shop-cols">
+              <div>
+                <h3>Weapons</h3>
+                <div id="shopWeapons"></div>
+              </div>
+              <div>
+                <h3>Armor</h3>
+                <div id="shopArmor"></div>
+              </div>
+              <div>
+                <h3>Upgrades</h3>
+                <div id="shopUpgrades"></div>
+              </div>
+            </div>
+            <button type="button" id="shopClose" class="ghost">Leave shop</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
