@@ -19,6 +19,19 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-10 — overseer refresh (manual / pre-long-loop)
+- Focus: Align overseer roadmap with post-manual product; feel fixes for long unattended run
+- Done:
+  - Free outdoor roam (removed district soft-kick / move clamp); map ping walks anywhere
+  - Kill/wipe/loot notify toasts linger much longer (killed ~11s, downed ~8s, loot/mission ~7–9s)
+  - Event log lines linger longer
+  - MASTER_PLAN / STATUS / OVERSEER / AGENTS / cycle+bootstrap prompts / overseer-cycle skill updated
+  - Priority for loop: M3 memorial wall → goon stats → combat/pathing → more missions → parties
+  - Guardrails: do not re-add soft-kicks; preserve club, combat-scene art, mobile full-screen dialogue, 18+ tone
+- Verify: client/server build green prior; restart server when testing roam
+- Next: **Memorial wall** (first incomplete M3)
+- Blocked: none
+
 ### 2026-07-10 — cycle 7 (combat-scene graphics pass)
 - Focus: Close the gap between live UI and `public/art/combat-scene.jpg`
 - Done:

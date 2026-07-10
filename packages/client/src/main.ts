@@ -356,8 +356,8 @@ function handlePrimaryPointer(clientX: number, clientY: number, asAttack: boolea
   socket.send({ type: "intent.move", x: w.x, y: w.y });
 }
 
-const EVENT_LINE_FADE_MS = 6500;
-const EVENT_PANEL_IDLE_MS = 4000;
+const EVENT_LINE_FADE_MS = 10000;
+const EVENT_PANEL_IDLE_MS = 8000;
 let eventPanelFadeTimer: number | null = null;
 
 function bumpEventLogVisible(): void {
@@ -394,13 +394,24 @@ function pushEvent(text: string): void {
   // hit/miss/death handled by combat FX to avoid double-playing with VFX path
 }
 
+/** How long combat/loot toasts stay readable (ms). Kill/wipe needs longest. */
+function notifyHoldMs(kind: string, upgrade = false): number {
+  if (kind === "killed") return 11000;
+  if (kind === "downed") return 8000;
+  if (kind === "loot") return upgrade ? 9000 : 7000;
+  if (kind === "mission") return 7500;
+  return 6500;
+}
+
 function showNotify(msg: Extract<ServerMessage, { type: "notify" }>): void {
   sfx.unlock();
   const el = document.createElement("div");
   el.className = "notify-toast";
+  let holdMs = notifyHoldMs(msg.kind);
 
   if (msg.kind === "loot") {
     const hasUpgrade = msg.upgrades.some((u) => u.upgrade);
+    holdMs = notifyHoldMs("loot", hasUpgrade);
     el.classList.add(hasUpgrade ? "loot-upgrade" : "loot");
     if (hasUpgrade) sfx.play("lootFanfare", { force: true });
     else sfx.play("cash", { force: true });
@@ -456,9 +467,16 @@ function showNotify(msg: Extract<ServerMessage, { type: "notify" }>): void {
     `;
   }
 
+  // CSS fade starts just before DOM removal (hold − fade duration)
+  const fadeMs = 500;
+  const fadeDelaySec = Math.max(0.5, (holdMs - fadeMs) / 1000);
+  el.style.setProperty("--toast-hold", `${fadeDelaySec}s`);
+  el.style.animation = `toast-in 0.35s ease-out, toast-out 0.5s ease-in ${fadeDelaySec}s forwards`;
+
   notifyToasts.appendChild(el);
-  window.setTimeout(() => el.remove(), 4200);
-  while (notifyToasts.children.length > 4) notifyToasts.firstChild?.remove();
+  window.setTimeout(() => el.remove(), holdMs);
+  // Keep more history so a wipe toast is not immediately pushed off by loot spam
+  while (notifyToasts.children.length > 6) notifyToasts.firstChild?.remove();
 }
 
 function pushChat(from: string, text: string, system?: boolean): void {

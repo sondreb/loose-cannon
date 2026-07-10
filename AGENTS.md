@@ -48,13 +48,17 @@ npm run build        # shared → server → client
 
 When acting as the **development overseer** (headless loop or `/goal`):
 
-1. Read `docs/STATUS.md` and `docs/MASTER_PLAN.md`.
-2. Pick the **next incomplete** milestone (highest priority unfinished item).
-3. Implement it (spawn subagents for parallel research/impl/test when useful).
-4. Run verification: prefer `npm run smoke` and `npm run build` after structural changes.
-5. Update `docs/STATUS.md` (what landed, what’s next, date).
-6. Append a short cycle log entry to `docs/OVERSEER_LOG.md`.
-7. Stop if blocked on human decision (design ambiguity, paid services, deploy credentials).
+1. Read `docs/STATUS.md` and `docs/MASTER_PLAN.md` (and latest `OVERSEER_LOG.md`).
+2. Pick the **next incomplete** milestone (highest priority unfinished item).  
+   Default order: **memorial wall → goon stats feel → combat/pathing → more missions → parties**.
+3. If STATUS marks a **critical player-facing bug**, fix that before greenfield.
+4. Implement it (spawn subagents for parallel research/impl/test when useful).
+5. Run verification: prefer `npm run smoke` and `npm run build` after structural changes.
+6. Update `docs/STATUS.md` (what landed, what’s next, date).
+7. Append a short cycle log entry to `docs/OVERSEER_LOG.md`.
+8. Stop if blocked on human decision (design ambiguity, paid services, deploy credentials).
+
+**Do not regress:** free outdoor roam (no district soft-kicks), Titty Twister, combat-scene art path, longer kill/wipe toasts, mobile full-screen dialogue, 18+ tone.
 
 ## Subagent guidance
 
@@ -65,9 +69,10 @@ When acting as the **development overseer** (headless loop or `/goal`):
 
 ## Tone & product
 
+- **18+ only:** strong language, violence, sexual themes/suggestive club content — intentional.
 - Dark humor, named goons, crime fantasy — not cyberpunk CHIP fantasy.
 - Readable isometric pixels; small characters vs architecture.
-- Safe downtown vs war zone already exists; extend content spine (missions, heat, districts, parties) before Mode B infra.
+- Safe downtown vs war zone; free roam outdoors; extend content (missions, memorial, parties) before Mode B infra.
 
 ## Safety
 

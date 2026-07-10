@@ -1,47 +1,50 @@
 # Loose Cannon — Master Plan (Overseer Roadmap)
 
-Last updated: 2026-07-10
+Last updated: 2026-07-10 (post manual content + free-roam + feel pass prep)
 
 Track completion in `docs/STATUS.md`. This file is the **ordered backlog** for autonomous development. Prefer finishing higher milestones before lower ones unless a dependency forces otherwise.
 
 ## North star
 
-A fun, playable **local multiplayer** crime sandbox: recruit a posse, run jobs, fight on the isometric streets, spend loot, and come back for more — without production infra.
+A fun, playable **local multiplayer** crime sandbox: recruit a posse, run jobs, fight on isometric streets, spend loot, and come back for more — without production infra.
+
+**Tone:** 18+ dark humor, strong language, violence, suggestive club content. Not family-friendly.
 
 ## Milestone checklist
 
-### M0 — Foundations (mostly done)
+### M0 — Foundations (done)
 
 - [x] Monorepo: client / server / shared
 - [x] Local WS server + Vite client (`npm run dev`)
 - [x] Shared protocol types
 - [x] Azure beta deploy path (optional; not required for Mode A play)
+- [x] AGENTS.md + overseer scripts/skills
 
-### M1 — Vertical slice (mostly done)
+### M1 — Vertical slice (done)
 
 - [x] Isometric city + free move + click move
 - [x] Buildings / POIs / shops / dialogue / recruit
 - [x] Combat + attack-move + wipe loot + respawn
 - [x] Posse UI, loadout, SFX, proximity chat
-- [x] Harden: `npm run smoke` green; document known bugs in STATUS
-- [x] Fix any critical desync / crash on reconnect during process lifetime
+- [x] Harden: `npm run smoke` / `npm run build`; document bugs in STATUS
 
-### M2 — Content spine (P3 focus)
+### M2 — Content spine (done)
 
-- [x] **Job board / fixer UI** — pick a mission from a hub POI
-- [x] **Mission instances** — enter instance room, objectives, extract/fail *(private `mi_*` warehouse layer + outdoor jobs)*
-- [x] At least **3 starter jobs** (protection, smash-and-grab, debt collection) *(+ warehouse instance)*
-- [x] Mission rewards: cash, rep, optional loot (server-rolled) *(cash + rep; loot optional later)*
-- [x] Briefing copy with Cannon Fodder–style cheerful understatement
-- [x] Tutorial / first-session flow (name → bar → first hire → first job)
+- [x] Job board / fixer UI (Rita Fix)
+- [x] Mission instances (`mi_*` warehouse + outdoor jobs)
+- [x] Starter jobs (smash, warehouse, protection, debt)
+- [x] Mission rewards (cash + rep)
+- [x] Briefing copy (CF understatement)
+- [x] Tutorial / first-session flow
 
 ### M3 — Heat, reputation, progression
 
-- [x] Heat meter (street heat vs wanted-style consequences) *(meter + decay + lay-low + shop markup)*
-- [x] Reputation gates for shops / black market stock *(minRep on catalog items)*
-- [x] Simple district unlock or map UI for “where can I go”
-- [ ] Goon stats feel distinct (aim / muscle / guts matter in combat)
-- [ ] Memorial wall for dead named goons (Cannon Fodder beat)
+- [x] Heat meter + decay + Vince lay-low + shop markup
+- [x] Reputation gates for shop stock
+- [x] District map UI (**free roam** — rep is advisory for outdoor walk; gates remain for gear/jobs)
+- [ ] **Memorial wall** for dead named goons (Cannon Fodder beat) — **next primary**
+- [ ] Goon stats feel distinct (aim / muscle / guts / speed clearly change outcomes + UI readability)
+- [ ] Optional: crash-pad stash UX polish / stash tutorial tip
 
 ### M4 — Local multiplayer social (P4 light)
 
@@ -53,18 +56,32 @@ A fun, playable **local multiplayer** crime sandbox: recruit a posse, run jobs, 
 ### M5 — Combat & AI depth
 
 - [ ] Cover / line-of-sight or range readability improvements
-- [ ] Enemy AI roles (shooter, rusher, civilian flee)
-- [ ] Weapon feel pass (recoil audio, hit feedback, ammo clarity)
-- [ ] Balance pass using smoke + manual play notes in STATUS
+- [ ] Enemy AI roles (shooter, rusher, flee)
+- [ ] Weapon feel pass (hit feedback, audio, ammo clarity)
+- [ ] Balance pass; note numbers in STATUS
+- [ ] Simple stuck-path recovery / click path that routes around building shells better
 
-### M6 — Presentation polish (still Mode A)
+### M6 — Presentation & feel (Mode A)
 
-- [ ] More POI interiors / district flavor without new backend
-- [ ] Day/night or lighting tint (lightweight)
-- [ ] Mobile touch basics (move + fire + interact)
-- [ ] Optional art pipeline notes (Grok Imagine → pixel atlases) — assets only when needed
+- [x] Combat-scene style ground / rain / neon buildings / prop sprites
+- [x] The Titty Twister (gentlemen's club, tip→reveal stages, VO, profiles)
+- [x] Free outdoor roam (no district soft-kick)
+- [x] Mobile full-screen dialogue/modals + larger portraits
+- [x] Longer kill / wipe / loot notify toasts
+- [ ] More mission templates (2–4 new outdoor or instance jobs)
+- [ ] Day/night or district lighting tint (lightweight)
+- [ ] Directional goon sprites / walk bob polish
+- [ ] Mobile touch polish (move + fire + interact reliability)
+- [ ] HUD / event-log readability pass (mobile + desktop)
 
-### M7 — Explicitly deferred (do not start unless user asks)
+### M7 — Content density (after M3 memorial)
+
+- [ ] Second instanced mission (different template building)
+- [ ] More street hustles / POI interactions
+- [ ] Rival gang variety (names, gear, aggression)
+- [ ] Optional music bed (procedural or loop files) — keep volume low
+
+### M8 — Explicitly deferred (do not start unless user asks)
 
 - [ ] Postgres / durable accounts
 - [ ] Real auth (email/OAuth)
@@ -74,12 +91,30 @@ A fun, playable **local multiplayer** crime sandbox: recruit a posse, run jobs, 
 
 ## Definition of “more complete” (near-term)
 
-Autonomous work should stop celebrating “done” only when:
+Autonomous work should treat the game as improving when:
 
-1. A new player can: join → recruit → take a **job from a board** → complete an **instanced mission** → get paid → spend money.
-2. `npm run build` and `npm run smoke` pass.
-3. `docs/STATUS.md` reflects the above as live.
+1. New player: join → recruit → **job board** → **instanced mission** → pay → shop.
+2. `npm run build` and `npm run smoke` pass after structural work.
+3. `docs/STATUS.md` stays accurate.
+4. Feel regressions (movement blocks, toast flash, unreadable mobile UI) are fixed when found — not left as “known forever.”
 
 ## Cycle protocol
 
 Each overseer cycle implements **one** primary milestone item (or a tightly related pair), then updates STATUS + OVERSEER_LOG.
+
+### Priority order for long unattended loops
+
+1. **M3 memorial wall** (if still incomplete)
+2. **M3 goon stats feel**
+3. **M5 combat/AI feel** or **pathing around shells**
+4. **M6 more missions** / presentation polish
+5. **M4 parties** only when solo loop is solid
+6. Never M8 / Mode B unless human asks
+
+### Guardrails
+
+- Mode A only (in-memory server).
+- No force-push, no `git reset --hard`, no secret changes, no deploy unless user asked.
+- Prefer fixing player-facing bugs over greenfield features when STATUS “known bugs” or play notes are critical.
+- Art: may use Grok Imagine for sprites/portraits; keep GitHub-safe (no explicit nudity in repo assets).
+- 18+ tone is intentional — do not sanitize language in game copy.

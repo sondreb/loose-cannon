@@ -24,15 +24,18 @@ description: >
 
 2. **Select**
    - Pick the highest-priority **incomplete** item in `MASTER_PLAN.md`.
-   - Prefer a vertical slice that leaves the game playable.
+   - Default order (post 2026-07-10): memorial wall → goon stats feel → combat/pathing → more missions → parties.
+   - If STATUS lists a critical player-facing bug, fix that first.
 
 3. **Implement**
    - Follow architecture doctrine: Mode A only, server-authoritative.
    - Use subagents: `explore` first if unfamiliar, `plan` for multi-file features, then implement.
    - Protocol changes go through `packages/shared` first.
+   - Do **not** re-add district soft-kicks that block free outdoor roam.
+   - Preserve 18+ tone, Titty Twister, combat-scene art path, longer kill toasts, mobile full-screen dialogue.
 
 4. **Verify**
-   - Run `npm run smoke` when server behavior changed.
+   - Run `npm run smoke` when server behavior changed (start server if needed).
    - Run `npm run build` after shared/protocol or structural edits.
    - Fix regressions you caused.
 
@@ -46,6 +49,6 @@ description: >
 
 ## Stop conditions
 
-- Near-term “more complete” criteria in `MASTER_PLAN.md` are met.
+- Near-term criteria in `MASTER_PLAN.md` are met and backlog is empty of M3–M6 items you can do in Mode A.
 - Blocked on human design choice or credentials — record blocker and stop thrashing.
-- Do not invent Mode B infra work.
+- Do not invent Mode B infra work (Postgres/auth/k8s).

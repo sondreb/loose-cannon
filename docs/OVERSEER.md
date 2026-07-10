@@ -127,25 +127,44 @@ Grok does **not** use human-readable session names like `overseer-game`. Session
 - Review `git diff` / commits between cycles.
 - The agent is instructed **not** to force-push, reset hard, or deploy without you.
 
-## Suggested first week
+## Suggested long unattended run
 
-1. Interactive `/goal` once — validate it picks **M2 job board / missions**.
-2. One headless cycle with **no** `-Yolo` so you see tool requests.
-3. Then loop with `-Yolo` on a branch, `-MaxCycles 5`, review, merge.
+```powershell
+cd F:\src\github\sondreb\loose-cannon
+# Prefer a throwaway branch
+git checkout -b overseer/auto
+
+# Ensure deps once
+npm install
+
+# Unattended loop (example: many cycles, 2 min pause)
+.\scripts\overseer\overseer-loop.ps1 -Yolo -SleepSeconds 120
+# Or cap: -MaxCycles 40
+```
+
+1. First cycle should pick **M3 memorial wall** (or next incomplete in STATUS).
+2. Review `docs/OVERSEER_LOG.md` and `git log` / `git diff` periodically.
+3. Keep a game server available for smoke when cycles change server code (`npm run server` in another pane).
 
 ## Ready-to-paste goal (full)
 
 ```
-You are the permanent Loose Cannon overseer. Product: browser isometric crime MMO (Syndicate + Cannon Fodder + Kingpin). Stack: packages/client (Pixi), packages/server (WS, in-memory), packages/shared.
+You are the permanent Loose Cannon overseer. Product: browser isometric 18+ crime MMO (Syndicate + Cannon Fodder + Kingpin). Stack: packages/client (Pixi), packages/server (WS, in-memory), packages/shared.
 
 Rules: AGENTS.md. Roadmap: docs/MASTER_PLAN.md. Status: docs/STATUS.md. Log: docs/OVERSEER_LOG.md.
 
-Doctrine: Mode A only (no Postgres/Redis/k8s/real auth). Server-authoritative combat and economy.
+Doctrine: Mode A only (no Postgres/Redis/k8s/real auth). Server-authoritative combat and economy. Free outdoor roam is intentional — do not re-add district soft-kicks that block walking.
 
-Goal: keep developing until a new player can join, recruit, take a job from a board, complete an instanced mission, get paid, and spend loot — with npm run smoke and npm run build passing.
+Already live (do not regress): job board, mission instances, tutorial, heat/rep shops, combat-scene graphics, The Titty Twister club, longer kill toasts, mobile full-screen dialogue, free roam.
 
-Each cycle: read STATUS + MASTER_PLAN → implement next incomplete milestone → verify → update STATUS + OVERSEER_LOG → stop only if blocked on a human decision.
+Priority backlog: M3 memorial wall → goon stats feel → combat/pathing → more missions → M4 parties. Fix critical player-facing bugs before greenfield.
+
+Each cycle: read STATUS + MASTER_PLAN → implement next incomplete milestone → verify (build/smoke) → update STATUS + OVERSEER_LOG → stop only if blocked on a human decision.
 ```
+
+## What “done enough” looks like for a long loop
+
+Keep shipping until memorial wall + goon-stats feel + at least one extra mission or combat polish land, and `npm run build` / `npm run smoke` stay green. Then continue down MASTER_PLAN M5–M6.
 
 ## Troubleshooting
 
