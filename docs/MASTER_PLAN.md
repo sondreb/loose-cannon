@@ -28,18 +28,18 @@ A fun, playable **local multiplayer** crime sandbox: recruit a posse, run jobs, 
 
 ### M2 — Content spine (P3 focus)
 
-- [ ] **Job board / fixer UI** — pick a mission from a hub POI
-- [ ] **Mission instances** — enter instance room, objectives, extract/fail
-- [ ] At least **3 starter jobs** (protection, smash-and-grab, debt collection)
-- [ ] Mission rewards: cash, rep, optional loot (server-rolled)
-- [ ] Briefing copy with Cannon Fodder–style cheerful understatement
-- [ ] Tutorial / first-session flow (name → bar → first hire → first job)
+- [x] **Job board / fixer UI** — pick a mission from a hub POI
+- [x] **Mission instances** — enter instance room, objectives, extract/fail *(private `mi_*` warehouse layer + outdoor jobs)*
+- [x] At least **3 starter jobs** (protection, smash-and-grab, debt collection) *(+ warehouse instance)*
+- [x] Mission rewards: cash, rep, optional loot (server-rolled) *(cash + rep; loot optional later)*
+- [x] Briefing copy with Cannon Fodder–style cheerful understatement
+- [x] Tutorial / first-session flow (name → bar → first hire → first job)
 
 ### M3 — Heat, reputation, progression
 
-- [ ] Heat meter (street heat vs wanted-style consequences)
-- [ ] Reputation gates for shops / black market stock
-- [ ] Simple district unlock or map UI for “where can I go”
+- [x] Heat meter (street heat vs wanted-style consequences) *(meter + decay + lay-low + shop markup)*
+- [x] Reputation gates for shops / black market stock *(minRep on catalog items)*
+- [x] Simple district unlock or map UI for “where can I go”
 - [ ] Goon stats feel distinct (aim / muscle / guts matter in combat)
 - [ ] Memorial wall for dead named goons (Cannon Fodder beat)
 

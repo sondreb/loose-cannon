@@ -123,6 +123,92 @@ export interface ShopState {
   shopName: string;
 }
 
+/** Offer listed on the fixer job board */
+export interface MissionOffer {
+  id: string;
+  title: string;
+  blurb: string;
+  difficulty: 1 | 2 | 3;
+  rewardCash: number;
+  rewardRep: number;
+}
+
+/** Open job board UI (snapshot-driven, like shop) */
+export interface JobBoardState {
+  npcId: string;
+  npcName: string;
+  title: string;
+  offers: MissionOffer[];
+}
+
+export interface MissionObjectivePublic {
+  id: string;
+  label: string;
+  done: boolean;
+}
+
+/** Named goon who died on your watch (Cannon Fodder memorial) */
+export interface MemorialEntry {
+  id: string;
+  name: string;
+  gender?: "male" | "female";
+  /** Cheerful understatement */
+  epitaph: string;
+  /** How they went out */
+  cause: string;
+  /** Server tick when recorded */
+  tick: number;
+}
+
+/** District row for city map UI */
+export interface DistrictPublic {
+  id: string;
+  name: string;
+  short: string;
+  blurb: string;
+  minRep: number;
+  unlocked: boolean;
+  danger: "safe" | "risky" | "hot";
+  landmark?: string;
+  /** Bounds for map sketch */
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/** First-session guided flow (null when finished or skipped) */
+export interface TutorialState {
+  step: string;
+  title: string;
+  body: string;
+  /** 1-based index for UI */
+  stepIndex: number;
+  stepCount: number;
+  hintX?: number;
+  hintY?: number;
+}
+
+/** Active job progress for HUD / debrief */
+export interface MissionRuntime {
+  id: string;
+  title: string;
+  /** active = objectives; extract = leave via exit; complete/failed terminal (usually cleared) */
+  phase: "active" | "extract" | "complete" | "failed";
+  objectives: MissionObjectivePublic[];
+  /** Seconds left on timed objectives, if any */
+  timeLeft?: number;
+  /** Progress 0–1 for hold-style objectives */
+  progress?: number;
+  rewardCash: number;
+  rewardRep: number;
+  /** World hint for the active objective */
+  hintX?: number;
+  hintY?: number;
+  /** True when running inside a private mission layer (warehouse etc.) */
+  instanced?: boolean;
+}
+
 /** Visual combat event for one tick (muzzle, tracer, hit, etc.) */
 export interface CombatFxEvent {
   /** shot = firearm, melee = close weapon, flame = flamethrower stream */
@@ -144,6 +230,8 @@ export interface WorldSnapshot {
     posseId: string;
     cash: number;
     rep: number;
+    /** Street heat 0–100 (wanted-style pressure) */
+    heat: number;
     selectedUnitId: string;
     insideBuildingId: string | null;
     /** Seconds remaining until respawn; null if alive */
@@ -153,7 +241,14 @@ export interface WorldSnapshot {
     actionDetail: string | null;
     /** true = safe downtown (PvE), false = war zone (PvP / rival gangs) */
     inSafeZone: boolean;
+    /** Current outdoor district id (or interior label) */
+    districtId: string;
+    districtName: string;
+    /** True if current outdoor tile is unlocked for your rep */
+    districtUnlocked: boolean;
   };
+  /** City districts for map UI (rep unlocks) */
+  districts: DistrictPublic[];
   units: UnitPublic[];
   posses: PossePublic[];
   buildings: BuildingPublic[];
@@ -166,6 +261,16 @@ export interface WorldSnapshot {
   floors?: Array<{ x: number; y: number; type: TileType }>;
   dialogue: DialogueState | null;
   shop: ShopState | null;
+  /** Fixer job board when open */
+  jobBoard: JobBoardState | null;
+  /** Active mission, if any */
+  mission: MissionRuntime | null;
+  /** First-session tutorial coach (null if done/skipped) */
+  tutorial: TutorialState | null;
+  /** Fallen named goons (your posse only) */
+  memorials: MemorialEntry[];
+  /** Server wants memorial wall open (priest / message) */
+  memorialOpen: boolean;
   recentChat: ChatLine[];
   combatLog: string[];
   /** Combat VFX that occurred since last snapshot (this tick) */
@@ -189,6 +294,14 @@ export type ClientMessage =
   | { type: "shop.buyArmor"; armorId: ArmorId; unitId: string }
   | { type: "shop.buyUpgrade"; upgradeId: UpgradeId; unitId: string }
   | { type: "shop.close" }
+  | { type: "jobBoard.accept"; missionId: string }
+  | { type: "jobBoard.close" }
+  | { type: "mission.abandon" }
+  | { type: "tutorial.skip" }
+  /** Optional client-only request — server may ignore; reserved for map waypoint */
+  | { type: "map.ping"; x: number; y: number }
+  | { type: "memorial.open" }
+  | { type: "memorial.close" }
   | { type: "posse.setWeapon"; unitId: string; weaponId: WeaponId }
   | { type: "posse.setArmor"; unitId: string; armorId: ArmorId }
   | { type: "chat"; text: string }
@@ -223,4 +336,12 @@ export type ServerMessage =
       otherItems: string[];
     }
   | { type: "notify"; kind: "killed"; title: string; body: string }
-  | { type: "notify"; kind: "downed"; title: string; body: string };
+  | { type: "notify"; kind: "downed"; title: string; body: string }
+  | {
+      type: "notify";
+      kind: "mission";
+      title: string;
+      body: string;
+      cash?: number;
+      rep?: number;
+    };

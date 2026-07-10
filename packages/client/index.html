@@ -133,7 +133,28 @@
           <div id="objective">SKIDROW — walk, talk, buy, survive</div>
         </div>
 
-        <div id="minimap"></div>
+        <button type="button" id="minimap" class="minimap-btn" title="City map (M)">MAP</button>
+
+        <!-- City district map -->
+        <div id="districtMapModal" class="modal hidden">
+          <div class="modal-card district-map-card">
+            <div class="district-map-header">
+              <div>
+                <p class="job-board-kicker">SKIDROW</p>
+                <h2>City Map</h2>
+                <p class="muted tiny" id="districtMapHere">You are here: —</p>
+              </div>
+              <button type="button" id="districtMapClose" class="tiny-btn">CLOSE</button>
+            </div>
+            <div class="district-map-body">
+              <canvas id="districtMapCanvas" width="320" height="260" aria-label="District sketch"></canvas>
+              <div id="districtMapList" class="district-map-list"></div>
+            </div>
+            <p class="muted tiny district-map-foot">
+              Unlocks with street <b>rep</b>. Click an unlocked district to walk there. Locked zones soft-kick you back.
+            </p>
+          </div>
+        </div>
 
         <div id="eventLog"></div>
 
@@ -204,7 +225,7 @@
                 <div class="shop-logo">P</div>
                 <div>
                   <h2 id="shopTitle">PAWN-O-MATIC</h2>
-                  <p class="shop-tagline">Cash only · No refunds · No questions</p>
+                  <p class="shop-tagline">Cash only · Rep gates high-end · Heat raises prices (*)</p>
                 </div>
               </div>
               <div class="shop-cash-pill">
@@ -239,6 +260,65 @@
               <button type="button" id="shopClose" class="shop-leave-btn">CLOSE COUNTER</button>
             </div>
           </div>
+        </div>
+
+        <!-- Fixer job board (Rita Fix) -->
+        <div id="jobBoardModal" class="modal hidden">
+          <div class="modal-card job-board-card">
+            <div class="job-board-header">
+              <div>
+                <p class="job-board-kicker">FIXER CONTRACTS</p>
+                <h2 id="jobBoardTitle">Rita's Job Book</h2>
+                <p class="job-board-sub muted">Pick a job. Server pays when objectives clear. Abandon if you get cold feet.</p>
+              </div>
+              <button type="button" id="jobBoardClose" class="tiny-btn">CLOSE</button>
+            </div>
+            <div id="jobBoardOffers" class="job-board-offers"></div>
+            <p class="muted tiny job-board-foot">Talk to Rita Fix in The Rusty Nail · “Got work?”</p>
+          </div>
+        </div>
+
+        <!-- Active mission strip (always available when on a job) -->
+        <div id="missionHud" class="mission-hud hidden">
+          <div class="mission-hud-top">
+            <span class="mission-hud-kicker">JOB</span>
+            <strong id="missionHudTitle">—</strong>
+            <button type="button" id="missionAbandon" class="tiny-btn mission-abandon">ABANDON</button>
+          </div>
+          <ul id="missionHudObjectives" class="mission-hud-objectives"></ul>
+          <div id="missionHudProgress" class="mission-hud-progress hidden">
+            <div id="missionHudBar" class="mission-hud-bar"></div>
+          </div>
+        </div>
+
+        <!-- Memorial wall (Cannon Fodder) -->
+        <div id="memorialModal" class="modal hidden">
+          <div class="modal-card memorial-card">
+            <div class="memorial-header">
+              <div>
+                <p class="job-board-kicker">THEY ALMOST MADE IT</p>
+                <h2>Memorial Wall</h2>
+                <p class="muted tiny" id="memorialCount">0 names</p>
+              </div>
+              <button type="button" id="memorialClose" class="tiny-btn">CLOSE</button>
+            </div>
+            <div id="memorialList" class="memorial-list"></div>
+            <p class="muted tiny memorial-foot">
+              Named goons who die stay on the wall. Visit Father Trouble at the church, or press <b>V</b>.
+            </p>
+          </div>
+        </div>
+
+        <!-- First-session tutorial coach (server-driven) -->
+        <div id="tutorialHud" class="tutorial-hud hidden">
+          <div class="tutorial-hud-top">
+            <span class="tutorial-kicker">FIRST SESSION</span>
+            <span id="tutorialStepNum" class="tutorial-step-num">1/5</span>
+            <button type="button" id="tutorialSkip" class="tiny-btn">SKIP</button>
+          </div>
+          <strong id="tutorialTitle">—</strong>
+          <p id="tutorialBody" class="tutorial-body"></p>
+          <p id="tutorialHint" class="tutorial-hint muted tiny"></p>
         </div>
       </div>
     </div>

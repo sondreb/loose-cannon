@@ -1,9 +1,11 @@
 import {
   ARMORS,
+  heatBand,
   INTERACT_RANGE,
   SHOP_ARMOR_ORDER,
   SHOP_UPGRADE_ORDER,
   SHOP_WEAPON_ORDER,
+  shopPrice,
   UPGRADES,
   WEAPONS,
   type ArmorId,
@@ -73,6 +75,32 @@ const shopArmor = $("shopArmor");
 const shopUpgrades = $("shopUpgrades");
 const shopBuyerRow = $("shopBuyerRow");
 const shopClose = $("shopClose");
+const jobBoardModal = $("jobBoardModal");
+const jobBoardTitle = $("jobBoardTitle");
+const jobBoardOffers = $("jobBoardOffers");
+const jobBoardClose = $("jobBoardClose");
+const missionHud = $("missionHud");
+const missionHudTitle = $("missionHudTitle");
+const missionHudObjectives = $("missionHudObjectives");
+const missionHudProgress = $("missionHudProgress");
+const missionHudBar = $("missionHudBar");
+const missionAbandon = $("missionAbandon");
+const tutorialHud = $("tutorialHud");
+const tutorialStepNum = $("tutorialStepNum");
+const tutorialTitle = $("tutorialTitle");
+const tutorialBody = $("tutorialBody");
+const tutorialHint = $("tutorialHint");
+const tutorialSkip = $("tutorialSkip");
+const minimapBtn = $("minimap");
+const districtMapModal = $("districtMapModal");
+const districtMapClose = $("districtMapClose");
+const districtMapHere = $("districtMapHere");
+const districtMapList = $("districtMapList");
+const districtMapCanvas = $("districtMapCanvas") as HTMLCanvasElement;
+const memorialModal = $("memorialModal");
+const memorialClose = $("memorialClose");
+const memorialCount = $("memorialCount");
+const memorialList = $("memorialList");
 const respawnOverlay = $("respawnOverlay");
 const respawnCount = $("respawnCount");
 const notifyToasts = $("notifyToasts");
@@ -159,7 +187,7 @@ function setMobileAttackMode(on: boolean): void {
 function fireAttackAtClient(clientX: number, clientY: number): void {
   if (!snap || !socket || !view) return;
   if (snap.you.respawnIn != null && snap.you.respawnIn > 0) return;
-  if (snap.dialogue || snap.shop) return;
+  if (snap.dialogue || snap.shop || snap.jobBoard) return;
   pendingInteract = null;
   const w = view.screenToWorld(clientX, clientY);
   let best: { id: string; d: number } | null = null;
@@ -335,6 +363,21 @@ function showNotify(msg: Extract<ServerMessage, { type: "notify" }>): void {
       <div class="nt-title">${escapeHtml(msg.title)}</div>
       <p class="nt-sub">${escapeHtml(msg.body)}</p>
     `;
+  } else if (msg.kind === "mission") {
+    el.classList.add("mission");
+    sfx.play("cash", { force: true });
+    const pay =
+      msg.cash != null || msg.rep != null
+        ? `<span class="nt-cash">${msg.cash != null ? `$${msg.cash}` : ""}${
+            msg.cash != null && msg.rep != null ? " · " : ""
+          }${msg.rep != null ? `+${msg.rep} rep` : ""}</span>`
+        : "";
+    el.innerHTML = `
+      <div class="nt-kicker">CONTRACT</div>
+      <div class="nt-title">${escapeHtml(msg.title)}</div>
+      <p class="nt-sub">${escapeHtml(msg.body)}</p>
+      ${pay}
+    `;
   }
 
   notifyToasts.appendChild(el);
@@ -416,7 +459,9 @@ let lastPosseKey = "";
 
 function renderPosse(): void {
   if (!snap) return;
-  cashRep.innerHTML = `<span class="cash">$${snap.you.cash}</span> <span class="rep">Rep ${snap.you.rep}</span>`;
+  const h = snap.you.heat ?? 0;
+  const band = heatBand(h);
+  cashRep.innerHTML = `<span class="cash">$${snap.you.cash}</span> <span class="rep">Rep ${snap.you.rep}</span> <span class="heat heat-${band}" title="Street heat — cool off at the bar">Heat ${h}</span>`;
   const units = myUnits();
   const key = units
     .map(
@@ -762,12 +807,224 @@ function renderDialogue(): void {
 
 /** Avoid rebuilding shop buttons every snapshot (was eating all clicks). */
 let lastShopKey = "";
+let lastJobBoardKey = "";
 
 function shopTargetUnitId(): string | null {
   if (!snap) return null;
   const u = selectedUnit();
   if (u) return u.id;
   return snap.you.selectedUnitId || null;
+}
+
+function renderJobBoard(): void {
+  if (!snap?.jobBoard) {
+    jobBoardModal.classList.add("hidden");
+    lastJobBoardKey = "";
+    return;
+  }
+  const jb = snap.jobBoard;
+  jobBoardModal.classList.remove("hidden");
+  jobBoardTitle.textContent = jb.title || "Job Board";
+  const key = `${jb.npcId}|${jb.offers.map((o) => o.id).join(",")}|${snap.you.cash}`;
+  if (key === lastJobBoardKey) return;
+  lastJobBoardKey = key;
+
+  jobBoardOffers.innerHTML = "";
+  for (const offer of jb.offers) {
+    const card = document.createElement("article");
+    card.className = "job-offer";
+    card.innerHTML = `
+      <div class="job-offer-head">
+        <h3>${escapeHtml(offer.title)}</h3>
+        <span class="job-diff" data-d="${offer.difficulty}">${"★".repeat(offer.difficulty)}${"☆".repeat(3 - offer.difficulty)}</span>
+      </div>
+      <p class="job-blurb">${escapeHtml(offer.blurb)}</p>
+      <div class="job-offer-foot">
+        <span class="job-pay">$${offer.rewardCash} · +${offer.rewardRep} rep</span>
+        <button type="button" class="job-accept" data-mission-id="${escapeHtml(offer.id)}">ACCEPT</button>
+      </div>
+    `;
+    jobBoardOffers.appendChild(card);
+  }
+}
+
+function renderMissionHud(): void {
+  if (!snap?.mission || snap.mission.phase === "complete" || snap.mission.phase === "failed") {
+    missionHud.classList.add("hidden");
+    return;
+  }
+  const m = snap.mission;
+  missionHud.classList.remove("hidden");
+  missionHud.classList.toggle("extract", m.phase === "extract");
+  missionHudTitle.textContent =
+    m.phase === "extract" ? `${m.title} — EXTRACT` : m.instanced ? `${m.title} (INSTANCE)` : m.title;
+  missionHudObjectives.innerHTML = "";
+  for (const o of m.objectives) {
+    const li = document.createElement("li");
+    li.className = o.done ? "done" : "";
+    li.textContent = `${o.done ? "✓" : "○"} ${o.label}`;
+    missionHudObjectives.appendChild(li);
+  }
+  if (m.progress != null) {
+    missionHudProgress.classList.remove("hidden");
+    missionHudBar.style.width = `${Math.round(m.progress * 100)}%`;
+  } else {
+    missionHudProgress.classList.add("hidden");
+  }
+}
+
+function renderTutorialHud(): void {
+  if (!snap?.tutorial) {
+    tutorialHud.classList.add("hidden");
+    return;
+  }
+  const t = snap.tutorial;
+  tutorialHud.classList.remove("hidden");
+  tutorialStepNum.textContent = `${t.stepIndex}/${t.stepCount}`;
+  tutorialTitle.textContent = t.title;
+  tutorialBody.textContent = t.body;
+  if (t.hintX != null && t.hintY != null) {
+    tutorialHint.textContent = `Waypoint ≈ (${Math.round(t.hintX)}, ${Math.round(t.hintY)}) · click the ground or WASD`;
+  } else {
+    tutorialHint.textContent = "Follow the prompt — E to interact when in range.";
+  }
+}
+
+function openDistrictMap(): void {
+  districtMapModal.classList.remove("hidden");
+  renderDistrictMap();
+  sfx.play("ui");
+}
+
+function closeDistrictMap(): void {
+  districtMapModal.classList.add("hidden");
+}
+
+function renderMemorialWall(): void {
+  if (!snap) return;
+  // Server opens via memorial.open from priest; also allow local view from snapshot
+  const open = !memorialModal.classList.contains("hidden");
+  // Auto-open when server set memorialOpen — we don't have that flag on snap; use message flow
+  const list = snap.memorials ?? [];
+  memorialCount.textContent =
+    list.length === 0 ? "No names yet. Lucky you." : `${list.length} name${list.length === 1 ? "" : "s"} on the wall`;
+  if (!open) return;
+  memorialList.innerHTML = "";
+  if (list.length === 0) {
+    memorialList.innerHTML =
+      `<p class="memorial-empty">The wall is blank. Hire meat, take jobs, try not to fill it.</p>`;
+    return;
+  }
+  for (const m of list) {
+    const card = document.createElement("article");
+    card.className = "memorial-entry";
+    const who = m.gender === "female" ? "She" : m.gender === "male" ? "He" : "They";
+    card.innerHTML = `
+      <div class="memorial-name">${escapeHtml(m.name)}</div>
+      <p class="memorial-epitaph">"${escapeHtml(m.epitaph)}"</p>
+      <p class="memorial-cause">${escapeHtml(m.cause)}</p>
+      <p class="muted tiny">${who} will be remembered. Briefly.</p>
+    `;
+    memorialList.appendChild(card);
+  }
+}
+
+function openMemorialWall(): void {
+  socket.send({ type: "memorial.open" });
+  memorialModal.classList.remove("hidden");
+  renderMemorialWall();
+  sfx.play("ui");
+}
+
+function closeMemorialWall(): void {
+  memorialModal.classList.add("hidden");
+  socket.send({ type: "memorial.close" });
+}
+
+function renderDistrictMap(): void {
+  if (!snap?.districts?.length) return;
+  const here = snap.you.districtName ?? "—";
+  const lock = snap.you.districtUnlocked === false ? " (locked!)" : "";
+  districtMapHere.textContent = `You are here: ${here}${lock} · Rep ${snap.you.rep}`;
+
+  districtMapList.innerHTML = "";
+  for (const d of snap.districts) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className =
+      "district-row" +
+      (d.unlocked ? "" : " locked") +
+      (d.id === snap.you.districtId ? " current" : "") +
+      ` danger-${d.danger}`;
+    row.dataset.districtId = d.id;
+    row.innerHTML = `
+      <div class="district-row-top">
+        <strong>${escapeHtml(d.short)}</strong>
+        <span class="district-badge">${d.unlocked ? "OPEN" : `REP ${d.minRep}`}</span>
+      </div>
+      <div class="district-name">${escapeHtml(d.name)}</div>
+      <p class="district-blurb">${escapeHtml(d.blurb)}</p>
+      ${d.landmark ? `<p class="muted tiny">${escapeHtml(d.landmark)}</p>` : ""}
+    `;
+    if (d.unlocked) {
+      row.addEventListener("click", () => {
+        const cx = (d.x0 + d.x1) / 2;
+        const cy = (d.y0 + d.y1) / 2;
+        socket.send({ type: "map.ping", x: cx, y: cy });
+        closeDistrictMap();
+      });
+    }
+    districtMapList.appendChild(row);
+  }
+
+  // Sketch canvas
+  const ctx = districtMapCanvas.getContext("2d");
+  if (!ctx || !snap.mapWidth) return;
+  const W = districtMapCanvas.width;
+  const H = districtMapCanvas.height;
+  const pad = 8;
+  const scaleX = (W - pad * 2) / snap.mapWidth;
+  const scaleY = (H - pad * 2) / snap.mapHeight;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = "#0a0c12";
+  ctx.fillRect(0, 0, W, H);
+  // Safe line
+  const safeY = 38;
+  ctx.strokeStyle = "rgba(255, 80, 60, 0.55)";
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath();
+  ctx.moveTo(pad, pad + safeY * scaleY);
+  ctx.lineTo(W - pad, pad + safeY * scaleY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const colors: Record<string, string> = {
+    safe: "rgba(80, 180, 120, 0.35)",
+    risky: "rgba(220, 160, 40, 0.35)",
+    hot: "rgba(220, 60, 50, 0.4)",
+  };
+  for (const d of snap.districts) {
+    const x = pad + d.x0 * scaleX;
+    const y = pad + d.y0 * scaleY;
+    const w = (d.x1 - d.x0 + 1) * scaleX;
+    const h = (d.y1 - d.y0 + 1) * scaleY;
+    ctx.fillStyle = d.unlocked ? colors[d.danger] ?? "#444" : "rgba(40,40,50,0.7)";
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = d.id === snap.you.districtId ? "#f0c040" : "rgba(255,255,255,0.12)";
+    ctx.lineWidth = d.id === snap.you.districtId ? 2 : 1;
+    ctx.strokeRect(x, y, w, h);
+    ctx.fillStyle = d.unlocked ? "#e8e0d4" : "#666";
+    ctx.font = "10px system-ui,sans-serif";
+    ctx.fillText(d.short, x + 4, y + 12);
+  }
+  // Player marker
+  const me = snap.units.find((u) => u.isPlayerLeader);
+  if (me && !snap.you.insideBuildingId) {
+    ctx.fillStyle = "#f0c040";
+    ctx.beginPath();
+    ctx.arc(pad + me.x * scaleX, pad + me.y * scaleY, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 function renderShop(): void {
@@ -787,7 +1044,9 @@ function renderShop(): void {
   const rosterKey = myUnits()
     .map((m) => m.id)
     .join(",");
-  const key = `${snap.shop.shopName}|${u?.id ?? ""}|${ownedW}|${ownedA}|${snap.you.cash}|${rosterKey}|${u?.stats.aim},${u?.stats.guts}`;
+  const heat = snap.you.heat ?? 0;
+  const rep = snap.you.rep ?? 0;
+  const key = `${snap.shop.shopName}|${u?.id ?? ""}|${ownedW}|${ownedA}|${snap.you.cash}|${heat}|${rep}|${rosterKey}|${u?.stats.aim},${u?.stats.guts}`;
   if (key === lastShopKey) return;
   lastShopKey = key;
 
@@ -817,21 +1076,35 @@ function renderShop(): void {
   for (const id of SHOP_WEAPON_ORDER) {
     const w = WEAPONS[id];
     const owned = u?.ownedWeapons?.includes(id);
-    const canAfford = snap.you.cash >= w.price;
+    const needRep = w.minRep ?? 0;
+    const locked = !owned && rep < needRep;
+    const price = shopPrice(w.price, heat);
+    const canAfford = snap.you.cash >= price;
     const b = document.createElement("button");
     b.type = "button";
     b.className =
-      "shop-item" + (owned ? " owned" : "") + (!owned && !canAfford ? " broke" : "");
+      "shop-item" +
+      (owned ? " owned" : "") +
+      (locked ? " locked" : "") +
+      (!owned && !locked && !canAfford ? " broke" : "");
     b.dataset.shopAction = "weapon";
     b.dataset.itemId = id;
+    if (locked) b.disabled = true;
+    const priceLabel = owned
+      ? "EQUIP"
+      : locked
+        ? `REP ${needRep}`
+        : price !== w.price
+          ? `$${price}*`
+          : `$${price}`;
     b.innerHTML = `
-      <img class="shop-item-icon" src="${weaponIconDataUrl(id, { active: u?.weapon === id, locked: false })}" alt="" width="40" height="40" draggable="false" />
+      <img class="shop-item-icon" src="${weaponIconDataUrl(id, { active: u?.weapon === id, locked })}" alt="" width="40" height="40" draggable="false" />
       <div class="shop-item-body">
         <div class="shop-item-name">${escapeHtml(w.name)}</div>
-        <div class="shop-item-meta">DMG ${w.damage} · RNG ${w.range}</div>
+        <div class="shop-item-meta">DMG ${w.damage} · RNG ${w.range}${needRep > 0 ? ` · Rep ${needRep}` : ""}</div>
         <div class="shop-item-desc">${escapeHtml(w.description)}</div>
       </div>
-      <div class="shop-item-price">${owned ? "EQUIP" : `$${w.price}`}</div>
+      <div class="shop-item-price">${priceLabel}</div>
     `;
     shopWeapons.appendChild(b);
   }
@@ -840,21 +1113,37 @@ function renderShop(): void {
   for (const id of SHOP_ARMOR_ORDER) {
     const a = ARMORS[id];
     const owned = u?.ownedArmors?.includes(id);
-    const canAfford = snap.you.cash >= a.price;
+    const needRep = a.minRep ?? 0;
+    const locked = !owned && rep < needRep;
+    const price = shopPrice(a.price, heat);
+    const canAfford = snap.you.cash >= price;
     const b = document.createElement("button");
     b.type = "button";
     b.className =
-      "shop-item" + (owned ? " owned" : "") + (!owned && !canAfford ? " broke" : "");
+      "shop-item" +
+      (owned ? " owned" : "") +
+      (locked ? " locked" : "") +
+      (!owned && !locked && !canAfford ? " broke" : "");
     b.dataset.shopAction = "armor";
     b.dataset.itemId = id;
+    if (locked) b.disabled = true;
+    const priceLabel = owned
+      ? "EQUIP"
+      : locked
+        ? `REP ${needRep}`
+        : a.price <= 0
+          ? "FREE"
+          : price !== a.price
+            ? `$${price}*`
+            : `$${price}`;
     b.innerHTML = `
-      <img class="shop-item-icon" src="${armorIconDataUrl(id, { active: u?.armor === id, locked: false })}" alt="" width="40" height="40" draggable="false" />
+      <img class="shop-item-icon" src="${armorIconDataUrl(id, { active: u?.armor === id, locked })}" alt="" width="40" height="40" draggable="false" />
       <div class="shop-item-body">
         <div class="shop-item-name">${escapeHtml(a.name)}</div>
-        <div class="shop-item-meta">−${Math.round(a.damageReduce * 100)}% dmg</div>
+        <div class="shop-item-meta">−${Math.round(a.damageReduce * 100)}% dmg${needRep > 0 ? ` · Rep ${needRep}` : ""}</div>
         <div class="shop-item-desc">${escapeHtml(a.description)}</div>
       </div>
-      <div class="shop-item-price">${owned ? "EQUIP" : a.price <= 0 ? "FREE" : `$${a.price}`}</div>
+      <div class="shop-item-price">${priceLabel}</div>
     `;
     shopArmor.appendChild(b);
   }
@@ -862,19 +1151,24 @@ function renderShop(): void {
   shopUpgrades.innerHTML = "";
   for (const id of SHOP_UPGRADE_ORDER) {
     const up = UPGRADES[id];
-    const canAfford = snap.you.cash >= up.price;
+    const needRep = up.minRep ?? 0;
+    const locked = rep < needRep;
+    const price = shopPrice(up.price, heat);
+    const canAfford = snap.you.cash >= price;
     const b = document.createElement("button");
     b.type = "button";
-    b.className = "shop-item upgrade" + (!canAfford ? " broke" : "");
+    b.className =
+      "shop-item upgrade" + (locked ? " locked" : "") + (!locked && !canAfford ? " broke" : "");
     b.dataset.shopAction = "upgrade";
     b.dataset.itemId = id;
+    if (locked) b.disabled = true;
     b.innerHTML = `
       <div class="shop-upgrade-glyph">${id === "medkit" ? "+" : "▲"}</div>
       <div class="shop-item-body">
         <div class="shop-item-name">${escapeHtml(up.name)}</div>
-        <div class="shop-item-desc">${escapeHtml(up.description)}</div>
+        <div class="shop-item-desc">${escapeHtml(up.description)}${needRep > 0 ? ` · Rep ${needRep}` : ""}</div>
       </div>
-      <div class="shop-item-price">$${up.price}</div>
+      <div class="shop-item-price">${locked ? `REP ${needRep}` : price !== up.price ? `$${price}*` : `$${price}`}</div>
     `;
     shopUpgrades.appendChild(b);
   }
@@ -934,6 +1228,33 @@ function updateActionBanner(s: WorldSnapshot): void {
 
 function updateZoneObjective(s: WorldSnapshot): void {
   const compact = isMobileLayout();
+  if (s.mission && (s.mission.phase === "active" || s.mission.phase === "extract")) {
+    const next = s.mission.objectives.find((o) => !o.done);
+    const label = next?.label ?? s.mission.title;
+    const hint =
+      s.mission.hintX != null && s.mission.hintY != null
+        ? ` → (${Math.round(s.mission.hintX)}, ${Math.round(s.mission.hintY)})`
+        : "";
+    const tag = s.mission.phase === "extract" ? "EXTRACT" : s.mission.instanced ? "INSTANCE" : "JOB";
+    objective.textContent = compact
+      ? `${tag} · ${s.mission.title}`
+      : `${tag}: ${s.mission.title} — ${label}${hint}`;
+    objective.classList.remove("zone-safe", "zone-war");
+    objective.classList.add("zone-war");
+    return;
+  }
+  if (s.tutorial) {
+    const hint =
+      s.tutorial.hintX != null && s.tutorial.hintY != null
+        ? ` → (${Math.round(s.tutorial.hintX)}, ${Math.round(s.tutorial.hintY)})`
+        : "";
+    objective.textContent = compact
+      ? `TUT ${s.tutorial.stepIndex}/${s.tutorial.stepCount} · ${s.tutorial.title}`
+      : `TUTORIAL ${s.tutorial.stepIndex}/${s.tutorial.stepCount}: ${s.tutorial.title}${hint}`;
+    objective.classList.remove("zone-safe", "zone-war");
+    objective.classList.add("zone-safe");
+    return;
+  }
   if (s.you.insideBuildingId) {
     const b = s.buildings.find((bb) => bb.id === s.you.insideBuildingId);
     objective.textContent = b
@@ -945,16 +1266,29 @@ function updateZoneObjective(s: WorldSnapshot): void {
     objective.classList.add("zone-safe");
     return;
   }
+  const distLabel = s.you.districtName
+    ? compact
+      ? s.you.districtName
+      : `${s.you.districtName}${s.you.districtUnlocked === false ? " [LOCKED]" : ""}`
+    : null;
   if (s.you.inSafeZone) {
     objective.textContent = compact
-      ? "SAFE DOWNTOWN (PvE)"
-      : "SAFE DOWNTOWN (PvE) — recruit · shop · no murders";
+      ? distLabel
+        ? `SAFE · ${distLabel}`
+        : "SAFE DOWNTOWN (PvE)"
+      : distLabel
+        ? `${distLabel} (PvE) — M map · V memorial · recruit · Rita`
+        : "SAFE DOWNTOWN (PvE) — recruit · shop · no murders · Rita has jobs";
     objective.classList.remove("zone-war");
     objective.classList.add("zone-safe");
   } else {
     objective.textContent = compact
-      ? "WAR ZONE (PvP)"
-      : "WAR ZONE (PvP) — rival gangs · RMB attack · survive";
+      ? distLabel
+        ? `WAR · ${distLabel}`
+        : "WAR ZONE (PvP)"
+      : distLabel
+        ? `${distLabel} — RMB attack · M for map · earn rep to unlock deeper turf`
+        : "WAR ZONE (PvP) — rival gangs · RMB attack · survive";
     objective.classList.remove("zone-safe");
     objective.classList.add("zone-war");
   }
@@ -975,8 +1309,19 @@ function onSnapshot(s: WorldSnapshot): void {
   renderPosse();
   renderDialogue();
   renderShop();
+  renderJobBoard();
+  renderMissionHud();
+  renderTutorialHud();
   updateActionBanner(s);
   updateZoneObjective(s);
+  if (!districtMapModal.classList.contains("hidden")) renderDistrictMap();
+  if (s.memorialOpen) {
+    memorialModal.classList.remove("hidden");
+    renderMemorialWall();
+  } else if (!memorialModal.classList.contains("hidden") && s.memorialOpen === false) {
+    // keep open if user opened with V until they close
+  }
+  if (!memorialModal.classList.contains("hidden")) renderMemorialWall();
   if (s.you.respawnIn != null && s.you.respawnIn > 0) {
     respawnOverlay.classList.remove("hidden");
     respawnCount.textContent = Math.ceil(s.you.respawnIn).toString();
@@ -1087,7 +1432,7 @@ function worldDirFromKeys(): { wx: number; wy: number } {
 
 function canKeyboardMove(): boolean {
   if (!snap || !socket || chatFocused) return false;
-  if (snap.dialogue || snap.shop) return false;
+  if (snap.dialogue || snap.shop || snap.jobBoard) return false;
   if (snap.you.respawnIn != null && snap.you.respawnIn > 0) return false;
   return true;
 }
@@ -1390,9 +1735,26 @@ function bindInput(): void {
       }
       if (snap?.dialogue) socket.send({ type: "dialogue.close" });
       if (snap?.shop) socket.send({ type: "shop.close" });
+      if (snap?.jobBoard) socket.send({ type: "jobBoard.close" });
+      if (!districtMapModal.classList.contains("hidden")) closeDistrictMap();
+      if (!memorialModal.classList.contains("hidden")) closeMemorialWall();
+    }
+    if (e.key === "m" || e.key === "M") {
+      if (!chatFocused && !snap?.dialogue && !snap?.shop && !snap?.jobBoard) {
+        e.preventDefault();
+        if (districtMapModal.classList.contains("hidden")) openDistrictMap();
+        else closeDistrictMap();
+      }
+    }
+    if (e.key === "v" || e.key === "V") {
+      if (!chatFocused && !snap?.dialogue && !snap?.shop && !snap?.jobBoard) {
+        e.preventDefault();
+        if (memorialModal.classList.contains("hidden")) openMemorialWall();
+        else closeMemorialWall();
+      }
     }
     // Syndicate-style: number row 5–0 / - for weapon slots when unit selected
-    if (!crewEditorOpen && !snap?.dialogue && !snap?.shop) {
+    if (!crewEditorOpen && !snap?.dialogue && !snap?.shop && !snap?.jobBoard) {
       const wepKeys: Record<string, number> = {
         Digit5: 0,
         Digit6: 1,
@@ -1456,6 +1818,26 @@ function bindInput(): void {
 
   dlgClose.addEventListener("click", () => socket.send({ type: "dialogue.close" }));
   shopClose.addEventListener("click", () => socket.send({ type: "shop.close" }));
+  jobBoardClose.addEventListener("click", () => socket.send({ type: "jobBoard.close" }));
+  missionAbandon.addEventListener("click", () => {
+    if (confirm("Abandon this job? No pay, no glory.")) {
+      socket.send({ type: "mission.abandon" });
+    }
+  });
+  tutorialSkip.addEventListener("click", () => {
+    if (confirm("Skip the first-session guide? You can still find Rita in the bar.")) {
+      socket.send({ type: "tutorial.skip" });
+    }
+  });
+  minimapBtn.addEventListener("click", () => openDistrictMap());
+  districtMapClose.addEventListener("click", () => closeDistrictMap());
+  districtMapModal.addEventListener("click", (e) => {
+    if (e.target === districtMapModal) closeDistrictMap();
+  });
+  memorialClose.addEventListener("click", () => closeMemorialWall());
+  memorialModal.addEventListener("click", (e) => {
+    if (e.target === memorialModal) closeMemorialWall();
+  });
 
   // Event delegation — survives re-renders and only wires once
   shopWeapons.addEventListener("click", onShopClick);
@@ -1464,6 +1846,17 @@ function bindInput(): void {
   shopBuyerRow.addEventListener("click", onShopClick);
   shopModal.addEventListener("click", (e) => {
     if (e.target === shopModal) socket.send({ type: "shop.close" });
+  });
+  jobBoardModal.addEventListener("click", (e) => {
+    if (e.target === jobBoardModal) {
+      socket.send({ type: "jobBoard.close" });
+      return;
+    }
+    const btn = (e.target as HTMLElement).closest("button[data-mission-id]") as HTMLButtonElement | null;
+    if (btn?.dataset.missionId) {
+      e.preventDefault();
+      socket.send({ type: "jobBoard.accept", missionId: btn.dataset.missionId });
+    }
   });
 
   weaponBar.addEventListener("click", onEquipBarClick);
@@ -1495,11 +1888,11 @@ type OnboardStep = {
 const ONBOARD_STEPS: OnboardStep[] = [
   {
     title: "Welcome to Skidrow",
-    text: "Loose Cannon is a crime-city posse game: recruit muscle, gear up, and survive rival gangs. The city is split into two realities.",
+    text: "Loose Cannon is a crime-city posse game: recruit muscle, gear up, and survive rival gangs. The city is split into districts — press M for the map.",
     bullets: [
       "Safe Downtown (PvE) — shops, bars, recruit. No murders.",
       "War Zone (PvP) — south of the red line. Rival posses shoot back.",
-      "Your boss is the star — bodyguards circle you and take the front in a fight.",
+      "Deep war, docks, and neon edge unlock with street rep.",
     ],
     art: "/art/splash.jpg",
   },
@@ -1535,9 +1928,9 @@ const ONBOARD_STEPS: OnboardStep[] = [
   },
   {
     title: "You're ready",
-    text: "Pick a name, hit the streets, and don't cross the war line empty-handed.",
+    text: "After you join, a short first-session guide walks you through the bar, a hire, Rita's job book, and your first contract. Skip anytime.",
     bullets: [
-      "Recruit north → gear up → push south when you're mean enough.",
+      "Name → The Rusty Nail → hire Vince's meat → Rita Fix → take a job → get paid.",
       "Open FULL loadout for weapons and armor.",
       "Proximity chat for nearby players. Good luck, boss.",
     ],

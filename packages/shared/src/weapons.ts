@@ -25,6 +25,8 @@ export interface WeaponDef {
   fireCooldown: number; // seconds
   price: number;
   description: string;
+  /** Minimum street rep to buy (server-enforced) */
+  minRep?: number;
 }
 
 export interface ArmorDef {
@@ -33,6 +35,7 @@ export interface ArmorDef {
   damageReduce: number; // 0-0.6
   price: number;
   description: string;
+  minRep?: number;
 }
 
 export interface UpgradeDef {
@@ -43,6 +46,7 @@ export interface UpgradeDef {
   /** Permanent stat boosts when bought for a unit */
   stats?: Partial<{ aim: number; guts: number; speed: number; muscle: number; maxHealth: number }>;
   heal?: number;
+  minRep?: number;
 }
 
 export const WEAPONS: Record<WeaponId, WeaponDef> = {
@@ -81,6 +85,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     fireCooldown: 0.11,
     price: 350,
     description: "Spray and pray, baby.",
+    minRep: 2,
   },
   shotgun: {
     id: "shotgun",
@@ -90,6 +95,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     fireCooldown: 0.85,
     price: 420,
     description: "Door-kicker's best friend.",
+    minRep: 4,
   },
   tommy: {
     id: "tommy",
@@ -99,6 +105,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     fireCooldown: 0.1,
     price: 700,
     description: "Full-auto street sweeper. Classic crime-movie swagger.",
+    minRep: 6,
   },
   minigun: {
     id: "minigun",
@@ -108,6 +115,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     fireCooldown: 0.055,
     price: 1400,
     description: "Rotary doom. Spins up your problems into confetti.",
+    minRep: 10,
   },
   flamethrower: {
     id: "flamethrower",
@@ -117,6 +125,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     fireCooldown: 0.18,
     price: 1100,
     description: "For when subtlety dies in a dumpster fire.",
+    minRep: 8,
   },
 };
 
@@ -141,6 +150,7 @@ export const ARMORS: Record<ArmorId, ArmorDef> = {
     damageReduce: 0.28,
     price: 450,
     description: "Serious about surviving the night.",
+    minRep: 3,
   },
   plate: {
     id: "plate",
@@ -148,6 +158,7 @@ export const ARMORS: Record<ArmorId, ArmorDef> = {
     damageReduce: 0.42,
     price: 900,
     description: "Heavy. Loud. Hard to kill.",
+    minRep: 7,
   },
 };
 
@@ -158,6 +169,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     price: 200,
     description: "+2 Aim permanently for selected unit.",
     stats: { aim: 2 },
+    minRep: 1,
   },
   guts_training: {
     id: "guts_training",
@@ -165,6 +177,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     price: 200,
     description: "+2 Guts permanently for selected unit.",
     stats: { guts: 2 },
+    minRep: 1,
   },
   speed_shoes: {
     id: "speed_shoes",
@@ -179,6 +192,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     price: 180,
     description: "+2 Muscle permanently.",
     stats: { muscle: 2 },
+    minRep: 2,
   },
   medkit: {
     id: "medkit",

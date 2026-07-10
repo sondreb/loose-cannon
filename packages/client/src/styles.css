@@ -434,6 +434,24 @@ body {
   color: var(--ok);
 }
 
+#cashRep .heat {
+  margin-left: 0.35rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+#cashRep .heat-cool {
+  color: #7ec8e8;
+}
+#cashRep .heat-warm {
+  color: #f0c040;
+}
+#cashRep .heat-hot {
+  color: #ff8a40;
+}
+#cashRep .heat-wanted {
+  color: #ff5050;
+  text-shadow: 0 0 8px rgba(255, 60, 40, 0.45);
+}
 #cashRep .rep {
   color: #9ab0ff;
 }
@@ -1380,6 +1398,15 @@ body {
   background: linear-gradient(145deg, rgba(40, 24, 8, 0.96), rgba(14, 10, 8, 0.97));
 }
 
+.notify-toast.mission {
+  border-color: rgba(120, 200, 255, 0.65);
+  background: linear-gradient(145deg, rgba(12, 28, 44, 0.96), rgba(8, 14, 22, 0.97));
+}
+
+.notify-toast.mission .nt-kicker {
+  color: #8ec8ff;
+}
+
 .notify-toast .nt-kicker {
   font-size: 0.68rem;
   letter-spacing: 0.18em;
@@ -1769,6 +1796,22 @@ body {
   border-color: #844;
 }
 
+.shop-item.locked {
+  opacity: 0.48;
+  cursor: not-allowed;
+  border-color: rgba(255, 80, 80, 0.28);
+}
+
+.shop-item.locked .shop-item-price {
+  color: #ff8080;
+  font-size: 0.72rem;
+}
+
+.shop-item.locked:hover {
+  border-color: rgba(255, 80, 80, 0.28);
+  filter: none;
+}
+
 .shop-item-icon {
   image-rendering: pixelated;
   width: 40px;
@@ -1843,6 +1886,311 @@ body {
 
 .shop-leave-btn:hover {
   filter: brightness(1.08);
+}
+
+/* ——— Job board / mission HUD ——— */
+.job-board-card {
+  width: min(560px, 96vw);
+  max-height: min(88vh, 720px);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.job-board-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.job-board-kicker {
+  margin: 0;
+  font-size: 0.65rem;
+  letter-spacing: 0.16em;
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.job-board-sub {
+  margin: 0.25rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.job-board-offers {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  overflow-y: auto;
+  max-height: 55vh;
+  padding-right: 0.15rem;
+}
+
+.job-offer {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 0.75rem 0.85rem;
+}
+
+.job-offer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.job-offer-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  letter-spacing: 0.04em;
+}
+
+.job-diff {
+  font-size: 0.75rem;
+  color: #f0c040;
+  letter-spacing: 0.05em;
+}
+
+.job-blurb {
+  margin: 0.45rem 0 0.65rem;
+  font-size: 0.84rem;
+  line-height: 1.4;
+  color: #c8c0b4;
+}
+
+.job-offer-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.job-pay {
+  font-weight: 700;
+  color: #8fdf8a;
+  font-size: 0.9rem;
+}
+
+.job-accept {
+  background: linear-gradient(180deg, #e09020, #a05010);
+  border: 1px solid #ffcc66;
+  color: #1a1008;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  padding: 0.45rem 0.9rem;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.job-accept:hover {
+  filter: brightness(1.08);
+}
+
+.job-board-foot {
+  margin: 0;
+}
+
+.mission-hud {
+  position: absolute;
+  top: calc(var(--mobile-hud-top, 52px) + 42px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 8;
+  width: min(420px, calc(100% - 24px));
+  background: rgba(10, 14, 22, 0.78);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid rgba(120, 180, 255, 0.28);
+  border-radius: 12px;
+  padding: 0.5rem 0.7rem 0.55rem;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
+}
+
+.mission-hud.extract {
+  border-color: rgba(120, 255, 160, 0.45);
+  box-shadow: 0 0 20px rgba(80, 200, 120, 0.2);
+}
+
+/* First-session tutorial coach */
+.memorial-card {
+  width: min(480px, 96vw);
+  max-height: min(88vh, 640px);
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.memorial-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.memorial-list {
+  overflow-y: auto;
+  max-height: 55vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.memorial-empty {
+  margin: 0.5rem 0;
+  color: #9a9080;
+  font-style: italic;
+}
+
+.memorial-entry {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(180, 160, 120, 0.25);
+  border-left: 3px solid #c9a227;
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+}
+
+.memorial-name {
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  font-size: 1rem;
+  color: #f0e0c0;
+}
+
+.memorial-epitaph {
+  margin: 0.35rem 0 0.25rem;
+  font-style: italic;
+  color: #d8c8a0;
+  font-size: 0.9rem;
+}
+
+.memorial-cause {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #a89880;
+}
+
+.memorial-foot {
+  margin: 0;
+}
+
+.tutorial-hud {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  z-index: 9;
+  width: min(340px, calc(100% - 28px));
+  background: rgba(12, 18, 28, 0.88);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid rgba(240, 192, 64, 0.35);
+  border-radius: 14px;
+  padding: 0.65rem 0.75rem 0.7rem;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+}
+
+.tutorial-hud-top {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.3rem;
+}
+
+.tutorial-kicker {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: #f0c040;
+}
+
+.tutorial-step-num {
+  flex: 1;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #c8c0b0;
+}
+
+.tutorial-hud strong {
+  display: block;
+  font-size: 0.95rem;
+  letter-spacing: 0.03em;
+  margin-bottom: 0.25rem;
+}
+
+.tutorial-body {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: #d8d0c4;
+}
+
+.tutorial-hint {
+  margin: 0.4rem 0 0;
+}
+
+@media (max-width: 900px) {
+  .tutorial-hud {
+    left: 8px;
+    right: 8px;
+    width: auto;
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+.mission-hud-top {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.mission-hud-kicker {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: #8ec8ff;
+}
+
+.mission-hud-top strong {
+  flex: 1;
+  font-size: 0.92rem;
+  letter-spacing: 0.03em;
+}
+
+.mission-abandon {
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.mission-hud-objectives {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  font-size: 0.8rem;
+  color: #d0c8bc;
+}
+
+.mission-hud-objectives li.done {
+  color: #8fdf8a;
+  text-decoration: line-through;
+  opacity: 0.85;
+}
+
+.mission-hud-progress {
+  margin-top: 0.4rem;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.mission-hud-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #3a8fd4, #8ec8ff);
+  transition: width 0.15s linear;
 }
 
 .muted {
@@ -2161,6 +2509,135 @@ body {
     font-size: 16px; /* prevents iOS zoom on focus */
     padding: 0.45rem 0.5rem;
   }
+
+.minimap-btn {
+  position: absolute;
+  top: 56px;
+  right: 14px;
+  z-index: 8;
+  background: rgba(10, 14, 22, 0.78);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(240, 192, 64, 0.4);
+  color: #f0c040;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  font-size: 0.72rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 10px;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.minimap-btn:hover {
+  filter: brightness(1.1);
+}
+
+.district-map-card {
+  width: min(720px, 96vw);
+  max-height: min(90vh, 640px);
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.district-map-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.district-map-body {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 0.85rem;
+  min-height: 0;
+}
+
+#districtMapCanvas {
+  width: 100%;
+  max-width: 320px;
+  background: #0a0c12;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  image-rendering: pixelated;
+}
+
+.district-map-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  overflow-y: auto;
+  max-height: 52vh;
+}
+
+.district-row {
+  text-align: left;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 0.55rem 0.65rem;
+  color: inherit;
+  cursor: pointer;
+}
+
+.district-row:hover:not(.locked) {
+  border-color: rgba(240, 192, 64, 0.45);
+}
+
+.district-row.locked {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.district-row.current {
+  border-color: #f0c040;
+  box-shadow: 0 0 0 1px rgba(240, 192, 64, 0.25);
+}
+
+.district-row-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.district-badge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #8fdf8a;
+}
+
+.district-row.locked .district-badge {
+  color: #ff8080;
+}
+
+.district-name {
+  font-size: 0.85rem;
+  margin-top: 0.15rem;
+  color: #c8c0b4;
+}
+
+.district-blurb {
+  margin: 0.3rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: #a8a094;
+}
+
+.district-map-foot {
+  margin: 0;
+}
+
+@media (max-width: 700px) {
+  .district-map-body {
+    grid-template-columns: 1fr;
+  }
+  #districtMapCanvas {
+    max-width: 100%;
+  }
+}
 
   #minimap {
     display: none !important;

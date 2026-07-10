@@ -7,18 +7,33 @@ import {
   FIGHT_CHANCE,
   INTERACT_RANGE,
   isSafeWorldPos,
+  DISTRICTS,
+  districtAt,
+  HEAT,
+  isDistrictUnlocked,
+  LAY_LOW_HEAT_REDUCE,
+  listMissionOffers,
+  layLowCost,
   MAX_ACTIVE_GOONS,
   MAX_CHAT_LEN,
+  MAX_MEMORIALS,
+  memorialCause,
+  MISSIONS,
   MOVE_SPEED,
+  nextTutorialStep,
   POSSE_AGGRO_RANGE,
   POSSE_DETECT_RANGE,
   PROTOCOL_VERSION,
+  randomEpitaph,
   RESPAWN_DELAY_SEC,
   SAFE_Y_MAX,
   SHOP_ARMOR_ORDER,
   SHOP_UPGRADE_ORDER,
   SHOP_WEAPON_ORDER,
+  shopPrice,
   TICK_HZ,
+  TUTORIAL_ORDER,
+  TUTORIAL_STEPS,
   UPGRADES,
   WEAPONS,
   createSkidrowMap,
@@ -27,7 +42,14 @@ import {
   type ClientMessage,
   type CombatFxEvent,
   type DialogueState,
+  type DistrictPublic,
+  type JobBoardState,
+  type MemorialEntry,
+  type MissionId,
+  type MissionRuntime,
   type ShopState,
+  type TutorialState,
+  type TutorialStepId,
   type UnitPublic,
   type UnitStats,
   type UpgradeId,
@@ -36,6 +58,25 @@ import {
 } from "@loose-cannon/shared";
 import { randomGoonName, randomRecruitProfile, type Gender } from "./names.js";
 import type { ClientConn } from "./net.js";
+
+/** Server-only mission progress (mirrored into MissionRuntime for clients). */
+interface PosseMission {
+  defId: MissionId;
+  holdAccum: number;
+  rewardGranted: boolean;
+  /** For kill missions: unit id of the target boss when known */
+  targetUnitId: string | null;
+  /** Private layer id (`mi_<posseId>`) when instanced */
+  instanceLayerId: string | null;
+  /** Building template used for interior geometry (e.g. warehouse) */
+  templateBuildingId: string | null;
+  /** Hostile posse spawned for this instance */
+  enemyPosseId: string | null;
+  /** active → extract after hostiles clear → complete on door */
+  phase: "active" | "extract" | "failed";
+  /** Extract objective completed */
+  extracted: boolean;
+}
 
 interface Unit {
   id: string;
@@ -91,6 +132,8 @@ interface Posse {
   hostile: boolean;
   cash: number;
   rep: number;
+  /** Street heat 0–HEAT.max */
+  heat: number;
   color: number;
   aggression: number;
   /** AI threat tier (gear/cash scaling); used on wipe respawn */
@@ -101,6 +144,14 @@ interface Posse {
   insideBuildingId: string | null;
   dialogue: DialogueState | null;
   shop: ShopState | null;
+  jobBoard: JobBoardState | null;
+  mission: PosseMission | null;
+  /** First-session tutorial; null when finished or skipped */
+  tutorialStep: TutorialStepId | null;
+  /** Fallen named goons */
+  memorials: MemorialEntry[];
+  /** Client has memorial wall open */
+  memorialOpen: boolean;
   memberIds: string[];
   respawnT?: number;
   /** Last posse that killed one of our members */
@@ -171,6 +222,8 @@ export class GameWorld {
   propReadyAt = new Map<string, number>();
   /** Combat VFX queued this tick, attached to snapshots then cleared */
   private combatFx: CombatFxEvent[] = [];
+  /** Throttle district soft-kick messages: posseId -> tick */
+  private districtWarnAt = new Map<string, number>();
 
   constructor() {
     this.seedWorld();
@@ -199,6 +252,7 @@ export class GameWorld {
         hostile: false,
         cash: 0,
         rep: 0,
+        heat: 0,
         color: 0x888888,
         aggression: 0,
         threat: 0,
@@ -208,6 +262,11 @@ export class GameWorld {
         insideBuildingId: n.buildingId ?? null,
         dialogue: null,
         shop: null,
+        jobBoard: null,
+        mission: null,
+        tutorialStep: null,
+        memorials: [],
+        memorialOpen: false,
         memberIds: [unitId],
         lastKillerPosseId: null,
         fallenWeapons: new Set(),
@@ -284,6 +343,7 @@ export class GameWorld {
       hostile: false,
       cash,
       rep: 0,
+      heat: 0,
       color,
       aggression,
       threat,
@@ -293,6 +353,11 @@ export class GameWorld {
       insideBuildingId: null,
       dialogue: null,
       shop: null,
+      jobBoard: null,
+      mission: null,
+      tutorialStep: null,
+      memorials: [],
+      memorialOpen: false,
       memberIds,
       lastKillerPosseId: null,
       fallenWeapons: new Set(),
@@ -434,6 +499,7 @@ export class GameWorld {
       hostile: false,
       cash: DEFAULT_CASH,
       rep: 0,
+      heat: 0,
       color: 0xf0c040,
       aggression: 0.3,
       threat: 0,
@@ -443,6 +509,11 @@ export class GameWorld {
       insideBuildingId: null,
       dialogue: null,
       shop: null,
+      jobBoard: null,
+      mission: null,
+      tutorialStep: "go_bar",
+      memorials: [],
+      memorialOpen: false,
       memberIds: [leaderId, goon1],
       lastKillerPosseId: null,
       fallenWeapons: new Set(),
@@ -546,6 +617,8 @@ export class GameWorld {
     if (!s) return;
     const posse = this.posses.get(s.posseId);
     if (posse) {
+      // Despawn private mission hostiles so they don't leak after disconnect
+      if (posse.mission?.enemyPosseId) this.despawnMissionEnemies(posse.mission.enemyPosseId);
       for (const id of posse.memberIds) this.units.delete(id);
       this.posses.delete(s.posseId);
     }
@@ -579,7 +652,7 @@ export class GameWorld {
         this.cmdInteract(session, posse);
         break;
       case "intent.exit":
-        this.cmdExitBuilding(posse);
+        this.cmdExitBuilding(session, posse);
         break;
       case "dialogue.choice":
         this.cmdDialogueChoice(session, posse, msg.choiceId);
@@ -598,6 +671,30 @@ export class GameWorld {
         break;
       case "shop.close":
         posse.shop = null;
+        break;
+      case "jobBoard.accept":
+        this.cmdJobBoardAccept(session, posse, msg.missionId);
+        break;
+      case "jobBoard.close":
+        posse.jobBoard = null;
+        break;
+      case "mission.abandon":
+        this.cmdMissionAbandon(session, posse);
+        break;
+      case "tutorial.skip":
+        this.cmdTutorialSkip(session, posse);
+        break;
+      case "map.ping":
+        this.cmdMapPing(session, posse, msg.x, msg.y);
+        break;
+      case "memorial.open":
+        posse.memorialOpen = true;
+        posse.dialogue = null;
+        posse.shop = null;
+        posse.jobBoard = null;
+        break;
+      case "memorial.close":
+        posse.memorialOpen = false;
         break;
       case "posse.setWeapon":
         this.cmdSetWeapon(posse, msg.unitId, msg.weaponId);
@@ -829,14 +926,121 @@ export class GameWorld {
   }
 
   private cmdMove(posse: Posse, x: number, y: number, _unitIds?: string[]): void {
-    if (posse.dialogue || posse.shop) return;
+    if (posse.dialogue || posse.shop || posse.jobBoard) return;
     const leader = this.leader(posse);
     if (!leader || !leader.alive) return;
     posse.attackTargetId = null;
     posse.moveLabel = "GOING";
     // Boss walks to the click; bodyguards take circle slots around him
-    const c = this.clampWorld(x, y);
+    let c = this.clampWorld(x, y);
+    // Soft-block map pings into locked districts
+    if (!posse.insideBuildingId) {
+      const dest = districtAt(c.x, c.y);
+      if (!isDistrictUnlocked(dest, posse.rep)) {
+        c = this.clampToUnlockedDistrict(c.x, c.y, posse.rep);
+      }
+    }
     this.assignCircleFormation(posse, c.x, c.y, { moveBoss: true });
+  }
+
+  private cmdMapPing(session: CharacterSession, posse: Posse, x: number, y: number): void {
+    const c = this.clampWorld(x, y);
+    if (posse.insideBuildingId) {
+      this.log(session, "Exit the building before using the city map.");
+      return;
+    }
+    const dest = districtAt(c.x, c.y);
+    if (!isDistrictUnlocked(dest, posse.rep)) {
+      this.log(
+        session,
+        `${dest.name} is locked (need rep ${dest.minRep}, you have ${posse.rep}). Earn street rep on jobs.`,
+      );
+      return;
+    }
+    this.log(session, `Map ping: ${dest.short} (${Math.round(c.x)}, ${Math.round(c.y)}) — on your way.`);
+    this.cmdMove(posse, c.x, c.y);
+  }
+
+  /** Nudge a point into any unlocked district (prefer downtown hub). */
+  private clampToUnlockedDistrict(x: number, y: number, rep: number): { x: number; y: number } {
+    const here = districtAt(x, y);
+    if (isDistrictUnlocked(here, rep)) return { x, y };
+    // Pull toward downtown landmark
+    const hub = { x: 40, y: 28 };
+    let best = hub;
+    let bestD = Infinity;
+    for (const d of DISTRICTS) {
+      if (!isDistrictUnlocked(d, rep)) continue;
+      const cx = (d.x0 + d.x1) / 2;
+      const cy = (d.y0 + d.y1) / 2;
+      // Point on boundary toward destination
+      const px = clamp(x, d.x0 + 0.5, d.x1 - 0.5);
+      const py = clamp(y, d.y0 + 0.5, d.y1 - 0.5);
+      const distHere = Math.hypot(px - x, py - y);
+      if (distHere < bestD) {
+        bestD = distHere;
+        best = { x: px, y: py };
+      }
+      // Also consider center as fallback
+      void cx;
+      void cy;
+    }
+    return this.clampWorld(best.x, best.y);
+  }
+
+  private districtsPublic(rep: number): DistrictPublic[] {
+    return DISTRICTS.map((d) => ({
+      id: d.id,
+      name: d.name,
+      short: d.short,
+      blurb: d.blurb,
+      minRep: d.minRep,
+      unlocked: isDistrictUnlocked(d, rep),
+      danger: d.danger,
+      landmark: d.landmark,
+      x0: d.x0,
+      y0: d.y0,
+      x1: d.x1,
+      y1: d.y1,
+    }));
+  }
+
+  /** Soft-kick players who walk into locked outdoor districts. */
+  private enforceDistrictAccess(): void {
+    for (const posse of this.posses.values()) {
+      if (!posse.isPlayer) continue;
+      if (posse.insideBuildingId) continue;
+      const leader = this.leader(posse);
+      if (!leader?.alive) continue;
+      const def = districtAt(leader.x, leader.y);
+      if (isDistrictUnlocked(def, posse.rep)) continue;
+
+      const session = [...this.sessions.values()].find((s) => s.posseId === posse.id);
+      const safe = this.clampToUnlockedDistrict(leader.x, leader.y, posse.rep);
+      // Nudge whole posse back
+      let i = 0;
+      for (const u of this.members(posse)) {
+        u.x = safe.x + (i % 2) * 0.35;
+        u.y = safe.y + Math.floor(i / 2) * 0.35;
+        u.tx = u.x;
+        u.ty = u.y;
+        u.dirX = 0;
+        u.dirY = 0;
+        u.moveMode = "idle";
+        i++;
+      }
+      posse.attackTargetId = null;
+      posse.moveLabel = null;
+
+      const last = this.districtWarnAt.get(posse.id) ?? 0;
+      if (session && this.tick - last > TICK_HZ * 2.5) {
+        this.districtWarnAt.set(posse.id, this.tick);
+        this.log(
+          session,
+          `TURNED BACK — ${def.name} needs rep ${def.minRep} (you have ${posse.rep}). ${def.blurb}`,
+        );
+      }
+    }
   }
 
   /** Continuous free movement in world axes (client sends screen-aligned vectors). */
@@ -905,7 +1109,53 @@ export class GameWorld {
   private unitInSafeZone(u: Unit): boolean {
     const p = this.posses.get(u.posseId);
     const inside = p?.insideBuildingId ?? u.buildingId;
+    // Mission instance layers are combat zones (warehouse wipe, etc.)
+    if (inside && inside.startsWith("mi_")) return false;
     return isSafeWorldPos(u.x, u.y, inside);
+  }
+
+  /** Real map building, or template for a private mission layer (`mi_*`). */
+  private resolveBuildingDef(id: string | null | undefined): (typeof this.map.buildings)[number] | null {
+    if (!id) return null;
+    const real = this.map.buildings.find((b) => b.id === id);
+    if (real) return real;
+    if (id.startsWith("mi_")) {
+      for (const p of this.posses.values()) {
+        if (p.mission?.instanceLayerId === id && p.mission.templateBuildingId) {
+          return this.map.buildings.find((b) => b.id === p.mission!.templateBuildingId) ?? null;
+        }
+      }
+    }
+    return null;
+  }
+
+  private buildingPublicFromDef(
+    b: (typeof this.map.buildings)[number],
+    overrideId?: string,
+  ) {
+    return {
+      id: overrideId ?? b.id,
+      name: overrideId ? `${b.name} (Private Job)` : b.name,
+      kind: b.kind,
+      doorX: b.doorX,
+      doorY: b.doorY,
+      interiorId: overrideId ?? b.id,
+      blurb: overrideId ? "Sealed bay — clear hostiles, then extract." : b.blurb,
+      ex0: b.ex0,
+      ey0: b.ey0,
+      ex1: b.ex1,
+      ey1: b.ey1,
+      ix0: b.ix0,
+      iy0: b.iy0,
+      ix1: b.ix1,
+      iy1: b.iy1,
+      exitX: b.exitX,
+      exitY: b.exitY,
+      stories: b.stories,
+      wallColor: b.wallColor,
+      roofColor: b.roofColor,
+      accentColor: b.accentColor,
+    };
   }
 
   /** Issue attack-move on a hostile (or any non-ally) unit — chase until in range then fire. */
@@ -1290,7 +1540,15 @@ export class GameWorld {
     if (!leader.alive) return { action: "DOWN", actionDetail: "Awaiting respawn" };
     if (leader.incapacitated) return { action: "DOWNED", actionDetail: "Bodyguards covering boss" };
     if (posse.shop) return { action: "SHOPPING", actionDetail: posse.shop.shopName };
+    if (posse.jobBoard) return { action: "CONTRACTS", actionDetail: posse.jobBoard.npcName };
     if (posse.dialogue) return { action: "PERSUADE", actionDetail: posse.dialogue.npcName };
+    if (posse.mission) {
+      const def = MISSIONS[posse.mission.defId];
+      if (posse.mission.phase === "extract") {
+        return { action: "EXTRACT", actionDetail: def?.title ?? "Get to the exit" };
+      }
+      return { action: "JOB", actionDetail: def?.title ?? "On the job" };
+    }
 
     if (posse.attackTargetId) {
       const t = this.units.get(posse.attackTargetId);
@@ -1323,6 +1581,21 @@ export class GameWorld {
     const posse = this.posses.get(unit.posseId);
     if (!posse) return;
 
+    // Street heat: player kills raise the thermometer
+    const killerId = killerPosseId ?? unit.lastHitByPosseId;
+    if (killerId && killerId !== unit.posseId) {
+      const killer = this.posses.get(killerId);
+      if (killer?.isPlayer) {
+        const sess = [...this.sessions.values()].find((s) => s.posseId === killer.id);
+        let amt = HEAT.kill;
+        if (unit.kind === "ai_boss") amt += HEAT.killBossBonus;
+        this.addHeat(killer, amt, sess, unit.kind === "ai_boss" ? "boss drop" : "body");
+      }
+    }
+
+    // Mission kill objectives (debt collection, etc.)
+    this.onMissionUnitKilled(unit, killerPosseId ?? unit.lastHitByPosseId);
+
     if (killerPosseId && killerPosseId !== posse.id) {
       posse.lastKillerPosseId = killerPosseId;
     } else if (unit.lastHitByPosseId && unit.lastHitByPosseId !== posse.id) {
@@ -1333,7 +1606,8 @@ export class GameWorld {
     if (posse.isPlayer && !unit.isPlayerLeader && unit.id !== posse.leaderId) {
       this.bankUnitGear(posse, unit);
       const session = [...this.sessions.values()].find((s) => s.posseId === posse.id);
-      if (session) this.log(session, `${unit.name} is gone. Permanent.`);
+      this.recordMemorial(posse, unit, session);
+      if (session) this.log(session, `${unit.name} is gone. Permanent. (Memorial updated.)`);
       this.removeMember(posse, unit.id, true);
       // If only a downed boss remains, the whole crew falls
       this.finishIncapacitatedBossIfAlone(posse);
@@ -1373,7 +1647,10 @@ export class GameWorld {
     if (!this.hasLivingMembers(posse) && !posse.isPlayer) {
       this.pushChat(null, `${posse.name} got wiped off the map.`, true);
       this.tryWipeLoot(posse);
-      posse.respawnT = TICK_HZ * 20;
+      // Mission instance hostiles do not respawn
+      if (!posse.id.startsWith("mi_enemy_")) {
+        posse.respawnT = TICK_HZ * 20;
+      }
     }
   }
 
@@ -1563,7 +1840,40 @@ export class GameWorld {
       const u = this.units.get(id);
       return u && !u.alive && !u.isPlayerLeader;
     });
-    for (const id of dead) this.removeMember(posse, id, true);
+    const session = [...this.sessions.values()].find((s) => s.posseId === posse.id);
+    for (const id of dead) {
+      const u = this.units.get(id);
+      if (u) this.recordMemorial(posse, u, session);
+      this.removeMember(posse, id, true);
+    }
+  }
+
+  private recordMemorial(posse: Posse, unit: Unit, session?: CharacterSession): void {
+    if (!posse.isPlayer) return;
+    if (unit.isPlayerLeader || unit.id === posse.leaderId) return;
+    // Avoid double-record if already purged
+    if (posse.memorials.some((m) => m.id === `mem_${unit.id}`)) return;
+    const killerPosse = unit.lastHitByPosseId ? this.posses.get(unit.lastHitByPosseId) : null;
+    const entry: MemorialEntry = {
+      id: `mem_${unit.id}`,
+      name: unit.name,
+      gender: unit.gender,
+      epitaph: randomEpitaph(),
+      cause: memorialCause(killerPosse?.name ?? null, !!posse.mission),
+      tick: this.tick,
+    };
+    posse.memorials.unshift(entry);
+    if (posse.memorials.length > MAX_MEMORIALS) {
+      posse.memorials.length = MAX_MEMORIALS;
+    }
+    if (session) {
+      session.conn?.send({
+        type: "notify",
+        kind: "mission",
+        title: `Memorial: ${unit.name}`,
+        body: `"${entry.epitaph}" — ${entry.cause}`,
+      });
+    }
   }
 
   /** Pick an outdoor spawn in SAFE DOWNTOWN only (never war zone). */
@@ -1615,6 +1925,22 @@ export class GameWorld {
     this.cmdStop(posse);
 
     // 1) Exit / enter doors FIRST so a counter NPC never traps you at the door
+    // Mission instance layer (private warehouse etc.)
+    if (posse.mission?.instanceLayerId && posse.insideBuildingId === posse.mission.instanceLayerId) {
+      const tmpl = this.resolveBuildingDef(posse.mission.instanceLayerId);
+      if (
+        tmpl &&
+        dist(leader.x, leader.y, tmpl.exitX + 0.5, tmpl.exitY + 0.5) <= INTERACT_RANGE + 0.35
+      ) {
+        if (posse.mission.phase === "extract") {
+          this.cmdMissionExtract(session, posse);
+          return;
+        }
+        this.log(session, "Exit sealed until hostiles are down. (Or abandon the contract.)");
+        return;
+      }
+    }
+
     for (const b of this.map.buildings) {
       if (posse.insideBuildingId === b.id) {
         if (dist(leader.x, leader.y, b.exitX + 0.5, b.exitY + 0.5) <= INTERACT_RANGE + 0.35) {
@@ -1624,7 +1950,7 @@ export class GameWorld {
         }
       } else if (!posse.insideBuildingId) {
         if (dist(leader.x, leader.y, b.doorX + 0.5, b.doorY + 0.5) <= INTERACT_RANGE) {
-          this.enterBuilding(posse, b.id);
+          this.enterBuilding(posse, b.id, session);
           this.log(session, `Entered ${b.name}.`);
           return;
         }
@@ -1671,7 +1997,7 @@ export class GameWorld {
         this.serviceGym(session, posse);
         return;
       }
-      posse.dialogue = this.buildDialogue(u);
+      posse.dialogue = this.buildDialogue(u, posse);
       posse.shop = null;
       return;
     }
@@ -1763,6 +2089,17 @@ export class GameWorld {
   ): void {
     const prop = this.map.props.find((p) => p.id === propId);
     if (!prop) return;
+
+    // Mission smash objectives bypass hustle cooldown and complete the job first
+    if (this.onMissionPropInteract(session, posse, propId)) {
+      // Still give a small flavor payout so the smash feels real
+      const cash = 15 + Math.floor(Math.random() * 25);
+      posse.cash += cash;
+      this.log(session, `Loose cash in the crate: $${cash}.`);
+      this.propReadyAt.set(propId, this.tick + TICK_HZ * 70);
+      return;
+    }
+
     const ready = this.propReadyAt.get(propId) ?? 0;
     if (this.tick < ready) {
       const sec = Math.ceil((ready - this.tick) / TICK_HZ);
@@ -1803,6 +2140,7 @@ export class GameWorld {
       const cash = 40 + Math.floor(Math.random() * 80) + Math.floor(posse.rep * 2);
       posse.cash += cash;
       posse.rep += 1;
+      this.addHeat(posse, HEAT.protection, session, "protection racket");
       this.log(
         session,
         `Shook down ${prop.label ?? "the corner"} for $${cash}. Rep +1. "Nice block you got here…"`,
@@ -1838,16 +2176,17 @@ export class GameWorld {
     }
   }
 
-  private enterBuilding(posse: Posse, buildingId: string | null): void {
+  private enterBuilding(posse: Posse, buildingId: string | null, session?: CharacterSession): void {
     const members = this.members(posse);
     // Cancel movement / attack so nobody pathfinds into the teleport
     posse.attackTargetId = null;
     posse.moveLabel = null;
     if (!buildingId) {
-      const prev = this.map.buildings.find((b) => b.id === posse.insideBuildingId);
+      const prev = this.resolveBuildingDef(posse.insideBuildingId);
       posse.insideBuildingId = null;
       posse.dialogue = null;
       posse.shop = null;
+      posse.jobBoard = null;
       const sx = prev?.exteriorSpawnX ?? this.map.playerSpawn.x;
       const sy = prev?.exteriorSpawnY ?? this.map.playerSpawn.y;
       let i = 0;
@@ -1864,11 +2203,15 @@ export class GameWorld {
       }
       return;
     }
-    const b = this.map.buildings.find((bb) => bb.id === buildingId);
+    // Virtual mission layers use template geometry
+    const b =
+      this.map.buildings.find((bb) => bb.id === buildingId) ??
+      this.resolveBuildingDef(buildingId);
     if (!b) return;
     posse.insideBuildingId = buildingId;
     posse.dialogue = null;
     posse.shop = null;
+    posse.jobBoard = null;
     let i = 0;
     for (const u of members) {
       u.buildingId = buildingId;
@@ -1881,23 +2224,47 @@ export class GameWorld {
       u.moveMode = "idle";
       i++;
     }
+    // Tutorial: entered The Rusty Nail
+    if (buildingId === "bar_rusty" && session) {
+      this.advanceTutorial(session, posse, "go_bar");
+    }
   }
 
-  private cmdExitBuilding(posse: Posse): void {
-    if (posse.insideBuildingId) this.enterBuilding(posse, null);
+  private cmdExitBuilding(session: CharacterSession, posse: Posse): void {
+    if (!posse.insideBuildingId) return;
+    // Instanced jobs: only extract door completes, or abandon
+    if (posse.mission?.instanceLayerId && posse.insideBuildingId === posse.mission.instanceLayerId) {
+      if (posse.mission.phase === "extract") {
+        this.cmdMissionExtract(session, posse);
+        return;
+      }
+      this.log(session, "You're sealed in. Clear the bay, then use the exit — or abandon the job.");
+      return;
+    }
+    this.enterBuilding(posse, null);
   }
 
-  private buildDialogue(npc: Unit): DialogueState {
+  private buildDialogue(npc: Unit, playerPosse?: Posse): DialogueState {
     const spawn = this.map.npcSpawns.find((n) => n.id === npc.id);
     const role = spawn?.role ?? "thug";
+    const heat = playerPosse?.heat ?? 0;
 
     if (role === "bartender") {
+      const cost = layLowCost(heat);
       return {
         npcId: npc.id,
         npcName: npc.name,
         text: "Vince wipes a glass that will never be clean. \"You lookin' to hire muscle or start a funeral?\"",
         choices: [
           { id: "hire", label: "I need a warm body for the crew. ($150)", tone: "business" },
+          {
+            id: "lay_low",
+            label:
+              heat < 5
+                ? "I'm already cool. (no heat)"
+                : `Lay low. Drop heat (−${LAY_LOW_HEAT_REDUCE}, $${cost})`,
+            tone: "smooth",
+          },
           { id: "rumor", label: "What's the word on the street?", tone: "smooth" },
           { id: "insult", label: "Nice dump. Rats pay rent?", tone: "insult" },
           { id: "bye", label: "Later.", tone: "smooth" },
@@ -1930,11 +2297,17 @@ export class GameWorld {
       };
     }
     if (role === "priest") {
+      const n = playerPosse?.memorials.length ?? 0;
       return {
         npcId: npc.id,
         npcName: npc.name,
         text: "Father Trouble lights a cigarette on a candle. \"Confession is $50. Absolution is extra.\"",
         choices: [
+          {
+            id: "memorial",
+            label: n > 0 ? `Visit the memorial wall (${n} names)` : "Visit the memorial wall",
+            tone: "smooth",
+          },
           { id: "bless", label: "Bless the crew. ($50)", tone: "business" },
           { id: "rumor", label: "Any holy intel?", tone: "smooth" },
           { id: "insult", label: "Nice smoke for a holy man.", tone: "insult" },
@@ -2012,6 +2385,40 @@ export class GameWorld {
       return;
     }
 
+    if (choiceId === "memorial") {
+      posse.dialogue = null;
+      posse.memorialOpen = true;
+      const n = posse.memorials.length;
+      this.log(
+        session,
+        n === 0
+          ? "Father Trouble: \"Empty wall. Lucky you. Or unlucky recruits.\" "
+          : `Father Trouble nods at ${n} name${n === 1 ? "" : "s"}. \"They almost made it.\"`,
+      );
+      return;
+    }
+
+    if (choiceId === "lay_low") {
+      if (posse.heat < 5) {
+        d.text = "\"You're already a nobody. Congrats.\"";
+        d.choices = [{ id: "bye", label: "I'll take that as a compliment.", tone: "smooth" }];
+        return;
+      }
+      const cost = layLowCost(posse.heat);
+      if (posse.cash < cost) {
+        d.text = `"Cooling off costs $${cost}. Your wallet is still hot."`;
+        d.choices = [{ id: "bye", label: "I'll be back with cash.", tone: "business" }];
+        return;
+      }
+      posse.cash -= cost;
+      const before = Math.round(posse.heat);
+      posse.heat = Math.max(0, posse.heat - LAY_LOW_HEAT_REDUCE);
+      d.text = `"Sit. Drink water. Forget your name for twenty minutes." Heat ${before} → ${Math.round(posse.heat)}.`;
+      d.choices = [{ id: "bye", label: "Thanks, Vince.", tone: "smooth" }];
+      this.log(session, `Laid low (−$${cost}). Heat ${before} → ${Math.round(posse.heat)}.`);
+      return;
+    }
+
     if (choiceId === "hire" || choiceId === "hire_street") {
       const cost = choiceId === "hire" ? 150 : 100;
       if (posse.memberIds.length >= MAX_ACTIVE_GOONS + 1) {
@@ -2043,6 +2450,7 @@ export class GameWorld {
       }
       d.choices = [{ id: "bye", label: "Welcome to the posse.", tone: "business" }];
       posse.dialogue = d;
+      this.advanceTutorial(session, posse, "hire_vince");
       // Close talk after hire so we don't re-open on a deleted NPC
       if (recruitNpc) {
         // keep brief farewell text one more frame — next choice "bye" closes
@@ -2059,9 +2467,32 @@ export class GameWorld {
     }
 
     if (choiceId === "job") {
-      d.text =
-        "\"No formal contracts yet — this city runs on impulse. Rough up rival crews, buy better iron, come back famous.\"";
-      d.choices = [{ id: "bye", label: "I can do that.", tone: "business" }];
+      if (posse.mission) {
+        const cur = MISSIONS[posse.mission.defId];
+        d.text = `"You're already on \"${cur?.title ?? "a job"}.\" Finish it or abandon first — I don't double-book amateurs."`;
+        d.choices = [
+          { id: "abandon_hint", label: "How do I walk?", tone: "smooth" },
+          { id: "bye", label: "Right.", tone: "business" },
+        ];
+        return;
+      }
+      // Open job board (snapshot UI) — leave the dialogue
+      posse.dialogue = null;
+      posse.shop = null;
+      posse.jobBoard = {
+        npcId: d.npcId,
+        npcName: d.npcName,
+        title: "Rita's Job Book",
+        offers: listMissionOffers(),
+      };
+      this.log(session, `${d.npcName} flips open a greasy notepad of contracts.`);
+      this.advanceTutorial(session, posse, "talk_rita");
+      return;
+    }
+
+    if (choiceId === "abandon_hint") {
+      d.text = "\"Hit abandon on the contract, or ask me again when you're done.\" (Esc / abandon from the job HUD.)";
+      d.choices = [{ id: "bye", label: "Got it.", tone: "smooth" }];
       return;
     }
 
@@ -2075,6 +2506,551 @@ export class GameWorld {
     }
 
     posse.dialogue = null;
+  }
+
+  private cmdJobBoardAccept(session: CharacterSession, posse: Posse, missionId: string): void {
+    if (!posse.jobBoard) {
+      this.log(session, "No job board open.");
+      return;
+    }
+    if (posse.mission) {
+      this.log(session, "Already on a job. Finish or abandon first.");
+      return;
+    }
+    const def = MISSIONS[missionId as MissionId];
+    if (!def) {
+      this.log(session, "That contract fell off the book. Pick another.");
+      return;
+    }
+
+    let targetUnitId: string | null = null;
+    for (const obj of def.objectives) {
+      if (obj.kind === "kill_unit" && obj.targetPosseId) {
+        const boss = this.units.get(`${obj.targetPosseId}_boss`);
+        if (boss?.alive) targetUnitId = boss.id;
+        else {
+          const ai = this.posses.get(obj.targetPosseId);
+          if (ai) {
+            for (const id of ai.memberIds) {
+              const u = this.units.get(id);
+              if (u?.alive && u.kind === "ai_boss") {
+                targetUnitId = u.id;
+                break;
+              }
+            }
+            if (!targetUnitId) {
+              for (const id of ai.memberIds) {
+                const u = this.units.get(id);
+                if (u?.alive) {
+                  targetUnitId = u.id;
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    posse.jobBoard = null;
+    posse.dialogue = null;
+    posse.shop = null;
+
+    const layerId = def.instance ? `mi_${posse.id}` : null;
+    const templateId = def.instance?.templateBuildingId ?? null;
+
+    posse.mission = {
+      defId: def.id,
+      holdAccum: 0,
+      rewardGranted: false,
+      targetUnitId,
+      instanceLayerId: layerId,
+      templateBuildingId: templateId,
+      enemyPosseId: null,
+      phase: "active",
+      extracted: false,
+    };
+
+    if (def.instance && layerId && templateId) {
+      // Private instance: teleport into sealed bay + spawn hostiles
+      if (posse.insideBuildingId && !posse.insideBuildingId.startsWith("mi_")) {
+        // Clear hub interior without using mi_ exterior logic
+        posse.insideBuildingId = null;
+        for (const u of this.members(posse)) {
+          u.buildingId = null;
+        }
+      }
+      this.enterBuilding(posse, layerId);
+      const enemyId = this.spawnMissionInstanceHostiles(posse, def);
+      posse.mission.enemyPosseId = enemyId;
+      // Instant aggro in the bay
+      const enemies = this.posses.get(enemyId);
+      if (enemies) {
+        enemies.hostile = true;
+        enemies.combatUntil = this.tick + TICK_HZ * 120;
+        posse.hostile = true;
+        posse.combatUntil = this.tick + TICK_HZ * 120;
+      }
+      this.log(
+        session,
+        `JOB ACCEPTED: ${def.title} (INSTANCE). Clear the bay, then extract. Pay $${def.rewardCash} + ${def.rewardRep} rep.`,
+      );
+    } else {
+      // Outdoor hub objective
+      if (posse.insideBuildingId) this.enterBuilding(posse, null);
+      this.log(
+        session,
+        `JOB ACCEPTED: ${def.title}. $${def.rewardCash} + ${def.rewardRep} rep when done. ${def.blurb}`,
+      );
+    }
+
+    session.conn?.send({
+      type: "notify",
+      kind: "mission",
+      title: def.title,
+      body: def.blurb,
+      cash: def.rewardCash,
+      rep: def.rewardRep,
+    });
+    this.advanceTutorial(session, posse, "take_job");
+    this.tryCompleteMission(session, posse);
+  }
+
+  /** Spawn a private AI posse inside the mission layer (warehouse wipe). */
+  private spawnMissionInstanceHostiles(playerPosse: Posse, def: (typeof MISSIONS)[MissionId]): string {
+    const m = playerPosse.mission!;
+    const layer = m.instanceLayerId!;
+    const tmpl = this.map.buildings.find((b) => b.id === m.templateBuildingId)!;
+    const enemyPosseId = `mi_enemy_${playerPosse.id}`;
+    // Clean leftover if re-accept after bug
+    this.despawnMissionEnemies(enemyPosseId);
+
+    const threat = def.instance?.enemyThreat ?? 1;
+    const goonN = Math.max(1, def.instance?.enemyCount ?? 2);
+    const cx = (tmpl.ix0 + tmpl.ix1) / 2;
+    const cy = (tmpl.iy0 + tmpl.iy1) / 2;
+
+    const bossId = `${enemyPosseId}_boss`;
+    const memberIds = [bossId];
+    this.posses.set(enemyPosseId, {
+      id: enemyPosseId,
+      name: "Bay Freeloaders",
+      leaderId: bossId,
+      isPlayer: false,
+      hostile: true,
+      cash: 80,
+      rep: 0,
+      heat: 0,
+      color: 0xa44,
+      aggression: 0.85,
+      threat,
+      lastAggroCheck: 0,
+      combatUntil: this.tick + TICK_HZ * 120,
+      selectedUnitId: bossId,
+      insideBuildingId: layer,
+      dialogue: null,
+      shop: null,
+      jobBoard: null,
+      mission: null,
+      tutorialStep: null,
+      memorials: [],
+      memorialOpen: false,
+      memberIds,
+      lastKillerPosseId: null,
+      fallenWeapons: new Set(),
+      fallenArmors: new Set(),
+      lootedThisWipe: false,
+      attackTargetId: null,
+      moveLabel: null,
+      respawnT: undefined,
+    });
+
+    const mk = (
+      uid: string,
+      uname: string,
+      kind: Unit["kind"],
+      x: number,
+      y: number,
+      hp: number,
+    ) => {
+      this.units.set(uid, {
+        id: uid,
+        name: uname,
+        kind,
+        ownerId: null,
+        posseId: enemyPosseId,
+        x,
+        y,
+        tx: x,
+        ty: y,
+        dirX: 0,
+        dirY: 0,
+        moveMode: "idle",
+        health: hp,
+        stats: defaultStats({ aim: 4, guts: 4, muscle: 4, speed: 5, maxHealth: hp }),
+        weapon: "pistol",
+        armor: "none",
+        facing: 4,
+        alive: true,
+        fireCd: 0,
+        isPlayerLeader: false,
+        incapacitated: false,
+        gender: "male",
+        ownedWeapons: new Set(["pipe", "pistol"]),
+        ownedArmors: new Set(["none"]),
+        aiWanderT: 0.5,
+        buildingId: layer,
+        lastHitByPosseId: null,
+      });
+    };
+
+    mk(bossId, "Bay Boss", "ai_boss", cx + 1.2, cy, 55);
+    for (let i = 0; i < goonN; i++) {
+      const gid = `${enemyPosseId}_g${i}`;
+      memberIds.push(gid);
+      const ang = (i / goonN) * Math.PI * 2;
+      mk(gid, `Bay Goon ${i + 1}`, "ai_goon", cx + Math.cos(ang) * 1.4, cy + Math.sin(ang) * 1.1, 40);
+    }
+    const ep = this.posses.get(enemyPosseId)!;
+    ep.memberIds = memberIds;
+    // Do not auto-respawn instance enemies
+    ep.respawnT = undefined;
+    return enemyPosseId;
+  }
+
+  private despawnMissionEnemies(enemyPosseId: string | null): void {
+    if (!enemyPosseId) return;
+    const ep = this.posses.get(enemyPosseId);
+    if (ep) {
+      for (const id of ep.memberIds) this.units.delete(id);
+      this.posses.delete(enemyPosseId);
+    }
+  }
+
+  private cleanupMissionInstance(posse: Posse): void {
+    const m = posse.mission;
+    if (!m) return;
+    this.despawnMissionEnemies(m.enemyPosseId);
+    if (m.instanceLayerId && posse.insideBuildingId === m.instanceLayerId) {
+      this.enterBuilding(posse, null);
+    }
+  }
+
+  private cmdMissionAbandon(session: CharacterSession, posse: Posse): void {
+    if (!posse.mission) {
+      this.log(session, "No active job to abandon.");
+      return;
+    }
+    const title = MISSIONS[posse.mission.defId]?.title ?? "Job";
+    this.cleanupMissionInstance(posse);
+    posse.mission = null;
+    this.log(session, `Abandoned: ${title}. Rita will remember. Briefly.`);
+  }
+
+  private cmdTutorialSkip(session: CharacterSession, posse: Posse): void {
+    if (!posse.tutorialStep) {
+      this.log(session, "Tutorial already done.");
+      return;
+    }
+    posse.tutorialStep = null;
+    this.log(session, "Tutorial skipped. You're on your own, boss. (Rita still has jobs.)");
+    session.conn?.send({
+      type: "notify",
+      kind: "mission",
+      title: "Tutorial skipped",
+      body: "No hand-holding. The Rusty Nail and Rita Fix are still northwest if you get lonely.",
+    });
+  }
+
+  private tutorialPublic(posse: Posse): TutorialState | null {
+    if (!posse.tutorialStep) return null;
+    const def = TUTORIAL_STEPS.find((s) => s.id === posse.tutorialStep);
+    if (!def) return null;
+    const idx = TUTORIAL_ORDER.indexOf(posse.tutorialStep);
+    return {
+      step: def.id,
+      title: def.title,
+      body: def.body,
+      stepIndex: idx + 1,
+      stepCount: TUTORIAL_ORDER.length,
+      hintX: def.hintX,
+      hintY: def.hintY,
+    };
+  }
+
+  /** Advance one step if current matches expected; rewards on finish. */
+  private advanceTutorial(
+    session: CharacterSession,
+    posse: Posse,
+    completedStep: TutorialStepId,
+  ): void {
+    if (posse.tutorialStep !== completedStep) return;
+    const nxt = nextTutorialStep(completedStep);
+    if (nxt) {
+      posse.tutorialStep = nxt;
+      const def = TUTORIAL_STEPS.find((s) => s.id === nxt);
+      this.log(session, `TUTORIAL: ${def?.title ?? nxt}`);
+    } else {
+      posse.tutorialStep = null;
+      posse.cash += 100;
+      posse.rep += 1;
+      this.log(
+        session,
+        "TUTORIAL COMPLETE. +$100, +1 rep. \"You're almost a professional. Don't prove me wrong.\" — Rita",
+      );
+      session.conn?.send({
+        type: "notify",
+        kind: "mission",
+        title: "First session complete",
+        body: "Bar → hire → fixer → job. You know the loop. +$100 and a little street cred.",
+        cash: 100,
+        rep: 1,
+      });
+    }
+  }
+
+  private cmdMissionExtract(session: CharacterSession, posse: Posse): void {
+    const m = posse.mission;
+    if (!m || m.phase !== "extract") return;
+    m.extracted = true;
+    this.log(session, "Extract confirmed. Walking out like you own the bay.");
+    this.tryCompleteMission(session, posse);
+  }
+
+  private hostilesCleared(m: PosseMission): boolean {
+    if (!m.enemyPosseId) return true;
+    const ep = this.posses.get(m.enemyPosseId);
+    if (!ep) return true;
+    return ep.memberIds.every((id) => !this.units.get(id)?.alive);
+  }
+
+  private missionRuntime(posse: Posse): MissionRuntime | null {
+    const m = posse.mission;
+    if (!m) return null;
+    const def = MISSIONS[m.defId];
+    if (!def) return null;
+
+    const objectives = def.objectives.map((o) => {
+      let done = false;
+      if (o.kind === "hold") {
+        const need = o.holdSeconds ?? 10;
+        done = m.holdAccum >= need;
+      } else if (o.kind === "interact_prop") {
+        done = m.holdAccum >= 1;
+      } else if (o.kind === "kill_unit") {
+        if (m.targetUnitId) {
+          const t = this.units.get(m.targetUnitId);
+          done = !t || !t.alive;
+        } else if (o.targetPosseId) {
+          const ai = this.posses.get(o.targetPosseId);
+          done = !ai || ai.memberIds.every((id) => !this.units.get(id)?.alive);
+        }
+      } else if (o.kind === "clear_hostiles") {
+        done = this.hostilesCleared(m);
+      } else if (o.kind === "extract") {
+        done = m.extracted;
+      }
+      return { id: o.id, label: o.label, done };
+    });
+
+    // Advance instance phase when combat objective done
+    if (m.phase === "active" && def.instance) {
+      const combatDone = objectives
+        .filter((o) => {
+          const d = def.objectives.find((x) => x.id === o.id);
+          return d && d.kind !== "extract";
+        })
+        .every((o) => o.done);
+      if (combatDone) m.phase = "extract";
+    }
+
+    const allDone = objectives.every((o) => o.done);
+    let phase: MissionRuntime["phase"] = m.phase;
+    if (m.phase === "failed") phase = "failed";
+    else if (allDone) phase = "complete";
+    else if (m.phase === "extract") phase = "extract";
+    else phase = "active";
+
+    let progress: number | undefined;
+    let timeLeft: number | undefined;
+    const holdObj = def.objectives.find((o) => o.kind === "hold");
+    if (holdObj) {
+      const need = holdObj.holdSeconds ?? 10;
+      progress = Math.min(1, m.holdAccum / need);
+      timeLeft = Math.max(0, need - m.holdAccum);
+    }
+
+    const tmpl = m.templateBuildingId
+      ? this.map.buildings.find((b) => b.id === m.templateBuildingId)
+      : null;
+
+    return {
+      id: def.id,
+      title: def.title,
+      phase,
+      objectives,
+      progress,
+      timeLeft,
+      rewardCash: def.rewardCash,
+      rewardRep: def.rewardRep,
+      hintX: def.hintX ?? (tmpl ? tmpl.exitX : undefined),
+      hintY: def.hintY ?? (tmpl ? tmpl.exitY : undefined),
+      instanced: !!m.instanceLayerId,
+    };
+  }
+
+  private tryCompleteMission(session: CharacterSession, posse: Posse): void {
+    const m = posse.mission;
+    if (!m || m.rewardGranted) return;
+    const runtime = this.missionRuntime(posse);
+    if (!runtime || runtime.phase !== "complete") return;
+
+    const def = MISSIONS[m.defId];
+    if (!def) {
+      this.cleanupMissionInstance(posse);
+      posse.mission = null;
+      return;
+    }
+
+    m.rewardGranted = true;
+    posse.cash += def.rewardCash;
+    posse.rep += def.rewardRep;
+    const heatGain = def.instance || def.objectives.some((o) => o.kind === "kill_unit" || o.kind === "clear_hostiles")
+      ? HEAT.missionCombat
+      : HEAT.missionSoft;
+    this.addHeat(posse, heatGain, session, "job complete");
+    this.cleanupMissionInstance(posse);
+    posse.mission = null;
+
+    const line = `JOB COMPLETE: ${def.title}. +$${def.rewardCash}, +${def.rewardRep} rep. "Lovely work. Almost nobody died permanently."`;
+    this.log(session, line);
+    session.conn?.send({
+      type: "notify",
+      kind: "mission",
+      title: `Complete: ${def.title}`,
+      body: `Paid $${def.rewardCash} and +${def.rewardRep} street rep. Rita nods once — high praise.`,
+      cash: def.rewardCash,
+      rep: def.rewardRep,
+    });
+    this.advanceTutorial(session, posse, "finish_job");
+  }
+
+  private failMission(session: CharacterSession, posse: Posse, reason: string): void {
+    const m = posse.mission;
+    if (!m || m.rewardGranted) return;
+    const title = MISSIONS[m.defId]?.title ?? "Job";
+    m.phase = "failed";
+    this.cleanupMissionInstance(posse);
+    posse.mission = null;
+    this.log(session, `JOB FAILED: ${title}. ${reason}`);
+    session.conn?.send({
+      type: "notify",
+      kind: "mission",
+      title: `Failed: ${title}`,
+      body: reason,
+    });
+  }
+
+  /** Hold / kill / instance progress each tick */
+  private updateMissions(dt: number): void {
+    for (const posse of this.posses.values()) {
+      if (!posse.isPlayer || !posse.mission) continue;
+      const session = [...this.sessions.values()].find((s) => s.posseId === posse.id);
+      if (!session) continue;
+
+      const def = MISSIONS[posse.mission.defId];
+      if (!def) {
+        posse.mission = null;
+        continue;
+      }
+
+      const leader = this.leader(posse);
+      // Fail instanced job if boss dies (wipe in the bay)
+      if (def.instance && leader && !leader.alive) {
+        this.failMission(session, posse, "You went down in the bay. Contract void. Try not to die next time.");
+        continue;
+      }
+      if (!leader?.alive) continue;
+
+      for (const obj of def.objectives) {
+        if (obj.kind === "hold" && obj.propId) {
+          const prop = this.map.props.find((p) => p.id === obj.propId);
+          if (!prop) continue;
+          const range = obj.range ?? 2.5;
+          if (
+            !posse.insideBuildingId &&
+            dist(leader.x, leader.y, prop.x, prop.y) <= range
+          ) {
+            posse.mission.holdAccum += dt;
+          }
+        }
+        if (obj.kind === "kill_unit" && !posse.mission.targetUnitId && obj.targetPosseId) {
+          const boss = this.units.get(`${obj.targetPosseId}_boss`);
+          if (boss?.alive) posse.mission.targetUnitId = boss.id;
+        }
+      }
+
+      // Keep instance hostiles aggro'd on player
+      if (posse.mission.enemyPosseId) {
+        const ep = this.posses.get(posse.mission.enemyPosseId);
+        if (ep && !this.hostilesCleared(posse.mission)) {
+          ep.hostile = true;
+          ep.combatUntil = Math.max(ep.combatUntil, this.tick + TICK_HZ * 5);
+          ep.attackTargetId = leader.id;
+        }
+      }
+
+      this.tryCompleteMission(session, posse);
+    }
+  }
+
+  private onMissionPropInteract(
+    session: CharacterSession,
+    posse: Posse,
+    propId: string,
+  ): boolean {
+    const m = posse.mission;
+    if (!m) return false;
+    const def = MISSIONS[m.defId];
+    if (!def) return false;
+    const obj = def.objectives.find((o) => o.kind === "interact_prop" && o.propId === propId);
+    if (!obj) return false;
+    if (m.holdAccum >= 1) return false;
+    m.holdAccum = 1;
+    this.log(session, `Stash cracked for the job (${obj.label}).`);
+    this.tryCompleteMission(session, posse);
+    return true;
+  }
+
+  private onMissionUnitKilled(dead: Unit, killerPosseId: string | null): void {
+    // Outdoor kill_unit objectives
+    if (killerPosseId) {
+      const posse = this.posses.get(killerPosseId);
+      if (posse?.isPlayer && posse.mission) {
+        const m = posse.mission;
+        const def = MISSIONS[m.defId];
+        if (def) {
+          const killObj = def.objectives.find((o) => o.kind === "kill_unit");
+          if (killObj) {
+            const isTarget =
+              (m.targetUnitId && dead.id === m.targetUnitId) ||
+              (killObj.targetPosseId && dead.posseId === killObj.targetPosseId);
+            if (isTarget) {
+              m.targetUnitId = dead.id;
+              const session = [...this.sessions.values()].find((s) => s.posseId === posse.id);
+              if (session) this.tryCompleteMission(session, posse);
+            }
+          }
+          // clear_hostiles: try complete when any enemy falls
+          if (def.objectives.some((o) => o.kind === "clear_hostiles") && m.enemyPosseId === dead.posseId) {
+            const session = [...this.sessions.values()].find((s) => s.posseId === posse.id);
+            if (session) this.tryCompleteMission(session, posse);
+          }
+        }
+      }
+    }
+
+    // Player boss down in instance → fail is handled in updateMissions
   }
 
   /** Spawn a fresh goon on the protective circle around the boss. Returns name. */
@@ -2223,14 +3199,20 @@ export class GameWorld {
       this.log(session, `Equipped ${def.name} on ${unit.name}.`);
       return;
     }
-    if (def.price > 0 && posse.cash < def.price) {
-      this.log(session, `Not enough cash (need $${def.price}).`);
+    const needRep = def.minRep ?? 0;
+    if (posse.rep < needRep) {
+      this.log(session, `Need rep ${needRep} for ${def.name} (you have ${posse.rep}). Do more jobs.`);
       return;
     }
-    if (def.price > 0) posse.cash -= def.price;
+    const price = this.effectiveShopPrice(def.price, posse);
+    if (price > 0 && posse.cash < price) {
+      this.log(session, `Not enough cash (need $${price}${price !== def.price ? ` heat tax, list $${def.price}` : ""}).`);
+      return;
+    }
+    if (price > 0) posse.cash -= price;
     unit.ownedWeapons.add(weaponId);
     unit.weapon = weaponId;
-    this.log(session, `Bought ${def.name} for ${unit.name} ($${def.price}).`);
+    this.log(session, `Bought ${def.name} for ${unit.name} ($${price}).`);
   }
 
   private cmdBuyArmor(session: CharacterSession, posse: Posse, armorId: ArmorId, unitId: string): void {
@@ -2251,14 +3233,20 @@ export class GameWorld {
       this.log(session, `Equipped ${def.name} on ${unit.name}.`);
       return;
     }
-    if (def.price > 0 && posse.cash < def.price) {
-      this.log(session, `Not enough cash (need $${def.price}).`);
+    const needRep = def.minRep ?? 0;
+    if (posse.rep < needRep) {
+      this.log(session, `Need rep ${needRep} for ${def.name} (you have ${posse.rep}).`);
       return;
     }
-    if (def.price > 0) posse.cash -= def.price;
+    const price = this.effectiveShopPrice(def.price, posse);
+    if (price > 0 && posse.cash < price) {
+      this.log(session, `Not enough cash (need $${price}).`);
+      return;
+    }
+    if (price > 0) posse.cash -= price;
     unit.ownedArmors.add(armorId);
     unit.armor = armorId;
-    this.log(session, `Bought ${def.name} for ${unit.name} ($${def.price}).`);
+    this.log(session, `Bought ${def.name} for ${unit.name} ($${price}).`);
   }
 
   private cmdBuyUpgrade(
@@ -2278,11 +3266,17 @@ export class GameWorld {
     }
     const def = UPGRADES[upgradeId];
     if (!def || !SHOP_UPGRADE_ORDER.includes(upgradeId)) return;
-    if (posse.cash < def.price) {
-      this.log(session, `Not enough cash (need $${def.price}).`);
+    const needRep = def.minRep ?? 0;
+    if (posse.rep < needRep) {
+      this.log(session, `Need rep ${needRep} for ${def.name} (you have ${posse.rep}).`);
       return;
     }
-    posse.cash -= def.price;
+    const price = this.effectiveShopPrice(def.price, posse);
+    if (posse.cash < price) {
+      this.log(session, `Not enough cash (need $${price}).`);
+      return;
+    }
+    posse.cash -= price;
     if (def.stats) {
       for (const [k, v] of Object.entries(def.stats)) {
         const key = k as keyof UnitStats;
@@ -2298,7 +3292,7 @@ export class GameWorld {
       unit.health = Math.min(unit.stats.maxHealth, unit.health + def.heal);
       if (!unit.alive && unit.health > 0) unit.alive = true;
     }
-    this.log(session, `Bought ${def.name} for ${unit.name} (−$${def.price}).`);
+    this.log(session, `Bought ${def.name} for ${unit.name} (−$${price}).`);
   }
 
   private cmdSetWeapon(posse: Posse, unitId: string, weaponId: WeaponId): void {
@@ -2364,9 +3358,47 @@ export class GameWorld {
     session.conn?.send({ type: "event", text });
   }
 
+  private addHeat(posse: Posse, amount: number, session?: CharacterSession, reason?: string): void {
+    if (!posse.isPlayer || amount <= 0) return;
+    const before = posse.heat;
+    posse.heat = Math.min(HEAT.max, posse.heat + amount);
+    if (session && Math.floor(posse.heat) > Math.floor(before)) {
+      const msg = reason
+        ? `HEAT +${Math.round(amount)} (${reason}) → ${Math.round(posse.heat)}`
+        : `HEAT +${Math.round(amount)} → ${Math.round(posse.heat)}`;
+      // Only log meaningful jumps (≥3) to avoid spam
+      if (amount >= 3) this.log(session, msg);
+    }
+  }
+
+  private decayHeat(dt: number): void {
+    for (const posse of this.posses.values()) {
+      if (!posse.isPlayer || posse.heat <= 0) continue;
+      // Slow decay while actively fighting
+      if (posse.hostile && posse.combatUntil > this.tick) continue;
+      let rate = HEAT.decayPerSec;
+      if (posse.heat >= HEAT.decaySlowAbove) rate *= HEAT.decaySlowFactor;
+      // Bar / interiors cool slightly faster (laying low ambient)
+      if (posse.insideBuildingId && !posse.insideBuildingId.startsWith("mi_")) {
+        rate *= 1.35;
+      }
+      posse.heat = Math.max(0, posse.heat - rate * dt);
+    }
+  }
+
+  private effectiveShopPrice(base: number, posse: Posse): number {
+    return shopPrice(base, posse.heat);
+  }
+
   step(dt: number): void {
     this.tick += 1;
     const now = this.tick;
+
+    // Street heat cools off over time
+    this.decayHeat(dt);
+
+    // Active job progress (hold timers, complete checks)
+    this.updateMissions(dt);
 
     // Movement (free dir OR click target — sub-tile continuous)
     for (const u of this.units.values()) {
@@ -2428,6 +3460,10 @@ export class GameWorld {
     for (const posse of this.posses.values()) {
       if (posse.isPlayer) continue;
       if (posse.memberIds.every((id) => !this.units.get(id)?.alive)) {
+        if (posse.id.startsWith("mi_enemy_")) {
+          // Instance hostiles stay dead until despawned with the job
+          continue;
+        }
         if (posse.respawnT !== undefined) {
           posse.respawnT -= 1;
           if (posse.respawnT <= 0) {
@@ -2457,17 +3493,21 @@ export class GameWorld {
       if (!leader || !leader.alive) continue;
 
       // AI only fights in the war zone — never aggro in safe downtown
+      // (mission instance layers are not safe — see unitInSafeZone)
       if (this.unitInSafeZone(leader)) {
         posse.hostile = false;
         continue;
       }
 
-      // Find nearest player posse (must also be outside safe zone)
+      // Find nearest player posse (same layer; outdoor war zone or mission instance)
       let nearestPlayer: Posse | null = null;
       let nearestD = Infinity;
       for (const p of this.posses.values()) {
         if (!p.isPlayer) continue;
-        if (p.insideBuildingId) continue;
+        // Same layer only (outdoor null, or shared mission instance id)
+        if ((p.insideBuildingId ?? null) !== (posse.insideBuildingId ?? null)) continue;
+        // Hub interiors (non-mission) — no AI murder
+        if (p.insideBuildingId && !p.insideBuildingId.startsWith("mi_")) continue;
         const pl = this.leader(p);
         if (!pl || !pl.alive) continue;
         if (this.unitInSafeZone(pl)) continue;
@@ -2612,6 +3652,9 @@ export class GameWorld {
       }
     }
 
+    // Soft district locks (rep-gated deep war / docks / neon)
+    this.enforceDistrictAccess();
+
     // Broadcast snapshots (include this tick's combat FX, then clear)
     if (this.tick % 1 === 0) {
       const fxBatch = this.combatFx.length ? [...this.combatFx] : undefined;
@@ -2690,6 +3733,7 @@ export class GameWorld {
         posseId: session.posseId,
         cash: posse.cash,
         rep: posse.rep,
+        heat: Math.round(posse.heat),
         selectedUnitId: posse.selectedUnitId,
         insideBuildingId: posse.insideBuildingId,
         respawnIn: (() => {
@@ -2701,13 +3745,35 @@ export class GameWorld {
           const a = this.computeAction(posse);
           const lead = this.leader(posse);
           const safe = lead ? this.unitInSafeZone(lead) : true;
+          let districtId = "interior";
+          let districtName = "Interior";
+          let districtUnlocked = true;
+          if (posse.insideBuildingId) {
+            if (posse.insideBuildingId.startsWith("mi_")) {
+              districtId = "mission";
+              districtName = "Job Instance";
+            } else {
+              const b = this.map.buildings.find((bb) => bb.id === posse.insideBuildingId);
+              districtId = posse.insideBuildingId;
+              districtName = b?.name ?? "Interior";
+            }
+          } else if (lead) {
+            const d = districtAt(lead.x, lead.y);
+            districtId = d.id;
+            districtName = d.name;
+            districtUnlocked = isDistrictUnlocked(d, posse.rep);
+          }
           return {
             action: a.action,
             actionDetail: a.actionDetail,
             inSafeZone: safe,
+            districtId,
+            districtName,
+            districtUnlocked,
           };
         })(),
       },
+      districts: this.districtsPublic(posse.rep),
       units,
       posses: [...this.posses.values()]
         .filter((p) => {
@@ -2725,29 +3791,17 @@ export class GameWorld {
           cash: p.isPlayer && p.id === posse.id ? p.cash : undefined,
           color: p.color,
         })),
-      buildings: this.map.buildings.map((b) => ({
-        id: b.id,
-        name: b.name,
-        kind: b.kind,
-        doorX: b.doorX,
-        doorY: b.doorY,
-        interiorId: b.id,
-        blurb: b.blurb,
-        ex0: b.ex0,
-        ey0: b.ey0,
-        ex1: b.ex1,
-        ey1: b.ey1,
-        ix0: b.ix0,
-        iy0: b.iy0,
-        ix1: b.ix1,
-        iy1: b.iy1,
-        exitX: b.exitX,
-        exitY: b.exitY,
-        stories: b.stories,
-        wallColor: b.wallColor,
-        roofColor: b.roofColor,
-        accentColor: b.accentColor,
-      })),
+      buildings: (() => {
+        const list = this.map.buildings.map((b) => this.buildingPublicFromDef(b));
+        // Private mission layer: clone warehouse (etc.) under mi_* id so client renders interior
+        if (posse.insideBuildingId?.startsWith("mi_") && posse.mission?.templateBuildingId) {
+          const tmpl = this.map.buildings.find((b) => b.id === posse.mission!.templateBuildingId);
+          if (tmpl) {
+            list.push(this.buildingPublicFromDef(tmpl, posse.insideBuildingId));
+          }
+        }
+        return list;
+      })(),
       props: posse.insideBuildingId
         ? []
         : this.map.props.map((p) => ({
@@ -2763,6 +3817,11 @@ export class GameWorld {
       ...(needMap ? { blocked, floors } : {}),
       dialogue: posse.dialogue,
       shop: posse.shop,
+      jobBoard: posse.jobBoard,
+      mission: this.missionRuntime(posse),
+      tutorial: this.tutorialPublic(posse),
+      memorials: posse.memorials.slice(0, MAX_MEMORIALS),
+      memorialOpen: posse.memorialOpen,
       recentChat: this.chat.filter((c) => {
         if (c.system) return true;
         // approximate: last lines only for UI; proximity already filtered on send
