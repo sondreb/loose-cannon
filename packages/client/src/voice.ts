@@ -13,6 +13,10 @@ export class VoiceBus {
     if (m) this.stop();
   }
 
+  isMuted(): boolean {
+    return this.muted;
+  }
+
   stop(): void {
     if (this.current) {
       this.current.pause();

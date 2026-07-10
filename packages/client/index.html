@@ -166,6 +166,9 @@
             <span id="actionStatus">IDLE</span>
             <span id="actionDetail" class="action-detail"></span>
           </div>
+          <div id="interiorPlace" class="hidden" aria-live="polite">
+            <span id="interiorPlaceName">INSIDE</span>
+          </div>
           <div id="objective">SKIDROW — walk, talk, buy, survive</div>
         </div>
 
@@ -174,6 +177,59 @@
           <button type="button" id="realmInviteBtn" class="tiny-btn" title="Copy invite link">INVITE</button>
         </div>
         <button type="button" id="minimap" class="minimap-btn" title="City map (M)">MAP</button>
+        <button type="button" id="settingsBtnDesktop" class="settings-fab desktop-only" title="Settings" aria-label="Settings">
+          ⚙
+        </button>
+
+        <!-- Settings / options -->
+        <div id="settingsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+          <div class="modal-card settings-card">
+            <div class="settings-header">
+              <h2 id="settingsTitle">SETTINGS</h2>
+              <button type="button" id="settingsClose" class="tiny-btn">CLOSE</button>
+            </div>
+            <div class="settings-body">
+              <section class="settings-section">
+                <h3>Identity</h3>
+                <label class="settings-field">
+                  <span>Display name</span>
+                  <div class="settings-row">
+                    <input id="settingsNameInput" maxlength="20" autocomplete="off" spellcheck="false" />
+                    <button type="button" id="settingsRenameBtn" class="tiny-btn">RENAME</button>
+                  </div>
+                </label>
+                <p class="muted tiny">Boss name on the streets (unique in this realm). 2–20 characters.</p>
+              </section>
+              <section class="settings-section">
+                <h3>Audio</h3>
+                <label class="settings-check">
+                  <input type="checkbox" id="settingsMusic" />
+                  <span>Music</span>
+                </label>
+                <label class="settings-check">
+                  <input type="checkbox" id="settingsSfx" />
+                  <span>Sound effects</span>
+                </label>
+                <label class="settings-check">
+                  <input type="checkbox" id="settingsVoice" />
+                  <span>NPC voice lines</span>
+                </label>
+              </section>
+              <section class="settings-section">
+                <h3>Realm</h3>
+                <p class="settings-realm-line">
+                  <span id="settingsRealmLabel">public</span>
+                </p>
+                <button type="button" id="settingsInviteBtn" class="tiny-btn">COPY INVITE LINK</button>
+                <p class="muted tiny">Friends open the link to join the same city instance.</p>
+              </section>
+              <section class="settings-section">
+                <h3>Help</h3>
+                <button type="button" id="settingsHowToBtn" class="tiny-btn">HOW TO PLAY</button>
+              </section>
+            </div>
+          </div>
+        </div>
 
         <!-- City district map -->
         <div id="districtMapModal" class="modal hidden">
@@ -247,6 +303,10 @@
           </button>
           <button type="button" id="mobZoomIn" class="mob-btn slim">+</button>
           <button type="button" id="mobZoomOut" class="mob-btn slim">−</button>
+          <button type="button" id="mobSettings" class="mob-btn" aria-label="Settings">
+            <span class="mob-ico">⚙</span>
+            <span class="mob-lab">Set</span>
+          </button>
         </div>
 
         <div id="dialogueModal" class="modal hidden">

@@ -807,6 +807,9 @@ export class GameWorld {
       case "intent.exit":
         this.cmdExitBuilding(session, posse);
         break;
+      case "settings.rename":
+        this.cmdRename(session, posse, msg.name);
+        break;
       case "dialogue.choice":
         this.cmdDialogueChoice(session, posse, msg.choiceId);
         break;
@@ -2780,6 +2783,33 @@ export class GameWorld {
       return;
     }
     this.enterBuilding(posse, null);
+  }
+
+  /** Rename the player boss (display name + crew label). Unique per realm. */
+  private cmdRename(session: CharacterSession, posse: Posse, rawName: string): void {
+    if (!posse.isPlayer) return;
+    const clean = rawName.trim().slice(0, 20).replace(/[^\w\s\-']/g, "");
+    if (clean.length < 2) {
+      this.log(session, "Name too short. Pick something the streets can yell.");
+      return;
+    }
+    const lower = clean.toLowerCase();
+    if (lower === session.name.toLowerCase()) {
+      this.log(session, "You're already going by that.");
+      return;
+    }
+    for (const s of this.sessions.values()) {
+      if (s.characterId !== session.characterId && s.name.toLowerCase() === lower) {
+        this.log(session, "That name's already walking these streets.");
+        return;
+      }
+    }
+    const old = session.name;
+    session.name = clean;
+    const leader = this.leader(posse);
+    if (leader) leader.name = clean;
+    posse.name = `${clean}'s Crew`;
+    this.log(session, `Street name updated: ${old} → ${clean}. The crew still answers to you.`);
   }
 
   private assertStashAccess(session: CharacterSession, posse: Posse): boolean {

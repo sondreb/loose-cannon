@@ -1433,6 +1433,39 @@ img.photo {
   z-index: 6;
 }
 
+/* Fixed place name when indoors — top of HUD, not world-space */
+#interiorPlace {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 48px;
+  z-index: 6;
+  pointer-events: none;
+  max-width: min(90vw, 420px);
+  padding: 0.28rem 0.95rem;
+  border-radius: 100px;
+  background: rgba(12, 10, 18, 0.82);
+  border: 1px solid rgba(240, 192, 64, 0.4);
+  color: #ffe0a0;
+  font-weight: 800;
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+}
+
+#interiorPlace.club {
+  border-color: rgba(255, 80, 180, 0.5);
+  color: #ff80d0;
+}
+
+#interiorPlace.hidden {
+  display: none !important;
+}
+
 #objective {
   position: absolute;
   left: 300px;
@@ -3107,6 +3140,20 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
     order: 1;
   }
 
+  #topStatusBar #interiorPlace {
+    position: static;
+    transform: none;
+    left: auto;
+    top: auto;
+    max-width: min(92vw, 300px);
+    width: auto;
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    padding: 0.22rem 0.75rem;
+    z-index: 9;
+    order: 2;
+  }
+
   #topStatusBar #objective {
     position: static;
     left: auto;
@@ -3117,7 +3164,7 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
     font-size: 0.62rem;
     padding: 0.22rem 0.65rem;
     z-index: 9;
-    order: 2;
+    order: 3;
     text-align: center;
   }
 
@@ -3178,27 +3225,40 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
   }
 
   .minimap-btn {
-    top: 56px;
-    right: 14px;
+    /* under status stack, left side — not on top of posse strip */
+    top: calc(var(--mobile-hud-top, 5.5rem) + 4.1rem);
+    right: auto;
+    left: 8px;
+    font-size: 0.65rem;
+    padding: 0.35rem 0.55rem;
   }
 
   .realm-hud {
-    top: 56px;
-    right: 14px;
-    font-size: 0.62rem;
+    /* sit under status bar, right-aligned; never over crew strip */
+    top: calc(var(--mobile-hud-top, 5.5rem) + 4.1rem);
+    right: 8px;
+    left: auto;
+    font-size: 0.58rem;
+    max-width: min(52vw, 200px);
+    padding: 0.22rem 0.35rem 0.22rem 0.5rem;
+    z-index: 8;
+  }
+
+  .realm-hud #realmHudLabel {
+    max-width: 7.5rem;
+  }
+
+  .settings-fab.desktop-only {
+    display: none !important;
   }
 
   #chatForm input {
     font-size: 16px; /* prevents iOS zoom on focus */
     padding: 0.45rem 0.5rem;
   }
-
-  #minimap {
-    display: none !important;
-  }
 } /* end @media (max-width: 900px) primary mobile block */
 
-/* Realm badge + invite (left of MAP) */
+/* Realm badge + invite (left of MAP on desktop) */
 .realm-hud {
   position: absolute;
   top: 12px;
@@ -3218,6 +3278,133 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
   pointer-events: auto;
   max-width: min(280px, 42vw);
+}
+
+/* Desktop settings gear — bottom right, clear of chat */
+.settings-fab {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 11;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(12, 14, 20, 0.88);
+  color: #f0c040;
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.settings-fab:hover {
+  filter: brightness(1.12);
+  border-color: rgba(240, 192, 64, 0.45);
+}
+
+.desktop-only {
+  display: grid;
+}
+
+@media (max-width: 900px) {
+  .desktop-only {
+    display: none !important;
+  }
+}
+
+.settings-card {
+  width: min(420px, 96vw);
+  max-height: min(90vh, 640px);
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.settings-header h2 {
+  margin: 0;
+  font-size: 0.95rem;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+}
+
+.settings-body {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding-bottom: 0.25rem;
+}
+
+.settings-section h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  color: #9ec8ff;
+  text-transform: uppercase;
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  color: #c8c0d0;
+}
+
+.settings-field > span {
+  letter-spacing: 0.04em;
+}
+
+.settings-row {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.settings-row input {
+  flex: 1;
+  min-width: 0;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #f2efe8;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.9rem;
+}
+
+.settings-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.28rem 0;
+  font-size: 0.88rem;
+  color: #e8e4f0;
+  cursor: pointer;
+}
+
+.settings-check input {
+  width: 1.05rem;
+  height: 1.05rem;
+  accent-color: #f0c040;
+}
+
+.settings-realm-line {
+  margin: 0 0 0.4rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #9ec8ff;
+  font-size: 0.85rem;
 }
 
 .realm-hud #realmHudLabel {

@@ -338,6 +338,8 @@ export type ClientMessage =
   /** Optional targetUnitId: talk to that NPC when in range (click-to-talk). */
   | { type: "intent.interact"; targetUnitId?: string }
   | { type: "intent.exit" }
+  /** Rename boss / display name (2–20 chars, unique on this realm). */
+  | { type: "settings.rename"; name: string }
   | { type: "dialogue.choice"; choiceId: string }
   | { type: "dialogue.close" }
   | { type: "shop.buyWeapon"; weaponId: WeaponId; unitId: string }

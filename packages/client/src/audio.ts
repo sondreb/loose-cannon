@@ -59,6 +59,10 @@ export class SfxBus {
     this.muted = m;
   }
 
+  isMuted(): boolean {
+    return this.muted;
+  }
+
   /** Call from any user gesture so browsers allow audio. */
   unlock(): void {
     const ctx = this.ensure();
@@ -296,6 +300,10 @@ export class MusicBus {
     } else if (this.started) {
       void this.audio.play().catch(() => undefined);
     }
+  }
+
+  isMuted(): boolean {
+    return this.muted;
   }
 
   setVolume(v: number): void {

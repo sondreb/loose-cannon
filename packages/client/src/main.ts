@@ -49,6 +49,18 @@ const joinBtn = $("joinBtn");
 const loginError = $("loginError");
 const realmHudLabel = $("realmHudLabel");
 const realmInviteBtn = $("realmInviteBtn");
+const settingsBtnDesktop = document.getElementById("settingsBtnDesktop") as HTMLButtonElement | null;
+const mobSettings = document.getElementById("mobSettings") as HTMLButtonElement | null;
+const settingsModal = $("settingsModal");
+const settingsClose = $("settingsClose");
+const settingsNameInput = $("settingsNameInput") as HTMLInputElement;
+const settingsRenameBtn = $("settingsRenameBtn");
+const settingsMusic = $("settingsMusic") as HTMLInputElement;
+const settingsSfx = $("settingsSfx") as HTMLInputElement;
+const settingsVoice = $("settingsVoice") as HTMLInputElement;
+const settingsRealmLabel = $("settingsRealmLabel");
+const settingsInviteBtn = $("settingsInviteBtn");
+const settingsHowToBtn = $("settingsHowToBtn");
 const canvas = $("canvas") as HTMLCanvasElement;
 const posseList = $("posseList");
 const cashRep = $("cashRep");
@@ -81,6 +93,8 @@ const objective = $("objective");
 const actionBanner = $("actionBanner");
 const actionStatus = $("actionStatus");
 const actionDetail = $("actionDetail");
+const interiorPlace = document.getElementById("interiorPlace") as HTMLElement | null;
+const interiorPlaceName = document.getElementById("interiorPlaceName") as HTMLElement | null;
 const dialogueModal = $("dialogueModal");
 const dlgName = $("dlgName");
 const dlgText = $("dlgText");
@@ -1724,6 +1738,22 @@ function updateActionBanner(s: WorldSnapshot): void {
   else actionBanner.classList.add("war");
 }
 
+/** Fixed top-of-HUD place name (not drawn in world space). */
+function updateInteriorPlaceHud(s: WorldSnapshot): void {
+  if (!interiorPlace || !interiorPlaceName) return;
+  if (!s.you.insideBuildingId) {
+    interiorPlace.classList.add("hidden");
+    interiorPlace.classList.remove("club");
+    return;
+  }
+  const b = s.buildings.find((bb) => bb.id === s.you.insideBuildingId);
+  const name = (b?.name ?? "Interior").toUpperCase();
+  interiorPlaceName.textContent = name;
+  interiorPlace.classList.remove("hidden");
+  const isClub = b?.id === "club_neon" || /titty|twister/i.test(b?.name ?? "");
+  interiorPlace.classList.toggle("club", isClub);
+}
+
 function updateZoneObjective(s: WorldSnapshot): void {
   const compact = isMobileLayout();
   if (s.mission && (s.mission.phase === "active" || s.mission.phase === "extract")) {
@@ -1754,12 +1784,8 @@ function updateZoneObjective(s: WorldSnapshot): void {
     return;
   }
   if (s.you.insideBuildingId) {
-    const b = s.buildings.find((bb) => bb.id === s.you.insideBuildingId);
-    objective.textContent = b
-      ? compact
-        ? `INSIDE · ${b.name.toUpperCase()}`
-        : `INSIDE: ${b.name.toUpperCase()} — E to exit near door`
-      : "INSIDE";
+    // Building name is on #interiorPlace; objective keeps a short exit tip
+    objective.textContent = compact ? "E / EXIT · leave" : "Near the green EXIT · E or click door to leave";
     objective.classList.remove("zone-safe", "zone-war");
     objective.classList.add("zone-safe");
     return;
@@ -1821,6 +1847,7 @@ function onSnapshot(s: WorldSnapshot): void {
   renderMissionHud();
   renderTutorialHud();
   updateActionBanner(s);
+  updateInteriorPlaceHud(s);
   updateZoneObjective(s);
   if (!districtMapModal.classList.contains("hidden")) renderDistrictMap();
   if (s.memorialOpen) {
@@ -2033,6 +2060,84 @@ function updateRealmHud(realmId: string): void {
   if (realmHudLabel) {
     realmHudLabel.textContent = `REALM · ${realmLabel(myRealmId)}`;
   }
+  if (settingsRealmLabel) {
+    settingsRealmLabel.textContent = realmLabel(myRealmId);
+  }
+}
+
+const SETTINGS_AUDIO_KEY = "lc_audio_v1";
+
+function loadAudioPrefs(): void {
+  try {
+    const raw = localStorage.getItem(SETTINGS_AUDIO_KEY);
+    if (!raw) return;
+    const p = JSON.parse(raw) as { music?: boolean; sfx?: boolean; voice?: boolean };
+    // Stored as "enabled" booleans
+    if (typeof p.music === "boolean") music.setMuted(!p.music);
+    if (typeof p.sfx === "boolean") sfx.setMuted(!p.sfx);
+    if (typeof p.voice === "boolean") voice.setMuted(!p.voice);
+  } catch {
+    /* ignore */
+  }
+}
+
+function saveAudioPrefs(): void {
+  try {
+    localStorage.setItem(
+      SETTINGS_AUDIO_KEY,
+      JSON.stringify({
+        music: !music.isMuted(),
+        sfx: !sfx.isMuted(),
+        voice: !voice.isMuted(),
+      }),
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
+function syncSettingsForm(): void {
+  const boss = selectedUnit() ?? myUnits().find((u) => u.isPlayerLeader || u.kind === "player");
+  if (settingsNameInput) {
+    settingsNameInput.value = boss?.name ?? myName ?? "";
+  }
+  if (settingsMusic) settingsMusic.checked = !music.isMuted();
+  if (settingsSfx) settingsSfx.checked = !sfx.isMuted();
+  if (settingsVoice) settingsVoice.checked = !voice.isMuted();
+  if (settingsRealmLabel) settingsRealmLabel.textContent = realmLabel(myRealmId);
+}
+
+function openSettings(): void {
+  settingsModal.classList.remove("hidden");
+  syncSettingsForm();
+  sfx.play("ui");
+}
+
+function closeSettings(): void {
+  settingsModal.classList.add("hidden");
+}
+
+function applyAudioFromForm(): void {
+  if (settingsMusic) {
+    music.setMuted(!settingsMusic.checked);
+    if (settingsMusic.checked) music.unlock();
+  }
+  if (settingsSfx) sfx.setMuted(!settingsSfx.checked);
+  if (settingsVoice) voice.setMuted(!settingsVoice.checked);
+  saveAudioPrefs();
+}
+
+function submitRename(): void {
+  if (!socket || !settingsNameInput) return;
+  const name = settingsNameInput.value.trim();
+  if (name.length < 2) {
+    pushEvent("Name too short.");
+    return;
+  }
+  socket.send({ type: "settings.rename", name });
+  myName = name;
+  sfx.play("ui");
+  pushEvent(`Rename requested: ${name}`);
 }
 
 function inviteLinkForRealm(realmId: string): string {
@@ -2045,16 +2150,23 @@ function inviteLinkForRealm(realmId: string): string {
   return url.toString();
 }
 
-async function copyInviteLink(): Promise<void> {
+async function copyInviteLink(fromSettings = false): Promise<void> {
   const link = inviteLinkForRealm(myRealmId);
   try {
     await navigator.clipboard.writeText(link);
     pushEvent(`Invite link copied (${realmLabel(myRealmId)}).`);
-    if (realmInviteBtn) {
+    if (realmInviteBtn && !fromSettings) {
       const prev = realmInviteBtn.textContent;
       realmInviteBtn.textContent = "COPIED";
       window.setTimeout(() => {
         if (realmInviteBtn) realmInviteBtn.textContent = prev || "INVITE";
+      }, 1600);
+    }
+    if (fromSettings && settingsInviteBtn) {
+      const prev = settingsInviteBtn.textContent;
+      settingsInviteBtn.textContent = "COPIED";
+      window.setTimeout(() => {
+        if (settingsInviteBtn) settingsInviteBtn.textContent = prev || "COPY INVITE LINK";
       }, 1600);
     }
   } catch {
@@ -2216,6 +2328,10 @@ function bindInput(): void {
     view?.clearLocalPrediction();
     socket?.send({ type: "intent.dir", dx: 0, dy: 0 });
     socket?.send({ type: "intent.stop" });
+  });
+  mobSettings?.addEventListener("click", (e) => {
+    e.preventDefault();
+    openSettings();
   });
   mobZoomIn?.addEventListener("click", (e) => {
     e.preventDefault();
@@ -2469,10 +2585,43 @@ function bindInput(): void {
     closeGoonProfile();
     openCrewEditor();
   });
+
+  settingsBtnDesktop?.addEventListener("click", (e) => {
+    e.preventDefault();
+    openSettings();
+  });
+  settingsClose?.addEventListener("click", () => closeSettings());
+  settingsModal?.addEventListener("click", (e) => {
+    if (e.target === settingsModal) closeSettings();
+  });
+  settingsMusic?.addEventListener("change", () => applyAudioFromForm());
+  settingsSfx?.addEventListener("change", () => applyAudioFromForm());
+  settingsVoice?.addEventListener("change", () => applyAudioFromForm());
+  settingsRenameBtn?.addEventListener("click", () => submitRename());
+  settingsNameInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submitRename();
+    }
+  });
+  settingsInviteBtn?.addEventListener("click", () => {
+    void copyInviteLink(true);
+  });
+  settingsHowToBtn?.addEventListener("click", () => {
+    closeSettings();
+    openOnboard(false);
+  });
+
   window.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && goonProfileUnitId) {
+    if (e.key !== "Escape") return;
+    if (goonProfileUnitId) {
       e.preventDefault();
       closeGoonProfile();
+      return;
+    }
+    if (settingsModal && !settingsModal.classList.contains("hidden")) {
+      e.preventDefault();
+      closeSettings();
     }
   });
 }
@@ -2648,8 +2797,11 @@ realmInput?.addEventListener("keydown", (e) => {
   if (e.key === "Enter") joinBtn.click();
 });
 realmInviteBtn?.addEventListener("click", () => {
-  void copyInviteLink();
+  void copyInviteLink(false);
 });
+
+// Audio prefs before first play
+loadAudioPrefs();
 
 // Prefill login from ?realm= / ?name= (shareable invite links)
 try {

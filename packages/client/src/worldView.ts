@@ -1484,58 +1484,22 @@ export class WorldView {
     }
   }
 
-  /** Room name (top of room), exit cue — keep chrome out of the playable floor center. */
+  /**
+   * Interior floor chrome only. Building *title* is a fixed HTML HUD (#interiorPlace)
+   * — world-space titles cluttered the room and drifted with the camera.
+   */
   private drawInteriorChrome(snap: WorldSnapshot): void {
     const b = this.getInteriorBuilding(snap);
     if (!b) return;
     const bounds = this.interiorBounds(b);
     if (!bounds) return;
 
-    const cx = (bounds.x0 + bounds.x1 + 1) / 2;
-    // Title at the north edge of the interior (not room center — that cluttered NPCs)
-    const top = worldToScreen(cx, bounds.y0 + 0.15);
     const isTwister = b.id === "club_neon" || /titty|twister/i.test(b.name);
-
     if (isTwister) {
       this.drawClubInteriorDecor(bounds);
     }
 
-    const title = new Text({
-      text: b.name.toUpperCase(),
-      style: {
-        fontSize: isTwister ? 15 : 13,
-        fill: isTwister ? 0xff60c0 : 0xffe0a0,
-        fontWeight: "800",
-        fontFamily: "system-ui, sans-serif",
-        dropShadow: {
-          color: 0x000000,
-          blur: 2,
-          distance: 1,
-          alpha: 0.85,
-        },
-      },
-    });
-    title.x = top.sx - title.width / 2;
-    title.y = top.sy - (isTwister ? 42 : 36);
-    this.overlayLayer.addChild(title);
-    this.buildingLabelPool.push(title);
-
-    const sub = new Text({
-      text: isTwister
-        ? "Tip talent · EXIT south"
-        : (b.blurb ?? "Click EXIT / walk to door · E to leave"),
-      style: {
-        fontSize: 10,
-        fill: isTwister ? 0xffa0d0 : 0xa89880,
-        fontWeight: "600",
-        fontFamily: "system-ui, sans-serif",
-      },
-    });
-    sub.x = top.sx - sub.width / 2;
-    sub.y = title.y + title.height + 2;
-    this.overlayLayer.addChild(sub);
-    this.buildingLabelPool.push(sub);
-
+    // Small EXIT marker on the door tile only (not the room title)
     if (b.exitX != null && b.exitY != null) {
       const door = worldToScreen(b.exitX + 0.5, b.exitY + 0.5);
       const exit = new Text({
@@ -2111,19 +2075,36 @@ export class WorldView {
       g.fill({ color: col, alpha: 0.25 });
       this.showHoverTip(sx, sy - 48, `${this.hover.label} — ${this.hover.action}`, col);
     } else if (this.hover.kind === "building") {
-      const b = snap.buildings.find((x) => x.id === this.hover!.id);
-      if (!b || b.ex0 == null) return;
-      const door = worldToScreen(b.doorX + 0.5, b.doorY + 0.5);
-      g.circle(door.sx, door.sy - 4, 14 + Math.sin(this.time * 5) * 2);
-      g.stroke({ color: 0xffcc66, width: 2, alpha: pulse });
-      // Footprint outline (simple diamond of center)
-      const cx = (b.ex0! + b.ex1! + 1) / 2;
-      const cy = (b.ey0! + b.ey1! + 1) / 2;
-      const c = worldToScreen(cx, cy);
-      const h = (b.stories ?? 2) * FLOOR_PX;
-      g.rect(c.sx - 18, c.sy - h - 8, 36, 6);
-      g.fill({ color: 0xffcc66, alpha: 0.35 * pulse });
-      this.showHoverTip(door.sx, door.sy - 36, `${this.hover.label} — ${this.hover.action}`, 0xffcc66);
+      const b =
+        snap.buildings.find((x) => x.id === this.hover!.id) ??
+        (snap.you.insideBuildingId === this.hover!.id ? this.getInteriorBuilding(snap) : null);
+      if (!b) return;
+      const indoors = !!snap.you.insideBuildingId;
+      // Indoors: mark the interior EXIT tile. Outdoors: street door.
+      // (Using outdoor doorX while inside was the misaligned hover ring.)
+      const dx = indoors ? (b.exitX ?? b.doorX) : b.doorX;
+      const dy = indoors ? (b.exitY ?? b.doorY) : b.doorY;
+      const door = worldToScreen(dx + 0.5, dy + 0.5);
+      const ringCol = indoors ? 0x70d090 : 0xffcc66;
+      g.circle(door.sx, door.sy + 4, 14 + Math.sin(this.time * 5) * 2);
+      g.stroke({ color: ringCol, width: 2, alpha: pulse });
+      g.circle(door.sx, door.sy + 4, 5);
+      g.fill({ color: ringCol, alpha: 0.22 });
+      if (!indoors && b.ex0 != null && b.ey0 != null && b.ex1 != null && b.ey1 != null) {
+        // Outdoor only: subtle façade cue
+        const cx = (b.ex0 + b.ex1 + 1) / 2;
+        const cy = (b.ey0 + b.ey1 + 1) / 2;
+        const c = worldToScreen(cx, cy);
+        const h = (b.stories ?? 2) * FLOOR_PX;
+        g.rect(c.sx - 18, c.sy - h - 8, 36, 6);
+        g.fill({ color: 0xffcc66, alpha: 0.35 * pulse });
+      }
+      this.showHoverTip(
+        door.sx,
+        door.sy - 40,
+        `${this.hover.label} — ${this.hover.action}`,
+        ringCol,
+      );
     } else if (this.hover.kind === "prop") {
       const p = snap.props.find((x) => x.id === this.hover!.id);
       if (!p) return;
@@ -2906,7 +2887,13 @@ export class WorldView {
 
     const b = this.pickBuilding(clientX, clientY);
     if (b) {
-      this.hover = { kind: "building", id: b.id, label: b.name, action: "Enter" };
+      const indoors = !!snap.you.insideBuildingId;
+      this.hover = {
+        kind: "building",
+        id: b.id,
+        label: indoors ? "Exit" : b.name,
+        action: indoors ? "Leave" : "Enter",
+      };
       return "pointer";
     }
 
