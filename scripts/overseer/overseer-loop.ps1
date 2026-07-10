@@ -4,13 +4,17 @@
   Repeatedly run Loose Cannon overseer cycles until max cycles or Ctrl+C.
 
 .NOTES
+  Each iteration calls run-cycle.ps1 (streaming-json, session health, stall timeout,
+  C# stdout pump, -Yolo → --always-approve). Continuity lives in docs/STATUS.md;
+  bloated sessions are auto-bootstrapped by run-cycle.
+
   Ctrl+C behavior:
   - During idle sleep: stop immediately.
   - During an active cycle (1st): request stop after the cycle finishes (do not kill the run).
   - During an active cycle (2nd): force-kill the active grok process and exit.
 
 .EXAMPLE
-  .\scripts\overseer\overseer-loop.ps1
+  .\scripts\overseer\overseer-loop.ps1 -Yolo
   .\scripts\overseer\overseer-loop.ps1 -Yolo -SleepSeconds 90 -MaxCycles 10
 #>
 param(
@@ -104,9 +108,14 @@ Write-Host "  Yolo:         $Yolo"
 Write-Host "  Sleep:        ${SleepSeconds}s"
 Write-Host "  MaxCycles:    $(if ($MaxCycles -eq 0) { 'unlimited' } else { $MaxCycles })"
 Write-Host "  MaxTurns:     $MaxTurns"
+Write-Host "  Runner:       run-cycle.ps1 (streaming logs, session health, 180s stall timeout)"
 Write-Host "  Ctrl+C idle:  stop immediately"
 Write-Host "  Ctrl+C busy:  finish current cycle, then stop"
 Write-Host "  Ctrl+C x2:    force-kill active cycle and exit"
+if (-not $Yolo) {
+  Write-Host ""
+  Write-Host "WARNING: without -Yolo, headless tool prompts can hang. Prefer: -Yolo"
+}
 Write-Host ""
 
 $n = 0
@@ -124,21 +133,22 @@ try {
     }
     if ($Yolo) { $params.Yolo = $true }
 
+    # Session resume/health is owned by run-cycle.ps1 (.session-id + auto-bootstrap).
+    # First cycle: bootstrap if asked or no session file; otherwise let run-cycle resume if healthy.
     if ($n -eq 1) {
       if ($BootstrapFirst -or -not (Test-Path $SessionFile)) {
         $params.Bootstrap = $true
-      } elseif (Test-Path $SessionFile) {
-        $params.Continue = $true
       }
-    } else {
-      $params.Continue = $true
     }
+    # Later cycles: pass nothing special — run-cycle resumes healthy .session-id or bootstraps.
 
     $script:cycleRunning = $true
     $global:OverseerStopRequested = $false
+    $global:OverseerForceStop = $false
     try {
       & $cycleScript @params
       $code = $LASTEXITCODE
+      if ($null -eq $code) { $code = 0 }
     } catch {
       Write-Host "Cycle threw: $_"
       $code = 1
@@ -147,11 +157,19 @@ try {
     }
 
     # Ctrl+C pressed during the cycle (key buffered, and/or flagged by run-cycle)
-    if ($global:OverseerStopRequested -or (Test-StopKeyPressed)) {
+    if ($global:OverseerStopRequested -or $global:OverseerForceStop -or (Test-StopKeyPressed)) {
       $script:stopRequested = $true
     }
 
     Write-Host "Cycle $n finished with exit code $code"
+
+    # 130 = force Ctrl+C; 124 = stall timeout (run-cycle cleared bad session)
+    if ($code -eq 130 -or $code -eq 124) {
+      $script:stopRequested = $true
+      if ($code -eq 124) {
+        Write-Host "Stall timeout — loop stopping. Next run will bootstrap fresh if needed."
+      }
+    }
 
     if ($script:stopRequested) {
       Write-Host "Stop was requested during the cycle — exiting without starting another."
