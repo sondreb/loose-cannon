@@ -19,6 +19,18 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-11 — cycle 18 (M7 third instance)
+- Focus: Third instanced mission + new building template (Cold Storage / Ice Box Eviction)
+- Done:
+  - Shared map: `coldstore` kind, docks exterior shell, freezer interior pocket, street props; Pier Punchers spawn moved west of shell
+  - Mission `cold_storage` — clear → extract, Frost hostiles, $580 + 6 rep; board order appended
+  - Client: coldstore/warehouse cyan accent; frost indoor lighting; `mi_*` layers resolve palette via template kind
+  - Districts landmark "Cold Storage / east piers"; Vince rumor mentions docks freezer
+  - Smoke: full cold_storage instance clear → extract → pay
+- Verify: `npm run build` OK; `npm run smoke` → SMOKE_OK (cold_storage instance ok)
+- Next: **M7** street hustles / rival variety / optional music
+- Blocked: none
+
 ### 2026-07-11 — cycle 17 (M4 parties)
 - Focus: Party invite/leave + presence + party chat + co-op mission attach (within a realm)
 - Done:

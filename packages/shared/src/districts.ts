@@ -47,7 +47,7 @@ export const DISTRICTS: DistrictDef[] = [
     /** Advisory rep for UI; free walk always allowed (see enforceDistrictAccess). */
     minRep: 5,
     danger: "hot",
-    landmark: "East piers",
+    landmark: "Cold Storage / east piers",
   },
   {
     id: "neon_edge",

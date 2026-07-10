@@ -1,6 +1,6 @@
 /**
  * Starter job catalog (Mode A).
- * Outdoor jobs run on the hub map; instanced jobs use a private warehouse layer.
+ * Outdoor jobs run on the hub map; instanced jobs use a private layer (warehouse / garage / coldstore).
  * Server is authoritative for progress and rewards.
  */
 
@@ -12,7 +12,8 @@ export type MissionId =
   | "still_not_guns"
   | "parking_tax"
   | "chop_shop_raid"
-  | "rail_rats";
+  | "rail_rats"
+  | "cold_storage";
 
 export type MissionObjectiveKind =
   | "hold"
@@ -236,6 +237,33 @@ export const MISSIONS: Record<MissionId, MissionDef> = {
     hintX: 42,
     hintY: 48,
   },
+  cold_storage: {
+    id: "cold_storage",
+    title: "Ice Box Eviction",
+    blurb:
+      "Private job. Freeloaders squatting Rita's pier freezer. Clear the icebox, then extract before your fingers resign. Casualties: chilled. Heart rate: optional.",
+    difficulty: 3,
+    rewardCash: 580,
+    rewardRep: 6,
+    instance: {
+      templateBuildingId: "coldstore",
+      enemyCount: 2,
+      enemyThreat: 2,
+      enemyLabel: "Frost",
+    },
+    objectives: [
+      {
+        id: "clear_freezer",
+        label: "Neutralize hostiles in the freezer",
+        kind: "clear_hostiles",
+      },
+      {
+        id: "extract",
+        label: "Extract at the exit door",
+        kind: "extract",
+      },
+    ],
+  },
 };
 
 export const MISSION_ORDER: MissionId[] = [
@@ -247,6 +275,7 @@ export const MISSION_ORDER: MissionId[] = [
   "parking_tax",
   "chop_shop_raid",
   "rail_rats",
+  "cold_storage",
 ];
 
 export function listMissionOffers(opts?: {

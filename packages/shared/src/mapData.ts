@@ -9,7 +9,8 @@ export type BuildingKind =
   | "gym"
   | "club"
   | "garage"
-  | "church";
+  | "church"
+  | "coldstore";
 
 export interface MapBuildingDef {
   id: string;
@@ -194,6 +195,7 @@ export function createSkidrowMap(): WorldMapDef {
   shell(tiles, 70, 28, 80, 36, 70, 32); // Chop Shop garage
   shell(tiles, 90, 28, 102, 36, 96, 28); // Neon Confessional (club)
 
+  shell(tiles, 88, 48, 102, 58, 88, 53); // Cold Storage (docks freezer bay)
   shell(tiles, 22, 48, 32, 58, 27, 48); // Our Lady of Bad Decisions
   shell(tiles, 4, 70, 14, 80, 9, 70); // Southside Liquor (shop2)
   shell(tiles, 68, 70, 80, 82, 74, 70); // Ammo & Alibis (gun shop)
@@ -254,6 +256,12 @@ export function createSkidrowMap(): WorldMapDef {
   outline(tiles, 46, 82, 56, 88, "wall");
   rect(tiles, 47, 83, 55, 87, "floor");
   tiles[82][51] = "door";
+
+  // Cold storage interior (dock freezer bay — private mission template)
+  rect(tiles, 82, 82, 92, 88, "floor");
+  outline(tiles, 82, 82, 92, 88, "wall");
+  rect(tiles, 83, 83, 91, 87, "floor");
+  tiles[82][87] = "door";
 
   // Church
   rect(tiles, 58, 1, 68, 6, "floor");
@@ -485,6 +493,33 @@ export function createSkidrowMap(): WorldMapDef {
       accentColor: 0x60a0e0,
     },
     {
+      id: "coldstore",
+      name: "Cold Storage",
+      kind: "coldstore",
+      doorX: 88,
+      doorY: 53,
+      ex0: 88,
+      ey0: 48,
+      ex1: 102,
+      ey1: 58,
+      stories: 2,
+      ix0: 83,
+      iy0: 83,
+      ix1: 91,
+      iy1: 87,
+      spawnX: 87,
+      spawnY: 85,
+      // Door tile is y=82; extract walks onto the seal
+      exitX: 87,
+      exitY: 82,
+      exteriorSpawnX: 87,
+      exteriorSpawnY: 53,
+      blurb: "Everything keeps. Including grudges.",
+      wallColor: 0x2a3848,
+      roofColor: 0x121820,
+      accentColor: 0x60d0ff,
+    },
+    {
       id: "church",
       name: "Our Lady of Bad Decisions",
       kind: "church",
@@ -609,6 +644,10 @@ export function createSkidrowMap(): WorldMapDef {
     { id: "cone4", kind: "cone", x: 61, y: 43 },
     { id: "phone2", kind: "phonebooth", x: 16, y: 46, label: "Bulletproof glass (not)" },
     { id: "mail2", kind: "mailbox", x: 54, y: 48 },
+    // Docks — cold storage street dressing
+    { id: "n5", kind: "neon", x: 86, y: 52, label: "COLD" },
+    { id: "cr3", kind: "crate", x: 84, y: 56, label: "Keep frozen (or else)" },
+    { id: "cone5", kind: "cone", x: 87, y: 50 },
   ];
 
   return {
@@ -676,7 +715,8 @@ export function createSkidrowMap(): WorldMapDef {
       { id: "ai_west", name: "West End Wreckers", x: 18, y: 50, color: 0x6a8, aggression: 0.5, threat: 2 },
       { id: "ai_lot", name: "Lot Lizards MC", x: 52, y: 76, color: 0x886, aggression: 0.45, threat: 3 },
       { id: "ai_church", name: "Choir of Pain", x: 28, y: 58, color: 0xa55, aggression: 0.35, threat: 2 },
-      { id: "ai_docks", name: "Pier Punchers", x: 95, y: 52, color: 0x48a, aggression: 0.5, threat: 2 },
+      // West of Cold Storage shell (88–102, 48–58) so they do not spawn in the void
+      { id: "ai_docks", name: "Pier Punchers", x: 84, y: 52, color: 0x48a, aggression: 0.5, threat: 2 },
       { id: "ai_neon", name: "Neon Vipers", x: 92, y: 62, color: 0xf0c, aggression: 0.6, threat: 4 },
       { id: "ai_chrome", name: "Chrome Fists", x: 65, y: 48, color: 0xa6a, aggression: 0.5, threat: 3 },
       { id: "ai_dogs", name: "The Dumpster Dogs", x: 14, y: 54, color: 0xc44, aggression: 0.65, threat: 1 },

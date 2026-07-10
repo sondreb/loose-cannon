@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-11 (M4 parties)  
+Last updated: 2026-07-11 (M7 third instance — Ice Box Eviction)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -35,6 +35,7 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | **Cover / LoS** | **Done** | Walls/void block shots; soft cover near walls; BLOCKED FX |
 | **Ammo economy** | **Done** | Limited specials; ∞ pistol/melee; HUD counts; pawn refill |
 | **More missions (M6)** | **Done** | +4 jobs: still_not_guns, parking_tax, chop_shop_raid, rail_rats |
+| **Third instance (M7)** | **Done** | Cold Storage template + `cold_storage` Ice Box Eviction |
 | **Day/night + district light** | **Done** | ~6 min cycle; sky/overlay/neon/rain; district tints; HUD phase |
 | **Directional goons / walk bob** | **Done** | Iso screen flip; two-beat bob + lean; speed cadence; idle server facing |
 | **HUD / event-log readability** | **Done** | Kind-colored log lines; pin-to-read; stronger objective/toasts/mission HUD |
@@ -54,6 +55,7 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | `parking_tax` | Parking Racket | Outdoor | Hold `p3` ~15s | $400 + 3 rep |
 | `chop_shop_raid` | Chop Shop Sweep | Instance (garage) | Clear → extract | $520 + 5 rep |
 | `rail_rats` | Rail Rat Removal | Outdoor | Kill Rail Rats boss | $420 + 4 rep |
+| `cold_storage` | Ice Box Eviction | Instance (coldstore) | Clear → extract | $580 + 6 rep |
 
 ### Tutorial (live)
 
@@ -67,7 +69,7 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | war_fringe | War Fringe | 0 | Always |
 | neon_edge | Neon Edge / Titty Twister | 0 | Always |
 | war_deep | Deep War Zone | 3* | Always (*advisory) |
-| docks | Pier District | 5* | Always (*advisory) |
+| docks | Pier District | 5* | Always (*advisory) — Cold Storage landmark |
 
 Rep still gates **shop stock** and some content; map shows HOT / recommended rep.
 
@@ -158,6 +160,14 @@ Server-authoritative; AI ignores ammo (always free fire). Players:
 - Map: `cr2`, `p3`, `ai_rats`, garage interior template for chop instance  
 - Smoke: asserts all 4 offers; completes still_not_guns + full chop_shop extract  
 
+### M7 third instance (live)
+
+- Building: **Cold Storage** (`coldstore`) — docks shell ~(88–102, 48–58), door west; interior pocket 83–91×83–87  
+- Job: `cold_storage` / **Ice Box Eviction** — private clear → extract; Frost-labeled hostiles (threat 2); $580 + 6 rep  
+- Client: coldstore cyan accent; frost indoor lighting (template kind on `mi_*` layers)  
+- Pier Punchers spawn shifted west of shell (84, 52); street props COLD neon + frozen crate  
+- Smoke: full cold_storage clear → extract → pay  
+
 ### Day/night + district lighting (live)
 
 - Shared `lighting.ts`: `dayPhaseFromTick`, `lightingLook(phase, district|interior, indoor)`  
@@ -198,7 +208,7 @@ Server-authoritative; AI ignores ammo (always free fire). Players:
 
 ## Next for overseer (priority)
 
-1. **M7 content** — third instanced mission, street hustles, rival variety, optional music  
+1. **M7 content** — street hustles / POI interactions, rival gang variety, optional music bed  
 2. Optional **M4 polish** — loot split, shared hold progress, kick confirm  
 3. Optional **M3** crash-pad stash UX polish  
 4. **Never** Mode B (Postgres/auth/k8s) unless human asks  
@@ -211,7 +221,7 @@ Server-authoritative; AI ignores ammo (always free fire). Players:
 | Smoke needs live server | Ops | `npm run smoke` → `ws://127.0.0.1:3001` |
 | Safe-zone fire spam logs | Low | No crash |
 | Disconnect = wipe | Low | Mode A design |
-| Two instance templates | Design | warehouse + garage; more in M7 |
+| Three instance templates | Live | warehouse + garage + coldstore; more optional later |
 | Goon sprites single art facing | Low | L/R iso flip + lean/bob; full 8-dir art sheets still optional later |
 | Chop smoke flake | Ops | Rare death mid-chop if aggro unlucky; re-run on clean server |
 

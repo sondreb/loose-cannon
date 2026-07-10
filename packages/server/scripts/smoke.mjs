@@ -347,6 +347,59 @@ if (last.you.rep < rep0 + 5) fail("chop rep");
 if (last?.you.insideBuildingId) fail("should be outdoors after chop extract");
 console.log("chop_shop_raid instance ok cash", last.you.cash);
 
+// --- M7 instance: cold_storage (coldstore template) ---
+await openRitaBoard();
+if (!last.jobBoard.offers.some((o) => o.id === "cold_storage")) fail("no cold_storage offer");
+cash0 = last.you.cash;
+rep0 = last.you.rep;
+ws.send(JSON.stringify({ type: "jobBoard.accept", missionId: "cold_storage" }));
+await wait(600);
+if (!String(last?.you.insideBuildingId ?? "").startsWith("mi_")) {
+  fail(`cold store expected mi_ layer, got ${last?.you.insideBuildingId}`);
+}
+if (last?.mission?.id !== "cold_storage") fail("cold_storage not active");
+if (!last.mission.instanced) fail("cold_storage not marked instanced");
+const frostHostiles = (last?.units ?? []).filter(
+  (u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && u.alive,
+);
+if (frostHostiles.length < 2) fail(`expected frost hostiles >=2, got ${frostHostiles.length}`);
+if (!frostHostiles.some((u) => /frost/i.test(u.name ?? ""))) {
+  fail(`expected Frost-labeled hostiles, got ${frostHostiles.map((u) => u.name).join(",")}`);
+}
+// Select whole posse — threat-3 freezer crew hits hard
+ws.send(JSON.stringify({ type: "intent.select", unitId: null }));
+await wait(100);
+for (let i = 0; i < 280; i++) {
+  const foe = last?.units.find(
+    (u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && u.alive,
+  );
+  if (!foe) break;
+  ws.send(JSON.stringify({ type: "intent.fire", targetId: foe.id }));
+  await wait(70);
+  if (last?.mission?.phase === "extract") break;
+  if (last?.mission == null && last?.you.respawnIn != null) {
+    fail("cold job failed (died) before extract");
+  }
+}
+for (let i = 0; i < 60; i++) {
+  if (last?.mission?.phase === "extract") break;
+  const foe = last?.units.find((u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && u.alive);
+  if (foe) ws.send(JSON.stringify({ type: "intent.fire", targetId: foe.id }));
+  await wait(120);
+}
+if (last?.mission?.phase !== "extract") {
+  fail(`cold expected extract, got ${last?.mission?.phase}`);
+}
+// Coldstore template exit ~ (87, 82)
+me = await goTo(87.5, 82.5, 16);
+ws.send(JSON.stringify({ type: "intent.interact" }));
+await wait(600);
+if (last?.mission) fail("cold_storage should clear after extract");
+if (last.you.cash < cash0 + 580) fail(`cold pay expected +580 (cash ${last.you.cash} vs ${cash0})`);
+if (last.you.rep < rep0 + 6) fail("cold rep");
+if (last?.you.insideBuildingId) fail("should be outdoors after cold extract");
+console.log("cold_storage instance ok cash", last.you.cash);
+
 // --- Shop quick check ---
 me = await goTo(51.5, 15.2, 20);
 ws.send(JSON.stringify({ type: "intent.interact" }));

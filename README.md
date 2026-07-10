@@ -69,7 +69,7 @@ Death: **3 second** respawn delay, then a random outdoor spot with few other pla
 - Large isometric city (multi-avenue Skidrow)
 - Free WASD + click move; RMB **attack-move** (chase + fire)
 - Free outdoor roam (district rep is advisory for hot zones; shops/jobs still gate gear)
-- Bars, pawn shop, gun shop, liquor, hospital, gym, **The Titty Twister**, church, garage, warehouse
+- Bars, pawn shop, gun shop, liquor, hospital, gym, **The Titty Twister**, church, garage, warehouse, cold storage (docks)
 - Dumpsters, protection corners, cars, crates (street hustles)
 - Hire / recruit, shop with icons, crew loadout editor
 - Combat scales with Aim / Muscle / weapons; wipe loot

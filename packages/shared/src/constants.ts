@@ -76,9 +76,14 @@ export function isSafeWorldPos(x: number, y: number, insideBuildingId: string | 
       "church",
       "shop_liquor",
       "garage",
+      "coldstore",
     ]);
-    // Warehouse is in war narrative but still no PvP inside for simplicity
-    if (safeInteriors.has(insideBuildingId) || insideBuildingId === "warehouse" || insideBuildingId === "shop_gun") {
+    // Warehouse / coldstore are war narrative but still no PvP inside for simplicity
+    if (
+      safeInteriors.has(insideBuildingId) ||
+      insideBuildingId === "warehouse" ||
+      insideBuildingId === "shop_gun"
+    ) {
       return true;
     }
     return true; // all interiors non-lethal for now

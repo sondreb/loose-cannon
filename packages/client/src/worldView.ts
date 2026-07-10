@@ -304,9 +304,14 @@ export class WorldView {
   private refreshLighting(snap: WorldSnapshot): void {
     const phase = snap.dayPhase ?? dayPhaseFromTick(snap.tick);
     const indoor = !!snap.you.insideBuildingId;
-    const place = indoor
+    let place = indoor
       ? (snap.you.insideBuildingId ?? snap.you.districtId)
       : snap.you.districtId;
+    // Mission layers are mi_*; use cloned template kind for palette (e.g. coldstore frost tint)
+    if (indoor && place?.startsWith("mi_")) {
+      const tmpl = snap.buildings.find((b) => b.id === place);
+      if (tmpl?.kind) place = tmpl.kind;
+    }
     const key = `${phase}|${place}|${indoor ? 1 : 0}`;
     if (key !== this.lastLightKey) {
       this.lastLightKey = key;
@@ -1689,6 +1694,8 @@ export class WorldView {
     else if (b.kind === "gym") accent = 0xffc040;
     else if (b.kind === "safehouse") accent = 0x60c080;
     else if (b.kind === "church") accent = 0xc0a0ff;
+    else if (b.kind === "coldstore" || b.kind === "warehouse") accent = 0x60d0ff;
+    else if (b.kind === "garage") accent = 0x60a0e0;
     if (war > 0.15) {
       wall = lerpColor(wall, 0x221018, war);
       roof = lerpColor(roof, 0x10080c, war);

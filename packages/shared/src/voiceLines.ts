@@ -68,7 +68,7 @@ export const VOICE_LINES: VoiceLineDef[] = [
   {
     id: "vince_rumor",
     speak:
-      "Dumpster Dogs prowl the west road. Silk Street plays nice until they don't. Watch the fucking warehouse.",
+      "Dumpster Dogs prowl the west road. Silk Street plays nice until they don't. Watch the fucking warehouse — and the docks freezer if Rita's in a mood.",
     voice: "rex",
     role: "bartender_m",
   },

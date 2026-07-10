@@ -165,6 +165,21 @@ export function lightingLook(
         entityTint: 0xfff0e0,
       };
     }
+    const isCold =
+      id === "coldstore" || /cold|freezer|frost|ice.?box/i.test(id);
+    if (isCold) {
+      return {
+        ...look,
+        sky: 0x0c141c,
+        overlay: 0x60c8ff,
+        overlayAlpha: 0.08,
+        groundBright: 0.95,
+        neon: 0.55,
+        rain: 0,
+        horizon: 0x101820,
+        entityTint: 0xd8f0ff,
+      };
+    }
     // Generic interior / mission instance — warm tungsten
     return {
       ...look,
