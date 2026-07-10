@@ -57,20 +57,19 @@ Flags:
 | Flag | Meaning |
 |------|---------|
 | `-Yolo` | Auto-approve all tools (`--always-approve`). **Use only if you trust the agent in this repo.** **Required for unattended headless** — without it, permission prompts hang with empty logs. |
-| `-Bootstrap` | Force a **new** session (bootstrap prompt). Use when resume hangs. |
-| `-Continue` | Resume the most recent session for this directory (`grok -c`) |
-| `-Resume <id>` | Resume a specific session UUID |
-| `-ForceResume` | Resume even if the saved session looks bloated / mid-tool (may hang) |
+| `-Bootstrap` | Use bootstrap prompt (first-time). Still a **new** session by default. |
+| `-ResumeSession` | Opt-in: reuse healthy `.session-id` (often hangs in headless — not recommended) |
+| `-Resume <id>` | Resume a specific session UUID (may hang) |
+| `-ForceResume` | Resume even if the session looks unhealthy (may hang) |
 | `-MaxTurns <n>` | Cap agent turns (default 80) |
-| `-StallTimeoutSeconds <n>` | Kill grok if no stdout for N seconds (default 180; `0` disables) |
+| `-StallTimeoutSeconds <n>` | Kill grok if no stdout for N seconds (default 90; `0` disables) |
 | `-DryRun` | Print the command without running |
 
-First cycle creates a new session and writes the ID to `scripts/overseer/.session-id` (gitignored). Later cycles resume that id **only if it looks healthy**. Bloated sessions (hundreds of chat lines) or sessions left mid-tool are **auto-bootstrapped** so headless does not hang with empty logs.
+**Default is a fresh Grok session every cycle.** Headless `--resume` often stalls after `session/load` with zero stdout (CLI bug). Continuity comes from `docs/STATUS.md` and `docs/OVERSEER_LOG.md`, not chat history. The loop retries after a stall instead of exiting.
 
 ```powershell
 .\scripts\overseer\run-cycle.ps1 -Yolo
-# If stuck / empty logs:
-.\scripts\overseer\run-cycle.ps1 -Bootstrap -Yolo
+.\scripts\overseer\overseer-loop.ps1 -Yolo
 ```
 
 ## Option C — Continuous loop (“set and forget”)

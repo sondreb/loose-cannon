@@ -26,11 +26,15 @@ param(
   [switch]$DryRun,
   [string]$PromptFile = "",
   # Abort if grok produces no stdout for this many seconds (0 = disabled)
-  [int]$StallTimeoutSeconds = 180,
-  # Auto-bootstrap when chat_history exceeds this many lines
-  [int]$MaxSessionChatLines = 200,
-  # Auto-bootstrap when updates.jsonl exceeds this many MB
-  [double]$MaxSessionUpdatesMb = 3.0,
+  [int]$StallTimeoutSeconds = 90,
+  # Opt-in: reuse .session-id when healthy. Default is always a FRESH session —
+  # headless --resume often hangs after session/load with zero stdout (CLI issue).
+  # Continuity for the game is docs/STATUS.md + OVERSEER_LOG.md, not chat history.
+  [switch]$ResumeSession,
+  # Auto-skip resume when chat_history exceeds this many lines (only with -ResumeSession)
+  [int]$MaxSessionChatLines = 80,
+  # Auto-skip resume when updates.jsonl exceeds this many MB
+  [double]$MaxSessionUpdatesMb = 1.0,
   # Force resume even if session looks unhealthy
   [switch]$ForceResume
 )
@@ -140,24 +144,27 @@ function Stop-GrokProcessTree {
 }
 
 # --- resolve which session / prompt to use ---
+# Default = FRESH session every run. Headless --resume frequently hangs after
+# session/load (debug ends at SeedNewClient, zero stdout) even for "small" sessions.
+$wantResume = $false
 $savedSession = ""
+
 if ($Resume) {
   $savedSession = $Resume.Trim()
-} elseif ($Continue) {
-  # --continue lets grok pick most recent for cwd; still prefer saved id when healthy
+  $wantResume = $true
+} elseif ($ForceResume -or $ResumeSession -or $Continue) {
+  $wantResume = $true
   if (Test-Path $SessionFile) {
     $savedSession = (Get-Content $SessionFile -Raw).Trim()
   }
-} elseif (-not $Bootstrap -and (Test-Path $SessionFile)) {
-  $savedSession = (Get-Content $SessionFile -Raw).Trim()
 }
 
-$useBootstrap = [bool]$Bootstrap
+$useBootstrapPrompt = [bool]$Bootstrap
 $resumeId = ""
 
-if ($savedSession -and -not $Bootstrap) {
+if ($wantResume -and $savedSession -and -not $Bootstrap) {
   $health = Get-SessionHealth -SessionId $savedSession
-  Write-Host "Saved session: $savedSession"
+  Write-Host "Resume requested: $savedSession"
   Write-Host "  chat_lines=$($health.ChatLines) updates_mb=$($health.UpdatesMb) exists=$($health.Exists) ok=$($health.Ok)"
   if (-not $health.Ok) {
     foreach ($r in $health.Reasons) {
@@ -167,11 +174,8 @@ if ($savedSession -and -not $Bootstrap) {
       Write-Host "  ForceResume/explicit -Resume: continuing anyway (may hang)."
       $resumeId = $savedSession
     } else {
-      Write-Host "  Auto-bootstrap: starting a FRESH session (docs/STATUS carry continuity)."
-      Write-Host "  To force the old session: -ForceResume or -Resume $savedSession"
-      $useBootstrap = $true
+      Write-Host "  Skipping resume — starting FRESH session (docs/STATUS carry continuity)."
       $resumeId = ""
-      # Drop pointer so the next loop does not keep re-selecting a dead session
       if (Test-Path $SessionFile) {
         Remove-Item $SessionFile -Force -ErrorAction SilentlyContinue
       }
@@ -179,17 +183,18 @@ if ($savedSession -and -not $Bootstrap) {
   } else {
     $resumeId = $savedSession
   }
+} elseif ($wantResume -and -not $savedSession) {
+  Write-Host "Resume requested but no .session-id — starting FRESH session."
+} else {
+  Write-Host "Starting FRESH session (default). Continuity: docs/STATUS.md + OVERSEER_LOG.md"
+  Write-Host "  (Headless --resume is unreliable; pass -ResumeSession only if you need chat continuity.)"
 }
 
-# Never use bare `grok --continue` — in this cwd it can attach to an interactive
-# TUI session. Only resume an explicit healthy .session-id, else start fresh.
-if (-not $resumeId -and $Continue -and -not $useBootstrap) {
-  Write-Host "No healthy .session-id to resume — starting NEW session (not using grok --continue)."
-  $useBootstrap = $true
-}
-
+# Never use bare `grok --continue` — it can attach to an interactive TUI session.
 if (-not $PromptFile) {
-  if ($useBootstrap -or -not $resumeId) {
+  # Fresh or resume: cycle prompt reads STATUS and does the next milestone.
+  # bootstrap.txt only when explicitly requested (first-time / -Bootstrap).
+  if ($useBootstrapPrompt) {
     $PromptFile = Join-Path $PSScriptRoot "prompts\bootstrap.txt"
   } else {
     $PromptFile = Join-Path $PSScriptRoot "prompts\cycle.txt"
@@ -231,7 +236,7 @@ if ($resumeId) {
   $argsList.AddRange([string[]]@("--resume", $resumeId))
   Write-Host "Resuming session: $resumeId"
 } else {
-  Write-Host "Starting NEW session (bootstrap/fresh)"
+  Write-Host "New session (no --resume)"
 }
 
 Write-Host "=== Loose Cannon overseer cycle ==="
@@ -401,11 +406,11 @@ try {
       if ($silentFor -ge $StallTimeoutSeconds) {
         Write-Host ""
         Write-Host "STALL: no grok output for ${StallTimeoutSeconds}s (alive ${aliveFor}s)."
-        Write-Host "This usually means a bloated/corrupt session resume hang."
-        Write-Host "Force-killing. Next run will auto-bootstrap if you delete .session-id or re-run without -ForceResume."
+        Write-Host "Usually a hung --resume after session/load (CLI). Force-killing."
         Write-Host "Debug log: $debugFile"
         $stallKilled = $true
-        $global:OverseerStopRequested = $true
+        # Do NOT set OverseerStopRequested — loop should retry with a fresh session.
+        $global:OverseerStalled = $true
         Stop-GrokProcessTree -Process $proc
         break
       }
