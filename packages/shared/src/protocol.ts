@@ -123,6 +123,15 @@ export interface ShopState {
   shopName: string;
 }
 
+/** Crash Pad stash UI (safehouse storage — not looted on wipe) */
+export interface StashState {
+  cash: number;
+  weapons: WeaponId[];
+  armors: ArmorId[];
+  /** Cash carried on the street (looted on wipe) */
+  pocketCash: number;
+}
+
 /** Offer listed on the fixer job board */
 export interface MissionOffer {
   id: string;
@@ -246,6 +255,8 @@ export interface WorldSnapshot {
     districtName: string;
     /** True if current outdoor tile is unlocked for your rep */
     districtUnlocked: boolean;
+    /** Cash locked in Crash Pad stash (safe from wipe) */
+    stashCash: number;
   };
   /** City districts for map UI (rep unlocks) */
   districts: DistrictPublic[];
@@ -261,6 +272,8 @@ export interface WorldSnapshot {
   floors?: Array<{ x: number; y: number; type: TileType }>;
   dialogue: DialogueState | null;
   shop: ShopState | null;
+  /** Crash Pad stash panel when open */
+  stash: StashState | null;
   /** Fixer job board when open */
   jobBoard: JobBoardState | null;
   /** Active mission, if any */
@@ -294,6 +307,15 @@ export type ClientMessage =
   | { type: "shop.buyArmor"; armorId: ArmorId; unitId: string }
   | { type: "shop.buyUpgrade"; upgradeId: UpgradeId; unitId: string }
   | { type: "shop.close" }
+  /** Crash Pad stash (safehouse only) */
+  | { type: "stash.close" }
+  | { type: "stash.depositCash"; amount: number }
+  | { type: "stash.withdrawCash"; amount: number }
+  | { type: "stash.depositWeapon"; weaponId: WeaponId; unitId: string }
+  | { type: "stash.withdrawWeapon"; weaponId: WeaponId; unitId: string }
+  | { type: "stash.depositArmor"; armorId: ArmorId; unitId: string }
+  | { type: "stash.withdrawArmor"; armorId: ArmorId; unitId: string }
+  | { type: "stash.depositAll"; unitId: string }
   | { type: "jobBoard.accept"; missionId: string }
   | { type: "jobBoard.close" }
   | { type: "mission.abandon" }

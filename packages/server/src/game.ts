@@ -48,6 +48,7 @@ import {
   type MissionId,
   type MissionRuntime,
   type ShopState,
+  type StashState,
   type TutorialState,
   type TutorialStepId,
   type UnitPublic,
@@ -144,6 +145,8 @@ interface Posse {
   insideBuildingId: string | null;
   dialogue: DialogueState | null;
   shop: ShopState | null;
+  /** Crash Pad stash panel open */
+  stashOpen: boolean;
   jobBoard: JobBoardState | null;
   mission: PosseMission | null;
   /** First-session tutorial; null when finished or skipped */
@@ -156,15 +159,31 @@ interface Posse {
   respawnT?: number;
   /** Last posse that killed one of our members */
   lastKillerPosseId: string | null;
-  /** Gear banked from goons who died before a full wipe */
+  /** Gear banked from goons who died before a full wipe (street gear only) */
   fallenWeapons: Set<WeaponId>;
   fallenArmors: Set<ArmorId>;
   /** Prevent double-looting the same wipe */
   lootedThisWipe: boolean;
+  /**
+   * Crash Pad storage — never looted on wipe.
+   * Only pocket cash (posse.cash) and gear on units is at risk on the street.
+   */
+  stashCash: number;
+  stashWeapons: Set<WeaponId>;
+  stashArmors: Set<ArmorId>;
   /** Right-click attack-move: chase & fire until target dies or orders change */
   attackTargetId: string | null;
   /** last click-move destination label */
   moveLabel: string | null;
+}
+
+function emptyStashFields(): Pick<Posse, "stashOpen" | "stashCash" | "stashWeapons" | "stashArmors"> {
+  return {
+    stashOpen: false,
+    stashCash: 0,
+    stashWeapons: new Set(),
+    stashArmors: new Set(),
+  };
 }
 
 interface CharacterSession {
@@ -272,6 +291,7 @@ export class GameWorld {
         fallenWeapons: new Set(),
         fallenArmors: new Set(),
         lootedThisWipe: false,
+        ...emptyStashFields(),
         attackTargetId: null,
         moveLabel: null,
       });
@@ -363,6 +383,7 @@ export class GameWorld {
       fallenWeapons: new Set(),
       fallenArmors: new Set(),
       lootedThisWipe: false,
+      ...emptyStashFields(),
       attackTargetId: null,
       moveLabel: null,
     });
@@ -519,6 +540,7 @@ export class GameWorld {
       fallenWeapons: new Set(),
       fallenArmors: new Set(),
       lootedThisWipe: false,
+      ...emptyStashFields(),
       attackTargetId: null,
       moveLabel: null,
     };
@@ -672,6 +694,30 @@ export class GameWorld {
       case "shop.close":
         posse.shop = null;
         break;
+      case "stash.close":
+        posse.stashOpen = false;
+        break;
+      case "stash.depositCash":
+        this.cmdStashDepositCash(session, posse, msg.amount);
+        break;
+      case "stash.withdrawCash":
+        this.cmdStashWithdrawCash(session, posse, msg.amount);
+        break;
+      case "stash.depositWeapon":
+        this.cmdStashDepositWeapon(session, posse, msg.weaponId, msg.unitId);
+        break;
+      case "stash.withdrawWeapon":
+        this.cmdStashWithdrawWeapon(session, posse, msg.weaponId, msg.unitId);
+        break;
+      case "stash.depositArmor":
+        this.cmdStashDepositArmor(session, posse, msg.armorId, msg.unitId);
+        break;
+      case "stash.withdrawArmor":
+        this.cmdStashWithdrawArmor(session, posse, msg.armorId, msg.unitId);
+        break;
+      case "stash.depositAll":
+        this.cmdStashDepositAll(session, posse, msg.unitId);
+        break;
       case "jobBoard.accept":
         this.cmdJobBoardAccept(session, posse, msg.missionId);
         break;
@@ -691,6 +737,7 @@ export class GameWorld {
         posse.memorialOpen = true;
         posse.dialogue = null;
         posse.shop = null;
+        posse.stashOpen = false;
         posse.jobBoard = null;
         break;
       case "memorial.close":
@@ -2668,6 +2715,7 @@ export class GameWorld {
       fallenWeapons: new Set(),
       fallenArmors: new Set(),
       lootedThisWipe: false,
+      ...emptyStashFields(),
       attackTargetId: null,
       moveLabel: null,
       respawnT: undefined,
