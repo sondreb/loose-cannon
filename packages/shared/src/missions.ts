@@ -249,7 +249,10 @@ export const MISSION_ORDER: MissionId[] = [
   "rail_rats",
 ];
 
-export function listMissionOffers(): Array<{
+export function listMissionOffers(opts?: {
+  /** Mission ids already completed this session (Mode A in-memory) */
+  completedIds?: Iterable<string>;
+}): Array<{
   id: MissionId;
   title: string;
   blurb: string;
@@ -257,7 +260,8 @@ export function listMissionOffers(): Array<{
   rewardCash: number;
   rewardRep: number;
 }> {
-  return MISSION_ORDER.map((id) => {
+  const done = new Set(opts?.completedIds ?? []);
+  return MISSION_ORDER.filter((id) => !done.has(id)).map((id) => {
     const m = MISSIONS[id];
     return {
       id: m.id,

@@ -328,7 +328,19 @@ function handlePrimaryPointer(clientX: number, clientY: number, asAttack: boolea
     return;
   }
 
-  // Indoors: slightly larger pick so counters/bar NPCs beat the exit mat hitbox
+  // Indoors: check EXIT before units — posse tags/sprites were eating door clicks
+  if (s.you.insideBuildingId && !s.dialogue) {
+    const exitB = view.pickBuilding(clientX, clientY);
+    if (exitB) {
+      const ex = exitB.exitX ?? exitB.doorX;
+      const ey = exitB.exitY ?? exitB.doorY;
+      // No targetUnitId — server prefers leave when near the mat
+      clickInteractAt(ex + 0.5, ey + 0.5);
+      return;
+    }
+  }
+
+  // Indoors: slightly larger pick so counters/bar NPCs are easy to talk to
   const pickR = s.you.insideBuildingId ? 2.15 : 1.75;
   const unitId = view.pickUnit(clientX, clientY, pickR);
   if (unitId) {
@@ -362,14 +374,8 @@ function handlePrimaryPointer(clientX: number, clientY: number, asAttack: boolea
 
   const building = view.pickBuilding(clientX, clientY);
   if (building) {
-    if (s.you.insideBuildingId) {
-      // Only leave when the click is actually on the exit door (pickBuilding already filters)
-      const ex = building.exitX ?? building.doorX;
-      const ey = building.exitY ?? building.doorY;
-      clickInteractAt(ex + 0.5, ey + 0.5);
-    } else {
-      clickInteractAt(building.doorX + 0.5, building.doorY + 0.5);
-    }
+    // Outdoor enter door
+    clickInteractAt(building.doorX + 0.5, building.doorY + 0.5);
     return;
   }
 

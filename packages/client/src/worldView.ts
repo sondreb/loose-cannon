@@ -1484,7 +1484,7 @@ export class WorldView {
     }
   }
 
-  /** Room name, exit cue, and a soft frame so the interior feels like its own scene. */
+  /** Room name (top of room), exit cue — keep chrome out of the playable floor center. */
   private drawInteriorChrome(snap: WorldSnapshot): void {
     const b = this.getInteriorBuilding(snap);
     if (!b) return;
@@ -1492,8 +1492,8 @@ export class WorldView {
     if (!bounds) return;
 
     const cx = (bounds.x0 + bounds.x1 + 1) / 2;
-    const cy = (bounds.y0 + bounds.y1 + 1) / 2;
-    const mid = worldToScreen(cx, cy);
+    // Title at the north edge of the interior (not room center — that cluttered NPCs)
+    const top = worldToScreen(cx, bounds.y0 + 0.15);
     const isTwister = b.id === "club_neon" || /titty|twister/i.test(b.name);
 
     if (isTwister) {
@@ -1503,30 +1503,36 @@ export class WorldView {
     const title = new Text({
       text: b.name.toUpperCase(),
       style: {
-        fontSize: isTwister ? 18 : 16,
+        fontSize: isTwister ? 15 : 13,
         fill: isTwister ? 0xff60c0 : 0xffe0a0,
         fontWeight: "800",
         fontFamily: "system-ui, sans-serif",
+        dropShadow: {
+          color: 0x000000,
+          blur: 2,
+          distance: 1,
+          alpha: 0.85,
+        },
       },
     });
-    title.x = mid.sx - title.width / 2;
-    title.y = mid.sy - (isTwister ? 100 : 80);
+    title.x = top.sx - title.width / 2;
+    title.y = top.sy - (isTwister ? 42 : 36);
     this.overlayLayer.addChild(title);
     this.buildingLabelPool.push(title);
 
     const sub = new Text({
       text: isTwister
-        ? "Tip the talent · E near dancers · EXIT south"
-        : (b.blurb ?? "E near exit · click door to leave"),
+        ? "Tip talent · EXIT south"
+        : (b.blurb ?? "Click EXIT / walk to door · E to leave"),
       style: {
-        fontSize: 11,
+        fontSize: 10,
         fill: isTwister ? 0xffa0d0 : 0xa89880,
         fontWeight: "600",
         fontFamily: "system-ui, sans-serif",
       },
     });
-    sub.x = mid.sx - sub.width / 2;
-    sub.y = mid.sy - (isTwister ? 80 : 60);
+    sub.x = top.sx - sub.width / 2;
+    sub.y = title.y + title.height + 2;
     this.overlayLayer.addChild(sub);
     this.buildingLabelPool.push(sub);
 
@@ -1539,10 +1545,16 @@ export class WorldView {
           fill: 0x70d090,
           fontWeight: "800",
           fontFamily: "system-ui, sans-serif",
+          dropShadow: {
+            color: 0x000000,
+            blur: 2,
+            distance: 1,
+            alpha: 0.8,
+          },
         },
       });
       exit.x = door.sx - exit.width / 2;
-      exit.y = door.sy - 28;
+      exit.y = door.sy - 36;
       this.overlayLayer.addChild(exit);
       this.buildingLabelPool.push(exit);
     }
@@ -2801,12 +2813,12 @@ export class WorldView {
     if (!snap) return null;
     const w = this.screenToWorld(clientX, clientY);
 
-    // Indoors: click the EXIT door tile to leave (tight — don't steal NPC clicks)
+    // Indoors: click near EXIT door (generous — own-crew picks used to steal the click)
     if (snap.you.insideBuildingId) {
       const b = this.getInteriorBuilding(snap);
       if (b?.exitX != null && b.exitY != null) {
         const d = Math.hypot(b.exitX + 0.5 - w.x, b.exitY + 0.5 - w.y);
-        if (d < 1.25) return b;
+        if (d < 2.15) return b;
       }
       return null;
     }

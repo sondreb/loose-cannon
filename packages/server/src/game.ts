@@ -183,6 +183,8 @@ interface Posse {
   stashOpen: boolean;
   jobBoard: JobBoardState | null;
   mission: PosseMission | null;
+  /** Mission ids finished this session — dropped from Rita's board (Mode A memory) */
+  completedMissions: MissionId[];
   /** First-session tutorial; null when finished or skipped */
   tutorialStep: TutorialStepId | null;
   /** Fallen named goons */
@@ -349,6 +351,7 @@ export class GameWorld {
         shop: null,
         jobBoard: null,
         mission: null,
+        completedMissions: [],
         tutorialStep: null,
         memorials: [],
         memorialOpen: false,
@@ -447,6 +450,7 @@ export class GameWorld {
       shop: null,
       jobBoard: null,
       mission: null,
+      completedMissions: [],
       tutorialStep: null,
       memorials: [],
       memorialOpen: false,
@@ -644,6 +648,7 @@ export class GameWorld {
       shop: null,
       jobBoard: null,
       mission: null,
+      completedMissions: [],
       tutorialStep: "go_bar",
       memorials: [],
       memorialOpen: false,
@@ -2365,9 +2370,9 @@ export class GameWorld {
     // Always stop free/click movement when opening doors, talk, or shop
     this.cmdStop(posse);
 
-    // Exit mats use a tight radius. Interior spawn (e.g. Rusty Nail 5,5 → exit 5,7)
-    // is ~2.5 tiles from the door — full INTERACT_RANGE would false-exit on any E/click.
-    const EXIT_USE_RANGE = 1.35;
+    // Exit mat: wide enough for walk-then-E, but not room-wide (spawn must not false-exit).
+    // Rusty Nail spawn→exit ~2.55 — stay under that; click-to-exit walks onto the mat first.
+    const EXIT_USE_RANGE = 1.85;
     // Client walk-then-interact fires around INTERACT_RANGE+0.35; keep server at least as loose
     // so "click Rita from spawn" (~2.24 tiles) actually opens dialogue instead of empty fail.
     const NPC_TALK_RANGE = INTERACT_RANGE + 0.55;
@@ -2455,9 +2460,16 @@ export class GameWorld {
       }
     }
 
-    // 3) NPCs / shop counter — before exit so spawn-room talks don't boot you outside
+    // 3) NPCs — but if the player is on the exit mat without a click-target NPC, leave instead
+    // (click-to-exit walks onto the door and sends interact without targetUnitId)
+    const onExitMat =
+      !!posse.insideBuildingId &&
+      (() => {
+        const b = this.resolveBuildingDef(posse.insideBuildingId);
+        return !!b && exitDist(b.exitX, b.exitY) <= EXIT_USE_RANGE;
+      })();
     const npcPick = pickNpcInRange();
-    if (npcPick) {
+    if (npcPick && !(onExitMat && !targetUnitId)) {
       const u = npcPick.unit;
       const spawn = this.map.npcSpawns.find((n) => n.id === u.id);
       if (spawn?.role === "dealer") {
@@ -3356,7 +3368,7 @@ export class GameWorld {
         npcId: d.npcId,
         npcName: d.npcName,
         title: "Rita's Job Book",
-        offers: listMissionOffers(),
+        offers: listMissionOffers({ completedIds: posse.completedMissions }),
       };
       session.conn?.send({ type: "voice.play", lineId: "rita_job_open" });
       this.log(session, `${d.npcName} flips open a greasy notepad of contracts.`);
@@ -3410,6 +3422,10 @@ export class GameWorld {
     const def = MISSIONS[missionId as MissionId];
     if (!def) {
       this.log(session, "That contract fell off the book. Pick another.");
+      return;
+    }
+    if (posse.completedMissions.includes(def.id)) {
+      this.log(session, "You already pulled that job. Rita scratched it off the pad.");
       return;
     }
 
@@ -3546,6 +3562,7 @@ export class GameWorld {
       shop: null,
       jobBoard: null,
       mission: null,
+      completedMissions: [],
       tutorialStep: null,
       memorials: [],
       memorialOpen: false,
@@ -3855,6 +3872,9 @@ export class GameWorld {
     m.rewardGranted = true;
     posse.cash += def.rewardCash;
     posse.rep += def.rewardRep;
+    if (!posse.completedMissions.includes(def.id)) {
+      posse.completedMissions.push(def.id);
+    }
     const heatGain = def.instance || def.objectives.some((o) => o.kind === "kill_unit" || o.kind === "clear_hostiles")
       ? HEAT.missionCombat
       : HEAT.missionSoft;
