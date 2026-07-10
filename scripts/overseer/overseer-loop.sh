@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 # Continuous Loose Cannon overseer loop (Git Bash / WSL / Linux / macOS)
+#
+# Ctrl+C behavior:
+# - During idle sleep: stop immediately.
+# - During an active cycle: request stop after the cycle finishes (do not kill the run).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -14,6 +18,10 @@ PROMPT_BOOT="$(dirname "$0")/prompts/bootstrap.txt"
 PROMPT_CYCLE="$(dirname "$0")/prompts/cycle.txt"
 LOG_DIR="$(dirname "$0")/logs"
 mkdir -p "$LOG_DIR"
+
+CYCLE_RUNNING=0
+STOP_REQUESTED=0
+CHILD_PID=""
 
 usage() {
   echo "Usage: $0 [--yolo] [--sleep N] [--max-cycles N] [--max-turns N]"
@@ -36,6 +44,32 @@ if ! command -v grok >/dev/null 2>&1; then
   exit 1
 fi
 
+on_int() {
+  if [[ "$CYCLE_RUNNING" -eq 1 ]]; then
+    echo ""
+    echo "Ctrl+C noted — finishing this cycle (not killing the active run). Loop will stop afterward."
+    STOP_REQUESTED=1
+  else
+    echo ""
+    echo "Ctrl+C during idle — stopping now."
+    # If a background sleep is running, drop it.
+    if [[ -n "${SLEEP_PID:-}" ]] && kill -0 "$SLEEP_PID" 2>/dev/null; then
+      kill "$SLEEP_PID" 2>/dev/null || true
+    fi
+    exit 130
+  fi
+}
+trap on_int INT
+
+echo "Loose Cannon overseer loop"
+echo "  Yolo:         $YOLO"
+echo "  Sleep:        ${SLEEP}s"
+echo "  MaxCycles:    $(if [[ $MAX_CYCLES -eq 0 ]]; then echo unlimited; else echo "$MAX_CYCLES"; fi)"
+echo "  MaxTurns:     $MAX_TURNS"
+echo "  Ctrl+C idle:  stop immediately"
+echo "  Ctrl+C busy:  finish current cycle, then stop"
+echo ""
+
 n=0
 while true; do
   n=$((n + 1))
@@ -57,7 +91,7 @@ while true; do
     ARGS+=(--always-approve)
   fi
   if [[ -f "$SESSION_FILE" ]]; then
-    SID=$(tr -d '[:space:]' < "$SESSION_FILE")
+    SID=$(tr -d '[:space:]' <"$SESSION_FILE")
     if [[ -n "$SID" ]]; then
       ARGS+=(--resume "$SID")
     fi
@@ -65,10 +99,29 @@ while true; do
     ARGS+=(--continue)
   fi
 
+  CYCLE_RUNNING=1
   set +e
-  grok "${ARGS[@]}" >"$LOG" 2>"$LOG.err"
-  code=$?
+  # New session so Ctrl+C to this terminal does not deliver SIGINT to grok.
+  # Parent trap still runs (shell remains in the foreground process group via wait).
+  if command -v setsid >/dev/null 2>&1; then
+    setsid grok "${ARGS[@]}" >"$LOG" 2>"$LOG.err" &
+    CHILD_PID=$!
+    wait "$CHILD_PID"
+    code=$?
+  else
+    # Fallback: ignore INT in a subshell that runs grok in the foreground.
+    # (SIGINT may still reach grok on some platforms without setsid.)
+    (
+      trap '' INT
+      exec grok "${ARGS[@]}" >"$LOG" 2>"$LOG.err"
+    ) &
+    CHILD_PID=$!
+    wait "$CHILD_PID"
+    code=$?
+  fi
   set -e
+  CHILD_PID=""
+  CYCLE_RUNNING=0
 
   if command -v jq >/dev/null 2>&1; then
     sid=$(jq -r '.sessionId // empty' "$LOG" 2>/dev/null || true)
@@ -86,13 +139,31 @@ while true; do
 
   echo "Cycle $n finished with exit code $code"
 
+  if [[ "$STOP_REQUESTED" -eq 1 ]]; then
+    echo "Stop was requested during the cycle — exiting without starting another."
+    break
+  fi
+
   if [[ $MAX_CYCLES -gt 0 && $n -ge $MAX_CYCLES ]]; then
     echo "Reached max-cycles=$MAX_CYCLES. Stopping."
     break
   fi
 
-  echo "Sleeping ${SLEEP}s before next cycle..."
-  sleep "$SLEEP"
+  echo "Sleeping ${SLEEP}s before next cycle (Ctrl+C stops immediately)..."
+  set +e
+  sleep "$SLEEP" &
+  SLEEP_PID=$!
+  wait "$SLEEP_PID"
+  sleep_rc=$?
+  set -e
+  SLEEP_PID=""
+  # sleep interrupted or stop requested
+  if [[ "$STOP_REQUESTED" -eq 1 || $sleep_rc -ne 0 ]]; then
+    if [[ "$STOP_REQUESTED" -eq 1 ]]; then
+      break
+    fi
+    # Unexpected sleep failure — continue rather than wedging the loop.
+  fi
 done
 
 echo "Overseer loop ended after $n cycle(s)."

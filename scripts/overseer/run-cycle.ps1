@@ -96,7 +96,30 @@ $psi = @{
 }
 
 $proc = Start-Process @psi
-$proc.WaitForExit()
+
+# Poll so parent overseer-loop (with TreatControlCAsInput) can observe Ctrl+C
+# without killing this process. Standalone runs still get normal Ctrl+C behavior
+# from the OS when TreatControlCAsInput is off.
+$notifiedStop = $false
+while (-not $proc.HasExited) {
+  try {
+    while ([Console]::KeyAvailable) {
+      $key = [Console]::ReadKey($true)
+      $isCtrlC =
+        ($key.Key -eq [ConsoleKey]::C -and ($key.Modifiers -band [ConsoleModifiers]::Control)) -or
+        ($key.KeyChar -eq [char]3)
+      if ($isCtrlC -and -not $notifiedStop) {
+        $notifiedStop = $true
+        $global:OverseerStopRequested = $true
+        Write-Host ""
+        Write-Host "Ctrl+C noted — finishing this cycle (not killing the active run). Loop will stop afterward."
+      }
+    }
+  } catch {
+    # Non-console host
+  }
+  $null = $proc.WaitForExit(250)
+}
 $exit = $proc.ExitCode
 
 # Also tee a short preview

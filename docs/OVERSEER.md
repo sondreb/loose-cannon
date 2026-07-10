@@ -86,6 +86,13 @@ The loop:
 2. Continues the same session (`-Continue` after the first).
 3. Sleeps, then repeats until max cycles or you Ctrl+C.
 
+**Ctrl+C behavior**
+
+| When | Effect |
+|------|--------|
+| Idle sleep between cycles | Stops **immediately** |
+| Cycle currently running | Notes the request, **lets the cycle finish**, then exits (does not kill the active `grok` run) |
+
 Bash equivalent: `scripts/overseer/overseer-loop.sh` (Git Bash / WSL / Linux / macOS).
 
 ### Run in background (Windows)
