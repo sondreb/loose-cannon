@@ -255,9 +255,23 @@ let pendingInteract: { x: number; y: number; targetUnitId?: string } | null = nu
 
 /** Mobile: next map tap is attack-move instead of walk */
 let mobileAttackMode = false;
-let touchStart: { x: number; y: number; t: number; id: number } | null = null;
-const LONG_PRESS_MS = 420;
-const TAP_SLOP_PX = 18;
+let touchStart: {
+  x: number;
+  y: number;
+  t: number;
+  id: number;
+  cancelled: boolean;
+  longFired: boolean;
+} | null = null;
+let longPressTimer: number | null = null;
+let longPressRingTimer: number | null = null;
+let longPressRing: HTMLDivElement | null = null;
+const LONG_PRESS_MS = 380;
+const LONG_PRESS_RING_DELAY_MS = 90;
+/** Fat-finger tolerance — slightly larger than desktop click */
+const TAP_SLOP_PX = 22;
+/** Event log pinned open (tap on mobile / click desktop) */
+let eventLogPinned = false;
 
 function isCoarsePointer(): boolean {
   return window.matchMedia("(pointer: coarse), (max-width: 900px)").matches;
@@ -416,15 +430,84 @@ function handlePrimaryPointer(clientX: number, clientY: number, asAttack: boolea
   socket.send({ type: "intent.move", x: w.x, y: w.y });
 }
 
-const EVENT_LINE_FADE_MS = 10000;
-const EVENT_PANEL_IDLE_MS = 8000;
+const EVENT_LINE_FADE_MS = 12000;
+const EVENT_PANEL_IDLE_MS = 10000;
+const EVENT_LOG_MAX_LINES = 10;
 let eventPanelFadeTimer: number | null = null;
 
+function classifyEventLine(text: string): string {
+  const t = text.toLowerCase();
+  if (
+    t.includes("hit ") ||
+    t.includes("miss") ||
+    t.includes("kill") ||
+    t.includes("down") ||
+    t.includes("wipe") ||
+    t.includes("shot") ||
+    t.includes("brick") ||
+    t.includes("blocked") ||
+    t.includes("aggro") ||
+    t.includes("attack mode")
+  ) {
+    return "combat";
+  }
+  if (
+    t.includes("contract") ||
+    t.includes("job ") ||
+    t.includes("mission") ||
+    t.includes("extract") ||
+    t.includes("objective") ||
+    t.includes("tutorial")
+  ) {
+    return "mission";
+  }
+  if (
+    t.includes("$") ||
+    t.includes("cash") ||
+    t.includes("loot") ||
+    t.includes("bought") ||
+    t.includes("paid") ||
+    t.includes("liberated") ||
+    t.includes("shook") ||
+    t.includes("rep")
+  ) {
+    return "cash";
+  }
+  if (t.includes("entered") || t.includes("left ") || t.includes("door") || t.includes("exit")) {
+    return "door";
+  }
+  if (t.includes("disconnect") || t.includes("connect") || t.includes("realm") || t.includes("invite")) {
+    return "system";
+  }
+  return "info";
+}
+
+function setEventLogPinned(pinned: boolean): void {
+  eventLogPinned = pinned;
+  eventLog.classList.toggle("pinned", pinned);
+  if (pinned) {
+    eventLog.classList.add("visible");
+    eventLog.classList.remove("faded");
+    if (eventPanelFadeTimer != null) {
+      window.clearTimeout(eventPanelFadeTimer);
+      eventPanelFadeTimer = null;
+    }
+  } else {
+    bumpEventLogVisible();
+  }
+}
+
 function bumpEventLogVisible(): void {
+  if (eventLogPinned) {
+    eventLog.classList.add("visible");
+    eventLog.classList.remove("faded");
+    return;
+  }
   eventLog.classList.add("visible");
   eventLog.classList.remove("faded");
   if (eventPanelFadeTimer != null) window.clearTimeout(eventPanelFadeTimer);
   eventPanelFadeTimer = window.setTimeout(() => {
+    if (eventLogPinned) return;
     if (!eventLog.matches(":hover")) {
       eventLog.classList.add("faded");
       eventLog.classList.remove("visible");
@@ -435,9 +518,15 @@ function bumpEventLogVisible(): void {
 function pushEvent(text: string): void {
   const d = document.createElement("div");
   d.textContent = text;
-  d.className = "event-line";
+  const kind = classifyEventLine(text);
+  d.className = `event-line kind-${kind}`;
+  d.setAttribute("data-kind", kind);
   eventLog.appendChild(d);
-  while (eventLog.children.length > 8) eventLog.removeChild(eventLog.firstChild!);
+  while (eventLog.children.length > EVENT_LOG_MAX_LINES) {
+    eventLog.removeChild(eventLog.firstChild!);
+  }
+  // Keep newest lines in view when overflowing
+  eventLog.scrollTop = eventLog.scrollHeight;
   bumpEventLogVisible();
   window.setTimeout(() => {
     d.classList.add("fade-out");
@@ -454,13 +543,64 @@ function pushEvent(text: string): void {
   // hit/miss/death handled by combat FX to avoid double-playing with VFX path
 }
 
-/** How long combat/loot toasts stay readable (ms). Readable but not sticky. */
+/** How long combat/loot toasts stay readable (ms). Long enough to read mid-fight. */
 function notifyHoldMs(kind: string, upgrade = false): number {
-  if (kind === "killed") return 6500;
-  if (kind === "downed") return 4800;
-  if (kind === "loot") return upgrade ? 5500 : 4200;
-  if (kind === "mission") return 4500;
-  return 3800;
+  if (kind === "killed") return 11000;
+  if (kind === "downed") return 8000;
+  if (kind === "loot") return upgrade ? 9000 : 7000;
+  if (kind === "mission") return 7500;
+  return 4500;
+}
+
+function ensureLongPressRing(): HTMLDivElement {
+  if (longPressRing) return longPressRing;
+  const el = document.createElement("div");
+  el.id = "longPressRing";
+  el.className = "long-press-ring hidden";
+  el.setAttribute("aria-hidden", "true");
+  const game = document.getElementById("game");
+  (game ?? document.body).appendChild(el);
+  longPressRing = el;
+  return el;
+}
+
+function showLongPressRing(clientX: number, clientY: number): void {
+  const el = ensureLongPressRing();
+  const game = document.getElementById("game");
+  const rect = game?.getBoundingClientRect();
+  const x = rect ? clientX - rect.left : clientX;
+  const y = rect ? clientY - rect.top : clientY;
+  el.style.left = `${x}px`;
+  el.style.top = `${y}px`;
+  el.classList.remove("hidden", "armed");
+  // restart CSS animation
+  el.style.animation = "none";
+  void el.offsetWidth;
+  el.style.animation = "";
+  el.classList.add("charging");
+}
+
+function armLongPressRing(): void {
+  longPressRing?.classList.add("armed");
+  longPressRing?.classList.remove("charging");
+}
+
+function hideLongPressRing(): void {
+  if (!longPressRing) return;
+  longPressRing.classList.add("hidden");
+  longPressRing.classList.remove("charging", "armed");
+}
+
+function clearLongPressTimer(): void {
+  if (longPressTimer != null) {
+    window.clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+  if (longPressRingTimer != null) {
+    window.clearTimeout(longPressRingTimer);
+    longPressRingTimer = null;
+  }
+  hideLongPressRing();
 }
 
 function showNotify(msg: Extract<ServerMessage, { type: "notify" }>): void {
@@ -2310,10 +2450,33 @@ function bindInput(): void {
     "touchstart",
     (e) => {
       lastTouchAt = performance.now();
-      if (e.touches.length !== 1) return;
+      clearLongPressTimer();
+      if (e.touches.length !== 1) {
+        touchStart = null;
+        return;
+      }
       const t = e.touches[0]!;
-      touchStart = { x: t.clientX, y: t.clientY, t: performance.now(), id: t.identifier };
+      touchStart = {
+        x: t.clientX,
+        y: t.clientY,
+        t: performance.now(),
+        id: t.identifier,
+        cancelled: false,
+        longFired: false,
+      };
       if (view) view.updateHover(t.clientX, t.clientY);
+      // Delay ring so quick taps don't flash; fire attack when hold completes
+      longPressRingTimer = window.setTimeout(() => {
+        if (!touchStart || touchStart.cancelled || touchStart.longFired) return;
+        showLongPressRing(touchStart.x, touchStart.y);
+      }, LONG_PRESS_RING_DELAY_MS);
+      longPressTimer = window.setTimeout(() => {
+        if (!touchStart || touchStart.cancelled || touchStart.longFired) return;
+        touchStart.longFired = true;
+        armLongPressRing();
+        handlePrimaryPointer(touchStart.x, touchStart.y, true);
+        window.setTimeout(() => hideLongPressRing(), 140);
+      }, LONG_PRESS_MS);
     },
     { passive: true },
   );
@@ -2325,8 +2488,11 @@ function bindInput(): void {
       const t = e.touches[0]!;
       const dx = t.clientX - touchStart.x;
       const dy = t.clientY - touchStart.y;
-      if (Math.hypot(dx, dy) > TAP_SLOP_PX * 2) {
-        // Drag cancel long-press intent; still allow release as move if short drag
+      const dist = Math.hypot(dx, dy);
+      // Drag cancels long-press attack; still allow release as move if short drag
+      if (dist > TAP_SLOP_PX) {
+        touchStart.cancelled = true;
+        clearLongPressTimer();
       }
     },
     { passive: true },
@@ -2336,19 +2502,28 @@ function bindInput(): void {
     "touchend",
     (e) => {
       if (!touchStart) return;
+      const start = touchStart;
       const t =
-        Array.from(e.changedTouches).find((c) => c.identifier === touchStart!.id) ??
+        Array.from(e.changedTouches).find((c) => c.identifier === start.id) ??
         e.changedTouches[0];
+      clearLongPressTimer();
       if (!t) {
         touchStart = null;
         return;
       }
       e.preventDefault();
-      const dt = performance.now() - touchStart.t;
-      const dist = Math.hypot(t.clientX - touchStart.x, t.clientY - touchStart.y);
-      const longPress = dt >= LONG_PRESS_MS && dist < TAP_SLOP_PX * 1.5;
-      if (dist < TAP_SLOP_PX * 2.5) {
-        handlePrimaryPointer(t.clientX, t.clientY, longPress);
+      const dist = Math.hypot(t.clientX - start.x, t.clientY - start.y);
+      // Long-press already fired on timer — don't also walk/move on release
+      if (start.longFired) {
+        touchStart = null;
+        return;
+      }
+      // Short tap or slight drag still counts as move / interact
+      if (!start.cancelled && dist < TAP_SLOP_PX * 2.5) {
+        handlePrimaryPointer(t.clientX, t.clientY, false);
+      } else if (dist < TAP_SLOP_PX * 1.2) {
+        // Cancelled mid-hold with tiny motion — still treat as tap
+        handlePrimaryPointer(t.clientX, t.clientY, false);
       }
       touchStart = null;
     },
@@ -2356,6 +2531,7 @@ function bindInput(): void {
   );
 
   canvas.addEventListener("touchcancel", () => {
+    clearLongPressTimer();
     touchStart = null;
   });
 
@@ -2934,20 +3110,32 @@ try {
   /* ignore */
 }
 
-// Event log: show on hover, fade when idle
+// Event log: show on hover, fade when idle; click/tap toggles pin (readable mid-fight)
+let lastEventLogToggleAt = 0;
+function toggleEventLogPin(): void {
+  const now = performance.now();
+  if (now - lastEventLogToggleAt < 450) return; // ignore synthetic click after touch
+  lastEventLogToggleAt = now;
+  setEventLogPinned(!eventLogPinned);
+}
 eventLog.addEventListener("mouseenter", () => {
   eventLog.classList.add("visible");
   eventLog.classList.remove("faded");
   if (eventPanelFadeTimer != null) window.clearTimeout(eventPanelFadeTimer);
 });
 eventLog.addEventListener("mouseleave", () => {
-  bumpEventLogVisible();
+  if (!eventLogPinned) bumpEventLogVisible();
 });
-// Touch: brief tap on log region keeps it visible
+eventLog.addEventListener("click", (e) => {
+  e.stopPropagation();
+  toggleEventLogPin();
+});
+// Touch: pin open so the log stays readable without hover
 eventLog.addEventListener(
-  "touchstart",
-  () => {
-    bumpEventLogVisible();
+  "touchend",
+  (e) => {
+    e.stopPropagation();
+    toggleEventLogPin();
   },
   { passive: true },
 );

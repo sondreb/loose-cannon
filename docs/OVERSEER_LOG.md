@@ -19,6 +19,18 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-11 — cycle 15 (M6 HUD/event-log + mobile touch polish)
+- Focus: Event-log / HUD readability + mobile move/fire reliability
+- Done:
+  - Event log: kind-colored lines (combat/cash/mission/door/system), larger type, ~12s line life, pin toggle (tap/click)
+  - Toasts restored to long readable holds (wipe ~11s / downed ~8s / loot 7–9s / mission ~7.5s); mobile left-stack vs log on right
+  - Objective + mission HUD contrast pass
+  - Touch: long-press charge ring (delayed so taps don’t flash), attack fires on hold complete, drag cancels, larger TAP_SLOP
+  - Mobile control buttons slightly larger; district map foot no longer claims soft-kick
+- Verify: `npm run build` OK; `npm run smoke` → SMOKE_OK
+- Next: **M5 ammo/balance note** or **M4 parties** (solo loop is solid within a realm)
+- Blocked: none
+
 ### 2026-07-10 — cycle 14 (M6 directional goons + walk bob)
 - Focus: Directional goon presentation + walk bob polish (no new sprite sheets)
 - Done:

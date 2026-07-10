@@ -1470,33 +1470,35 @@ img.photo {
   position: absolute;
   left: 300px;
   top: 12px;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(8, 8, 14, 0.78);
   /* blur is expensive — solid glass is enough for HUD */
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 100px;
   color: var(--accent);
-  padding: 0.35rem 0.85rem;
-  font-size: 0.75rem;
-  font-weight: 650;
+  padding: 0.38rem 0.9rem;
+  font-size: 0.78rem;
+  font-weight: 700;
   letter-spacing: 0.04em;
   z-index: 5;
-  max-width: min(420px, 36vw);
+  max-width: min(440px, 38vw);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   pointer-events: none;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
 }
 
 #objective.zone-safe {
-  color: #6fd090;
-  border-color: rgba(80, 200, 120, 0.45);
-  background: rgba(10, 28, 18, 0.72);
+  color: #7ee0a0;
+  border-color: rgba(80, 200, 120, 0.5);
+  background: rgba(8, 28, 16, 0.82);
 }
 
 #objective.zone-war {
-  color: #ff8068;
-  border-color: rgba(255, 80, 60, 0.5);
-  background: rgba(36, 10, 10, 0.72);
+  color: #ff9078;
+  border-color: rgba(255, 80, 60, 0.55);
+  background: rgba(40, 10, 10, 0.82);
 }
 
 /* Syndicate-style order strip + glass */
@@ -1561,26 +1563,32 @@ img.photo {
 
 #eventLog {
   position: absolute;
-  top: 40px;
+  top: 48px;
   right: 12px;
-  width: min(340px, calc(100% - 240px));
-  max-height: 40vh;
-  overflow: hidden;
-  font-size: 0.78rem;
-  color: #ddd;
-  text-shadow: 0 1px 2px #000;
+  width: min(360px, calc(100% - 300px));
+  max-height: min(42vh, 320px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  color: #f0ebe3;
+  text-shadow: 0 1px 3px #000, 0 0 1px #000;
   z-index: 5;
   pointer-events: auto;
   text-align: right;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 0.2rem;
+  gap: 0.28rem;
   opacity: 1;
   transition: opacity 0.55s ease;
   /* Invisible hit target so hover still works when faded */
   min-height: 2.5rem;
-  min-width: 8rem;
+  min-width: 9rem;
+  padding: 0.15rem 0;
+  scrollbar-width: thin;
+  scrollbar-color: #4a4030 transparent;
+  cursor: pointer;
 }
 
 #eventLog.faded {
@@ -1588,22 +1596,139 @@ img.photo {
 }
 
 #eventLog.faded:hover,
-#eventLog.visible {
+#eventLog.visible,
+#eventLog.pinned {
   opacity: 1;
 }
 
+#eventLog.pinned {
+  outline: 1px solid rgba(240, 160, 48, 0.35);
+  outline-offset: 3px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.18);
+  padding: 0.35rem 0.25rem;
+}
+
+#eventLog.pinned::before {
+  content: "PINNED · tap to hide";
+  display: block;
+  width: 100%;
+  text-align: right;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: #f0a030;
+  opacity: 0.85;
+  margin-bottom: 0.2rem;
+  pointer-events: none;
+}
+
 #eventLog .event-line {
-  opacity: 0.92;
-  background: #00000088;
-  padding: 0.15rem 0.45rem;
-  border-radius: 2px;
+  opacity: 0.96;
+  background: rgba(6, 6, 10, 0.78);
+  padding: 0.28rem 0.55rem 0.28rem 0.5rem;
+  border-radius: 4px;
   max-width: 100%;
+  border-left: 3px solid rgba(200, 200, 210, 0.45);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
   transition: opacity 0.55s ease, transform 0.55s ease;
+  text-align: left;
+  word-break: break-word;
+}
+
+#eventLog .event-line.kind-combat {
+  border-left-color: #ff6048;
+  background: rgba(36, 10, 10, 0.86);
+  color: #ffe8e0;
+}
+
+#eventLog .event-line.kind-cash {
+  border-left-color: #50d080;
+  background: rgba(8, 28, 16, 0.86);
+  color: #e0ffe8;
+}
+
+#eventLog .event-line.kind-mission {
+  border-left-color: #70b8ff;
+  background: rgba(8, 18, 36, 0.88);
+  color: #e0f0ff;
+}
+
+#eventLog .event-line.kind-door {
+  border-left-color: #c0a060;
+  background: rgba(24, 18, 8, 0.86);
+}
+
+#eventLog .event-line.kind-system {
+  border-left-color: #9090a8;
+  color: #c8c8d4;
+  font-style: italic;
+}
+
+#eventLog .event-line.kind-info {
+  border-left-color: #f0a03088;
 }
 
 #eventLog .event-line.fade-out {
   opacity: 0;
   transform: translateY(-4px);
+}
+
+/* Long-press attack charge ring (mobile) */
+.long-press-ring {
+  position: absolute;
+  width: 52px;
+  height: 52px;
+  margin-left: -26px;
+  margin-top: -26px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 96, 64, 0.35);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  z-index: 25;
+  background: conic-gradient(
+    from -90deg,
+    rgba(255, 96, 64, 0.85) 0deg,
+    rgba(255, 96, 64, 0.85) 0deg,
+    transparent 0deg
+  );
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+}
+
+.long-press-ring.hidden {
+  display: none !important;
+}
+
+.long-press-ring.charging {
+  animation: long-press-fill 0.38s linear forwards;
+}
+
+.long-press-ring.armed {
+  border-color: #ff6040;
+  background: rgba(255, 80, 50, 0.35);
+  -webkit-mask: none;
+  mask: none;
+  box-shadow: 0 0 16px rgba(255, 60, 40, 0.55);
+  transform: scale(1.08);
+  transition: transform 0.08s ease-out;
+}
+
+@keyframes long-press-fill {
+  from {
+    background: conic-gradient(
+      from -90deg,
+      rgba(255, 96, 64, 0.9) 0deg,
+      transparent 0deg
+    );
+  }
+  to {
+    background: conic-gradient(
+      from -90deg,
+      rgba(255, 96, 64, 0.95) 360deg,
+      transparent 360deg
+    );
+  }
 }
 
 /* Desktop: proximity chat bottom (left of help). Mobile → bottom bar. */
@@ -1756,13 +1881,13 @@ img.photo {
 .notify-toast {
   pointer-events: none;
   border-radius: 14px;
-  padding: 0.75rem 0.95rem 0.85rem;
-  background: linear-gradient(145deg, rgba(28, 22, 12, 0.94), rgba(12, 10, 16, 0.96));
+  padding: 0.8rem 1rem 0.9rem;
+  background: linear-gradient(145deg, rgba(28, 22, 12, 0.96), rgba(12, 10, 16, 0.98));
   border: 1px solid rgba(255, 204, 51, 0.55);
   box-shadow:
     0 0 0 1px rgba(255, 160, 40, 0.15),
-    0 16px 40px rgba(0, 0, 0, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    0 16px 40px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
   /* Default hold; JS sets --toast-hold per kind */
   --toast-hold: 3.5s;
   animation: toast-in 0.3s ease-out, toast-out 0.4s ease-in var(--toast-hold) forwards;
@@ -1821,11 +1946,12 @@ img.photo {
 }
 
 .notify-toast .nt-title {
-  font-size: 1.15rem;
+  font-size: 1.18rem;
   font-weight: 900;
   letter-spacing: 0.06em;
-  color: #fff6e0;
-  margin: 0 0 0.25rem;
+  color: #fff8e8;
+  margin: 0 0 0.28rem;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
 }
 
 .notify-toast.loot-upgrade .nt-title {
@@ -2663,13 +2789,13 @@ img.photo {
   transform: none;
   z-index: 8;
   width: min(340px, 34vw);
-  background: rgba(10, 14, 22, 0.78);
+  background: rgba(8, 12, 20, 0.88);
   backdrop-filter: blur(14px) saturate(140%);
   -webkit-backdrop-filter: blur(14px) saturate(140%);
-  border: 1px solid rgba(120, 180, 255, 0.28);
+  border: 1px solid rgba(120, 180, 255, 0.38);
   border-radius: 12px;
-  padding: 0.5rem 0.7rem 0.55rem;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+  padding: 0.55rem 0.75rem 0.6rem;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
   pointer-events: auto;
 }
 
@@ -2935,8 +3061,9 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
   list-style: none;
   margin: 0.35rem 0 0;
   padding: 0;
-  font-size: 0.8rem;
-  color: #d0c8bc;
+  font-size: 0.84rem;
+  line-height: 1.35;
+  color: #e4dcd0;
 }
 
 .mission-hud-objectives li.done {
@@ -3224,10 +3351,11 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
     left: auto;
     top: auto;
     bottom: auto;
-    max-width: min(92vw, 300px);
+    max-width: min(92vw, 320px);
     width: auto;
-    font-size: 0.62rem;
-    padding: 0.22rem 0.65rem;
+    font-size: 0.68rem;
+    font-weight: 750;
+    padding: 0.26rem 0.7rem;
     z-index: 9;
     order: 3;
     text-align: center;
@@ -3243,25 +3371,57 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
   }
 
   #eventLog {
-    top: calc(var(--mobile-hud-top, 5.5rem) + 3.6rem);
+    top: calc(var(--mobile-hud-top, 5.5rem) + 3.4rem);
     bottom: auto;
     right: 6px;
     left: auto;
-    width: min(46vw, 180px);
-    max-height: 16vh;
-    font-size: 0.62rem;
+    width: min(52vw, 210px);
+    max-height: min(22vh, 160px);
+    font-size: 0.72rem;
+    line-height: 1.3;
     z-index: 7;
   }
 
+  #eventLog .event-line {
+    padding: 0.22rem 0.4rem;
+    font-size: 0.7rem;
+  }
+
+  #eventLog.pinned {
+    width: min(88vw, 320px);
+    max-height: min(36vh, 240px);
+    font-size: 0.78rem;
+    z-index: 18;
+  }
+
+  #eventLog.pinned::before {
+    content: "PINNED · tap to hide";
+  }
+
   #notifyToasts {
-    top: calc(var(--mobile-hud-top, 5.5rem) + 3.8rem);
+    /* Prefer left stack so event log (right) stays readable */
+    top: calc(var(--mobile-hud-top, 5.5rem) + 3.6rem);
     bottom: auto;
-    left: auto;
-    right: 8px;
+    left: 8px;
+    right: auto;
     transform: none;
-    width: min(72vw, 280px);
+    width: min(68vw, 280px);
     min-width: 0;
     z-index: 20;
+    align-items: stretch;
+  }
+
+  .notify-toast {
+    padding: 0.65rem 0.8rem 0.7rem;
+  }
+
+  .notify-toast .nt-title {
+    font-size: 1.05rem;
+  }
+
+  .notify-toast .nt-sub {
+    font-size: 0.8rem;
+    color: #d8cbb8;
   }
 
   /* Chat: collapsed by default on phones; expands above the control bar */
@@ -3642,20 +3802,21 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.1rem;
-    min-width: 3.4rem;
-    min-height: 3.4rem;
-    padding: 0.35rem 0.55rem;
+    gap: 0.12rem;
+    min-width: 3.55rem;
+    min-height: 3.55rem;
+    padding: 0.4rem 0.55rem;
     border-radius: 14px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    background: rgba(16, 16, 22, 0.88);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(14, 14, 20, 0.92);
     color: #f2efe8;
     font-weight: 800;
-    font-size: 0.62rem;
+    font-size: 0.64rem;
     letter-spacing: 0.04em;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
     -webkit-user-select: none;
     user-select: none;
+    touch-action: manipulation;
   }
 
   #mobileControls .mob-btn .mob-ico {

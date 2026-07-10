@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-10 (M6 directional goons + walk bob)  
+Last updated: 2026-07-11 (M6 HUD/event-log + mobile touch polish)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -36,6 +36,8 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | **More missions (M6)** | **Done** | +4 jobs: still_not_guns, parking_tax, chop_shop_raid, rail_rats |
 | **Day/night + district light** | **Done** | ~6 min cycle; sky/overlay/neon/rain; district tints; HUD phase |
 | **Directional goons / walk bob** | **Done** | Iso screen flip; two-beat bob + lean; speed cadence; idle server facing |
+| **HUD / event-log readability** | **Done** | Kind-colored log lines; pin-to-read; stronger objective/toasts/mission HUD |
+| **Mobile touch polish** | **Done** | Long-press charge ring + fire on hold; drag cancel; larger slop; control hit targets |
 | Parties / co-op | Not started | M4 (within a realm) |
 | Automated overseer scaffolding | Done | AGENTS + scripts/overseer |
 
@@ -151,11 +153,20 @@ Rep still gates **shop stock** and some content; map shows HOT / recommended rep
 - Procedural fallback: leg stride, body/head lean, weapons aim along iso facing vector  
 - Still one art sheet per goon (no full 8-dir PNGs) — readable street motion without new assets  
 
+### HUD / event-log + mobile touch (live)
+
+- Event log: kind classes (combat / cash / mission / door / system) with left accent + stronger panels  
+- Lines linger ~12s; panel idle ~10s; tap/click **pins** log open (no hover needed on phones)  
+- Notify toasts: wipe ~11s, downed ~8s, loot ~7–9s, mission ~7.5s; mobile toasts left-stacked away from log  
+- Objective / mission HUD / toast titles higher contrast  
+- Touch: long-press charge ring → attack fires on hold complete; drag past slop cancels; TAP_SLOP 22px  
+- Mobile control buttons slightly larger hit targets; map foot copy no longer mentions soft-kick  
+
 ## Next for overseer (priority)
 
-1. **M6 presentation polish** — HUD/event-log readability, mobile touch polish  
-2. **M5 remainder** — ammo clarity / balance numbers note if combat still muddy  
-3. **M4 parties** after solo loop feels solid (scoped per realm)  
+1. **M5 remainder** — ammo clarity / balance numbers note if combat still muddy  
+2. **M4 parties** after solo loop feels solid (scoped per realm)  
+3. **M7 content** — third instanced mission, rival variety, optional music  
 4. **Never** Mode B (Postgres/auth/k8s) unless human asks  
 
 ## Known bugs / polish debt
