@@ -62,7 +62,8 @@ Flags:
 | `-Resume <id>` | Resume a specific session UUID (may hang) |
 | `-ForceResume` | Resume even if the session looks unhealthy (may hang) |
 | `-MaxTurns <n>` | Cap agent turns (default 80) |
-| `-StallTimeoutSeconds <n>` | Kill grok if no stdout for N seconds (default 90; `0` disables) |
+| `-StallTimeoutSeconds <n>` | Kill if **no stdout at all** for N seconds at startup (default 90) |
+| `-WorkingStallTimeoutSeconds <n>` | After first output, kill if no stdout **and** no debug-log activity for N seconds (default 1200). Prevents killing mid-`npm run smoke`. |
 | `-DryRun` | Print the command without running |
 
 **Default is a fresh Grok session every cycle.** Headless `--resume` often stalls after `session/load` with zero stdout (CLI bug). Continuity comes from `docs/STATUS.md` and `docs/OVERSEER_LOG.md`, not chat history. The loop retries after a stall instead of exiting.

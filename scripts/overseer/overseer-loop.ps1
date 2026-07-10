@@ -109,7 +109,7 @@ Write-Host "  Sleep:        ${SleepSeconds}s"
 Write-Host "  MaxCycles:    $(if ($MaxCycles -eq 0) { 'unlimited' } else { $MaxCycles })"
 Write-Host "  MaxTurns:     $MaxTurns"
 Write-Host "  Sessions:     FRESH every cycle (no --resume; STATUS.md is continuity)"
-Write-Host "  Runner:       run-cycle.ps1 (streaming logs, 90s stall → retry fresh)"
+Write-Host "  Runner:       run-cycle.ps1 (streaming logs; startup stall 90s / working 20m)"
 Write-Host "  Ctrl+C idle:  stop immediately"
 Write-Host "  Ctrl+C busy:  finish current cycle, then stop"
 Write-Host "  Ctrl+C x2:    force-kill active cycle and exit"
@@ -170,8 +170,9 @@ try {
     } elseif ($code -eq 124 -or $global:OverseerStalled) {
       $stallStreak++
       Write-Host "Stall ($stallStreak) — will retry with a FRESH session after sleep."
-      if ($stallStreak -ge 3) {
-        Write-Host "Three stalls in a row — stopping. Check grok auth, network, and debug logs."
+      # Higher threshold: false stalls used to kill productive loops mid-smoke.
+      if ($stallStreak -ge 5) {
+        Write-Host "Five stalls in a row — stopping. Check grok auth, network, and debug logs."
         $script:stopRequested = $true
       }
     } else {

@@ -25,8 +25,11 @@ param(
   [switch]$Bootstrap,
   [switch]$DryRun,
   [string]$PromptFile = "",
-  # Abort if grok produces no stdout for this many seconds (0 = disabled)
+  # Abort if no stdout before the agent produces any output (startup hang / bad resume)
   [int]$StallTimeoutSeconds = 90,
+  # After first stdout: allow long tools (build/smoke) with no stream events.
+  # 0 = disable working-phase stall entirely.
+  [int]$WorkingStallTimeoutSeconds = 1200,
   # Opt-in: reuse .session-id when healthy. Default is always a FRESH session —
   # headless --resume often hangs after session/load with zero stdout (CLI issue).
   # Continuity for the game is docs/STATUS.md + OVERSEER_LOG.md, not chat history.
@@ -245,7 +248,7 @@ Write-Host "Prompt:   $PromptFile"
 Write-Host "Log:      $logFile"
 Write-Host "Debug:    $debugFile"
 Write-Host "Command:  grok $($argsList -join ' ')"
-Write-Host "Stall:    $(if ($StallTimeoutSeconds -gt 0) { "${StallTimeoutSeconds}s no-output timeout" } else { 'disabled' })"
+Write-Host "Stall:    startup ${StallTimeoutSeconds}s / working ${WorkingStallTimeoutSeconds}s (debug activity resets timer)"
 Write-Host ""
 
 if ($DryRun) {
@@ -300,14 +303,19 @@ $errWriter.AutoFlush = $true
 
 $script:capturedSessionId = $null
 $script:lastOutputUtc = [DateTime]::UtcNow
+$script:lastActivityUtc = [DateTime]::UtcNow
+$script:gotStdout = $false
 $notifiedStop = $false
 $forceStopped = $false
 $stallKilled = $false
 $startedUtc = [DateTime]::UtcNow
+$script:debugFileSize = 0L
 
 function Write-OutLine {
   param([string]$line)
   $script:lastOutputUtc = [DateTime]::UtcNow
+  $script:lastActivityUtc = [DateTime]::UtcNow
+  $script:gotStdout = $true
   $logWriter.WriteLine($line)
   # Compact console: show type + short snippet for streaming-json
   try {
@@ -360,9 +368,25 @@ function Drain-Queues {
   }
   while ($errQueue.TryDequeue([ref]$line)) {
     $script:lastOutputUtc = [DateTime]::UtcNow
+    $script:lastActivityUtc = [DateTime]::UtcNow
     $errWriter.WriteLine($line)
     Write-Host "[stderr] $line"
   }
+}
+
+function Update-ActivityFromDebugLog {
+  # Long tools (npm run smoke/build) emit nothing on streaming-json stdout but
+  # keep writing the debug file — treat that as alive.
+  if (-not (Test-Path -LiteralPath $debugFile)) { return }
+  try {
+    $fi = Get-Item -LiteralPath $debugFile -ErrorAction Stop
+    if ($fi.Length -gt $script:debugFileSize) {
+      $script:debugFileSize = $fi.Length
+      $script:lastActivityUtc = [DateTime]::UtcNow
+    } elseif ($fi.LastWriteTimeUtc -gt $script:lastActivityUtc) {
+      $script:lastActivityUtc = $fi.LastWriteTimeUtc
+    }
+  } catch { }
 }
 
 try {
@@ -399,21 +423,29 @@ try {
 
     if ($forceStopped) { break }
 
-    # Stall detection: bloated resume hangs with silence
-    if ($StallTimeoutSeconds -gt 0) {
-      $silentFor = ([DateTime]::UtcNow - $script:lastOutputUtc).TotalSeconds
-      $aliveFor = ([DateTime]::UtcNow - $startedUtc).TotalSeconds
-      if ($silentFor -ge $StallTimeoutSeconds) {
-        Write-Host ""
-        Write-Host "STALL: no grok output for ${StallTimeoutSeconds}s (alive ${aliveFor}s)."
-        Write-Host "Usually a hung --resume after session/load (CLI). Force-killing."
-        Write-Host "Debug log: $debugFile"
-        $stallKilled = $true
-        # Do NOT set OverseerStopRequested — loop should retry with a fresh session.
-        $global:OverseerStalled = $true
-        Stop-GrokProcessTree -Process $proc
-        break
+    # Stall detection:
+    # - Before first stdout: short timeout (true hangs after session/load)
+    # - After first stdout: long timeout; debug-log growth counts as activity
+    #   so npm run smoke/build do not false-trigger.
+    Update-ActivityFromDebugLog
+    $aliveFor = ([DateTime]::UtcNow - $startedUtc).TotalSeconds
+    $quietFor = ([DateTime]::UtcNow - $script:lastActivityUtc).TotalSeconds
+    $limit = if ($script:gotStdout) { $WorkingStallTimeoutSeconds } else { $StallTimeoutSeconds }
+    if ($limit -gt 0 -and $quietFor -ge $limit) {
+      Write-Host ""
+      if ($script:gotStdout) {
+        Write-Host "STALL: no agent/debug activity for ${limit}s after work started (alive ${aliveFor}s)."
+        Write-Host "True hang mid-cycle — force-killing."
+      } else {
+        Write-Host "STALL: no grok stdout for ${limit}s at startup (alive ${aliveFor}s)."
+        Write-Host "Usually a hung session/load — force-killing."
       }
+      Write-Host "Debug log: $debugFile"
+      $stallKilled = $true
+      # Do NOT set OverseerStopRequested — loop should retry with a fresh session.
+      $global:OverseerStalled = $true
+      Stop-GrokProcessTree -Process $proc
+      break
     }
 
     Start-Sleep -Milliseconds 150
