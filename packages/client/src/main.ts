@@ -26,6 +26,7 @@ import {
   type WorldSnapshot,
 } from "@loose-cannon/shared";
 import { music, sfx } from "./audio.js";
+import { goonBackstory } from "./backstory.js";
 import { voice } from "./voice.js";
 import { statBonus, upgradeTier } from "./avatar.js";
 import { crewPortraitUrl, isFemaleUnit } from "./crewPortraits.js";
@@ -67,6 +68,11 @@ const crewArmorBar = $("crewArmorBar");
 const crewWeaponDetail = $("crewWeaponDetail");
 const crewArmorDetail = $("crewArmorDetail");
 const crewEditorStats = $("crewEditorStats");
+const goonProfileModal = $("goonProfileModal");
+const goonProfileClose = $("goonProfileClose");
+const goonProfileBody = $("goonProfileBody");
+const goonProfileSelect = $("goonProfileSelect");
+const goonProfileLoadout = $("goonProfileLoadout");
 const eventLog = $("eventLog");
 const chatLog = $("chatLog");
 const chatForm = $("chatForm") as HTMLFormElement;
@@ -636,10 +642,10 @@ function renderPosse(): void {
       (u.incapacitated ? " incapacitated" : "");
     card.innerHTML = `
       <div class="card-top">
-        <div class="portrait-wrap tier-${tier}">
+        <button type="button" class="portrait-wrap clickable tier-${tier}" data-profile-unit="${escapeAttr(u.id)}" title="Open profile" aria-label="Open profile for ${escapeAttr(u.name)}">
           <img class="portrait photo" src="${portrait}" alt="" width="48" height="48" draggable="false" />
           <span class="slot-num">${i + 1}</span>
-        </div>
+        </button>
         <div class="card-main">
           <div class="name-row">
             <span class="name">${escapeHtml(u.name)}</span>
@@ -669,8 +675,17 @@ function renderPosse(): void {
       </div>
       <div class="hp-label">${Math.round(u.health)}/${u.maxHealth} HP</div>
     `;
-    card.addEventListener("click", () => {
-      socket.send({ type: "intent.select", unitId: u.id });
+    card.addEventListener("click", (ev) => {
+      const profileBtn = (ev.target as HTMLElement | null)?.closest?.(
+        "[data-profile-unit]",
+      ) as HTMLElement | null;
+      if (profileBtn?.dataset.profileUnit) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        openGoonProfile(profileBtn.dataset.profileUnit);
+        return;
+      }
+      socket?.send({ type: "intent.select", unitId: u.id });
     });
     posseList.appendChild(card);
   });
@@ -785,6 +800,8 @@ function statBarHtml(
 
 let lastGearKey = "";
 let crewEditorOpen = false;
+/** Unit id for open posse profile dossier (null = closed) */
+let goonProfileUnitId: string | null = null;
 
 function renderGear(): void {
   const u = selectedUnit();
@@ -812,7 +829,7 @@ function renderGear(): void {
   const preview = combatPreviewLine(u.stats, isMelee);
   statsView.innerHTML = `
     <div class="gear-profile">
-      <img class="portrait photo lg" src="${portrait}" alt="" width="56" height="56" draggable="false" />
+      <img class="portrait photo lg clickable" src="${portrait}" alt="" width="56" height="56" draggable="false" data-profile-unit="${escapeAttr(u.id)}" title="Open profile" />
       <div>
         <div class="gear-name">${escapeHtml(u.name)}</div>
         <div class="badge-row">
@@ -820,7 +837,7 @@ function renderGear(): void {
           <span class="badge up-tier t${tier}">${tierLabel(tier)} ${tierStars(tier)}</span>
         </div>
         <div class="combat-preview gear" title="${escapeAttr(preview)}">${escapeHtml(preview)}</div>
-        <div class="muted tiny">Hover stats for effects · Train at Pawn-O-Matic / gym</div>
+        <div class="muted tiny">Click face for dossier · Train at Pawn-O-Matic / gym</div>
       </div>
     </div>
     <div class="stat-bars">
@@ -832,11 +849,115 @@ function renderGear(): void {
       ${statBarHtml("Max HP", u.stats.maxHealth, 200, 100, "maxHealth")}
     </div>
   `;
+  statsView.querySelector("[data-profile-unit]")?.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const id = (ev.currentTarget as HTMLElement).dataset.profileUnit;
+    if (id) openGoonProfile(id);
+  });
 
   fillWeaponBar(weaponBar, weaponDetail, u, false);
   fillArmorBar(armorBar, armorDetail, u, false);
 
   if (crewEditorOpen) renderCrewEditor();
+  if (goonProfileUnitId) renderGoonProfile();
+}
+
+function openGoonProfile(unitId: string): void {
+  goonProfileUnitId = unitId;
+  goonProfileModal.classList.remove("hidden");
+  sfx.play("ui");
+  renderGoonProfile();
+}
+
+function closeGoonProfile(): void {
+  goonProfileUnitId = null;
+  goonProfileModal.classList.add("hidden");
+}
+
+function renderGoonProfile(): void {
+  if (!snap || !goonProfileUnitId) return;
+  const u =
+    myUnits().find((x) => x.id === goonProfileUnitId) ??
+    snap.units.find((x) => x.id === goonProfileUnitId);
+  if (!u || u.posseId !== snap.you.posseId) {
+    closeGoonProfile();
+    return;
+  }
+
+  const boss = !!(u.isPlayerLeader || u.kind === "player");
+  const tier = upgradeTier(u.stats);
+  const role = streetRole(u.stats);
+  const isMelee = u.weapon === "pipe" || u.weapon === "switchblade";
+  const preview = combatPreviewLine(u.stats, isMelee);
+  const portrait = unitFaceUrl(u.id + u.name, {
+    gender: u.gender,
+    name: u.name,
+    leader: boss,
+    dead: !u.alive,
+  });
+  const story = goonBackstory({
+    id: u.id,
+    name: u.name,
+    gender: u.gender,
+    stats: u.stats,
+    boss,
+  });
+  const status = !u.alive
+    ? "RESPAWNING"
+    : u.incapacitated
+      ? "DOWNED — covered by crew"
+      : "ACTIVE ON THE STREETS";
+
+  goonProfileBody.innerHTML = `
+    <div class="goon-profile-hero">
+      <img class="portrait photo xxl" src="${portrait}" alt="${escapeAttr(u.name)}" width="128" height="128" draggable="false" />
+      <div class="goon-profile-id">
+        <h3 id="goonProfileName">${escapeHtml(u.name)}</h3>
+        <div class="goon-profile-meta badge-row">
+          ${boss ? '<span class="badge boss">BOSS</span>' : '<span class="badge">GOON</span>'}
+          <span class="badge role role-${role.id}">${escapeHtml(role.label)}</span>
+          <span class="badge up-tier t${tier}">${tierLabel(tier)} ${tierStars(tier)}</span>
+        </div>
+        <p class="goon-profile-status muted">${escapeHtml(status)}</p>
+        <p class="muted tiny">HP ${Math.round(u.health)}/${u.maxHealth}</p>
+        <p class="combat-preview gear" title="${escapeAttr(preview)}">${escapeHtml(preview)}</p>
+      </div>
+    </div>
+
+    <div class="goon-profile-section">
+      <h4>Backstory</h4>
+      <p class="goon-profile-backstory">${escapeHtml(story)}</p>
+    </div>
+
+    <div class="goon-profile-section">
+      <h4>Loadout</h4>
+      <div class="goon-profile-gear">
+        <div class="g-item">
+          <span class="g-label">WEAPON</span>
+          ${escapeHtml(WEAPONS[u.weapon].name)}
+        </div>
+        <div class="g-item">
+          <span class="g-label">ARMOR</span>
+          ${escapeHtml(ARMORS[u.armor].name)}
+        </div>
+      </div>
+    </div>
+
+    <div class="goon-profile-section">
+      <h4>Details · ${escapeHtml(role.label)}</h4>
+      <p class="stat-role-blurb muted tiny">${escapeHtml(role.blurb)}</p>
+      <div class="stat-bars wide">
+        ${statBarHtml("Aim", u.stats.aim, 20, 5, "aim")}
+        ${statBarHtml("Guts", u.stats.guts, 20, 5, "guts")}
+        ${statBarHtml("Muscle", u.stats.muscle, 20, 5, "muscle")}
+        ${statBarHtml("Brains", u.stats.brains, 20, 5, "brains")}
+        ${statBarHtml("Speed", u.stats.speed, 20, 5, "speed")}
+        ${statBarHtml("Max HP", u.stats.maxHealth, 200, 100, "maxHealth")}
+      </div>
+      <p class="muted tiny stat-legend">Aim=hit/crit · Guts=dodge+tough · Muscle=dmg/pierce · Speed=move+fire rate</p>
+    </div>
+  `;
 }
 
 function renderCrewEditor(): void {
@@ -882,7 +1003,7 @@ function renderCrewEditor(): void {
   const profileRole = streetRole(u.stats);
   crewEditorProfile.innerHTML = `
     <div class="crew-profile-hero">
-      <img class="portrait photo xl" src="${portrait}" alt="" width="72" height="72" draggable="false" />
+      <img class="portrait photo xl clickable" src="${portrait}" alt="" width="72" height="72" draggable="false" data-profile-unit="${escapeAttr(u.id)}" title="Open dossier" />
       <div>
         <h3>${escapeHtml(u.name)}</h3>
         <div class="badge-row">
@@ -890,10 +1011,15 @@ function renderCrewEditor(): void {
           <span class="badge up-tier t${tier}">${tierLabel(tier)} ${tierStars(tier)}</span>
         </div>
         <p class="muted">HP ${Math.round(u.health)}/${u.maxHealth} · ${u.alive ? "Active" : "Respawning"}</p>
-        <p class="muted tiny">${escapeHtml(profileRole.blurb)} Train stats at Pawn-O-Matic.</p>
+        <p class="muted tiny">${escapeHtml(profileRole.blurb)} · Click face for full dossier</p>
       </div>
     </div>
   `;
+  crewEditorProfile.querySelector("[data-profile-unit]")?.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    const id = (ev.currentTarget as HTMLElement).dataset.profileUnit;
+    if (id) openGoonProfile(id);
+  });
 
   fillWeaponBar(crewWeaponBar, crewWeaponDetail, u, true);
   fillArmorBar(crewArmorBar, crewArmorDetail, u, true);
@@ -2304,6 +2430,29 @@ function bindInput(): void {
   crewEditorClose.addEventListener("click", () => closeCrewEditor());
   crewEditorModal.addEventListener("click", (e) => {
     if (e.target === crewEditorModal) closeCrewEditor();
+  });
+
+  goonProfileClose.addEventListener("click", () => closeGoonProfile());
+  goonProfileModal.addEventListener("click", (e) => {
+    if (e.target === goonProfileModal) closeGoonProfile();
+  });
+  goonProfileSelect.addEventListener("click", () => {
+    if (!goonProfileUnitId || !socket) return;
+    socket.send({ type: "intent.select", unitId: goonProfileUnitId });
+    sfx.play("ui");
+    closeGoonProfile();
+  });
+  goonProfileLoadout.addEventListener("click", () => {
+    if (!goonProfileUnitId || !socket) return;
+    socket.send({ type: "intent.select", unitId: goonProfileUnitId });
+    closeGoonProfile();
+    openCrewEditor();
+  });
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && goonProfileUnitId) {
+      e.preventDefault();
+      closeGoonProfile();
+    }
   });
 }
 

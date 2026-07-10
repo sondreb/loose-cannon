@@ -119,6 +119,21 @@
           </div>
         </aside>
 
+        <!-- Posse member profile card (portrait click) -->
+        <div id="goonProfileModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="goonProfileName">
+          <div class="modal-card goon-profile-card">
+            <div class="goon-profile-header">
+              <h2>CREW DOSSIER</h2>
+              <button type="button" id="goonProfileClose" class="tiny-btn">CLOSE</button>
+            </div>
+            <div class="goon-profile-body" id="goonProfileBody"></div>
+            <div class="goon-profile-actions">
+              <button type="button" id="goonProfileSelect" class="primary-btn">SELECT</button>
+              <button type="button" id="goonProfileLoadout" class="tiny-btn">LOADOUT</button>
+            </div>
+          </div>
+        </div>
+
         <!-- Full-screen crew editor (Syndicate-style loadout) -->
         <div id="crewEditorModal" class="modal hidden">
           <div class="modal-card crew-editor-card">
