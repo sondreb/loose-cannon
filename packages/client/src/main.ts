@@ -1,5 +1,6 @@
 import {
   ARMORS,
+  INTERACT_RANGE,
   SHOP_ARMOR_ORDER,
   SHOP_UPGRADE_ORDER,
   SHOP_WEAPON_ORDER,
@@ -90,6 +91,9 @@ const keys = {
 let lastKeyMoveSent = 0;
 let keyMoving = false;
 const DIR_RESEND_MS = 50;
+
+/** After click-to-interact: walk here then send intent.interact */
+let pendingInteract: { x: number; y: number } | null = null;
 
 function pushEvent(text: string): void {
   const d = document.createElement("div");
@@ -712,6 +716,44 @@ function onSnapshot(s: WorldSnapshot): void {
   } else {
     respawnOverlay.classList.add("hidden");
   }
+  // Auto-complete click-to-interact when in range
+  if (pendingInteract && view) {
+    const d = view.distToLeader(pendingInteract.x, pendingInteract.y);
+    if (d <= INTERACT_RANGE + 0.35) {
+      pendingInteract = null;
+      fireInteract();
+    }
+  }
+}
+
+function fireInteract(): void {
+  if (!socket) return;
+  keys.up = keys.down = keys.left = keys.right = false;
+  keyMoving = false;
+  view?.clearLocalPrediction();
+  socket.send({ type: "intent.dir", dx: 0, dy: 0 });
+  socket.send({ type: "intent.stop" });
+  socket.send({ type: "intent.interact" });
+  sfx.play("ui");
+}
+
+/** Walk toward a world point, then interact when close enough. */
+function clickInteractAt(x: number, y: number): void {
+  if (!socket || !view || !snap) return;
+  keys.up = keys.down = keys.left = keys.right = false;
+  if (keyMoving) {
+    keyMoving = false;
+    socket.send({ type: "intent.dir", dx: 0, dy: 0 });
+  }
+  const d = view.distToLeader(x, y);
+  if (d <= INTERACT_RANGE + 0.2) {
+    pendingInteract = null;
+    fireInteract();
+    return;
+  }
+  pendingInteract = { x, y };
+  view.predictClickMove(x, y);
+  socket.send({ type: "intent.move", x, y });
 }
 
 /** Screen WASD/arrows → world-space free movement vector (isometric camera). */
@@ -853,19 +895,63 @@ async function startGame(): Promise<void> {
 function bindInput(): void {
   canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
+  canvas.addEventListener("mousemove", (e) => {
+    if (!view || !snap) return;
+    const cursor = view.updateHover(e.clientX, e.clientY);
+    canvas.style.cursor = cursor;
+  });
+
+  canvas.addEventListener(
+    "wheel",
+    (e) => {
+      if (!view) return;
+      e.preventDefault();
+      // Scroll up = zoom in
+      const dir = e.deltaY > 0 ? -1 : 1;
+      view.adjustZoom(dir * 0.08);
+    },
+    { passive: false },
+  );
+
   canvas.addEventListener("mousedown", (e) => {
     if (!snap) return;
     if (snap.you.respawnIn != null && snap.you.respawnIn > 0) return;
+    if (snap.dialogue || snap.shop) return;
     if (e.button === 0) {
+      // LMB: select posse / talk NPC / enter building / search prop / move
       const unitId = view.pickUnit(e.clientX, e.clientY);
       if (unitId) {
         const u = snap.units.find((x) => x.id === unitId);
         if (u && u.posseId === snap.you.posseId) {
+          pendingInteract = null;
           socket.send({ type: "intent.select", unitId });
           return;
         }
+        if (u && u.kind === "npc") {
+          // Click NPC → walk over and talk/recruit
+          clickInteractAt(u.x, u.y);
+          return;
+        }
+        // Click enemy: don't LMB-attack (RMB does that); just ignore or face them
+        if (u && u.posseId !== snap.you.posseId) {
+          return;
+        }
       }
-      // Click-to-move: predict instantly, then authorise on server
+
+      const building = view.pickBuilding(e.clientX, e.clientY);
+      if (building) {
+        clickInteractAt(building.doorX + 0.5, building.doorY + 0.5);
+        return;
+      }
+
+      const prop = view.pickProp(e.clientX, e.clientY);
+      if (prop) {
+        clickInteractAt(prop.x, prop.y);
+        return;
+      }
+
+      // Ground click-to-move: predict instantly + blue marker
+      pendingInteract = null;
       keys.up = keys.down = keys.left = keys.right = false;
       if (keyMoving) {
         keyMoving = false;
@@ -875,6 +961,7 @@ function bindInput(): void {
       view.predictClickMove(w.x, w.y);
       socket.send({ type: "intent.move", x: w.x, y: w.y });
     } else if (e.button === 2) {
+      pendingInteract = null;
       // RMB: attack-move — pick enemy with generous radius, or fire at ground point
       const w = view.screenToWorld(e.clientX, e.clientY);
       let best: { id: string; d: number } | null = null;
@@ -905,8 +992,20 @@ function bindInput(): void {
     }
     if (setKeyFromCode(e.code, true)) {
       e.preventDefault();
+      pendingInteract = null;
       // First frame of press: send + predict immediately (no 33ms wait)
       applyKeyboardSteer(true);
+      return;
+    }
+    // Zoom: +/= zoom in, - zoom out (scroll wheel also works). Slot 7 weapon via crew editor.
+    if (e.key === "+" || e.key === "=" || e.code === "NumpadAdd") {
+      e.preventDefault();
+      view?.adjustZoom(0.1);
+      return;
+    }
+    if (e.key === "-" || e.key === "_" || e.code === "NumpadSubtract") {
+      e.preventDefault();
+      view?.adjustZoom(-0.1);
       return;
     }
     if (e.key === "Enter") {
@@ -915,13 +1014,8 @@ function bindInput(): void {
       return;
     }
     if (e.key === "e" || e.key === "E") {
-      // Stop keyboard walk so interact doesn't keep sliding
-      keys.up = keys.down = keys.left = keys.right = false;
-      keyMoving = false;
-      view.clearLocalPrediction();
-      socket.send({ type: "intent.dir", dx: 0, dy: 0 });
-      socket.send({ type: "intent.stop" });
-      socket.send({ type: "intent.interact" });
+      pendingInteract = null;
+      fireInteract();
     }
     if (e.key === "Escape") {
       if (crewEditorOpen) {
@@ -940,7 +1034,7 @@ function bindInput(): void {
         Digit8: 3,
         Digit9: 4,
         Digit0: 5,
-        Minus: 6,
+        // Minus reserved for zoom out; equip via crew editor / click bar
       };
       if (e.code in wepKeys) {
         const u = selectedUnit();

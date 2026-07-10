@@ -1,4 +1,5 @@
 import {
+  INTERACT_RANGE,
   MOVE_SPEED,
   SAFE_Y_MAX,
   TILE_H,
@@ -9,7 +10,7 @@ import {
   type WorldSnapshot,
 } from "@loose-cannon/shared";
 import { Application, Container, Graphics, Text } from "pixi.js";
-import { screenToWorld, worldToScreen } from "./iso.js";
+import { screenToWorld as isoScreenToWorld, worldToScreen } from "./iso.js";
 
 function armorBulk(armor: string): number {
   if (armor === "plate") return 3;
@@ -40,6 +41,25 @@ function shade(color: number, factor: number): number {
   return (r << 16) | (g << 8) | b;
 }
 
+function lerpColor(a: number, b: number, t: number): number {
+  const ar = (a >> 16) & 0xff,
+    ag = (a >> 8) & 0xff,
+    ab = a & 0xff;
+  const br = (b >> 16) & 0xff,
+    bg = (b >> 8) & 0xff,
+    bb = b & 0xff;
+  const r = Math.round(ar + (br - ar) * t);
+  const g = Math.round(ag + (bg - ag) * t);
+  const bl = Math.round(ab + (bb - ab) * t);
+  return (r << 16) | (g << 8) | bl;
+}
+
+/** War-zone darkness increases south of the safe line */
+function warFactor(y: number): number {
+  if (y < SAFE_Y_MAX) return 0;
+  return Math.min(1, (y - SAFE_Y_MAX) / 28);
+}
+
 interface UnitVisual {
   x: number;
   y: number;
@@ -50,15 +70,25 @@ interface UnitVisual {
   moving: boolean;
   /** Local prediction active (WASD / click) */
   predicted: boolean;
+  /** "dir" = WASD, "click" = path to point */
+  predMode: "none" | "dir" | "click";
   predDirX: number;
   predDirY: number;
   lastServerX: number;
   lastServerY: number;
 }
 
+export type HoverTarget =
+  | { kind: "unit"; id: string; label: string; action: string }
+  | { kind: "building"; id: string; label: string; action: string }
+  | { kind: "prop"; id: string; label: string; action: string }
+  | null;
+
 const FLOOR_PX = 18;
-/** Snapshots can arrive at 30Hz; render every frame with prediction */
 const PRED_SPEED = MOVE_SPEED;
+const MIN_ZOOM = 0.65;
+const MAX_ZOOM = 1.4;
+const ZOOM_STEP = 0.08;
 
 export class WorldView {
   app: Application;
@@ -70,6 +100,7 @@ export class WorldView {
   private tileGfx = new Graphics();
   private buildingGfx = new Graphics();
   private entityGfx = new Graphics();
+  private hoverGfx = new Graphics();
   private fxGfx = new Graphics();
   private labels = new Container();
   private overlayLayer = new Container();
@@ -77,6 +108,8 @@ export class WorldView {
   private camY = 0;
   private followX = 0;
   private followY = 0;
+  private zoom = 1;
+  private zoomTarget = 1;
   private mapBuiltFor = "";
   private cachedFloors: WorldSnapshot["floors"] = [];
   private cachedBlocked: WorldSnapshot["blocked"] = [];
@@ -85,14 +118,16 @@ export class WorldView {
   private labelPool = new Map<string, Text>();
   private fx: Array<{ x: number; y: number; life: number; kind: "muzzle" | "blood" | "spark" }> =
     [];
+  private moveMarker: { x: number; y: number; life: number } | null = null;
+  private hover: HoverTarget = null;
   private time = 0;
   private localPosseId: string | null = null;
-  private entitiesDirty = true;
   private frame = 0;
-  /** Last camera cell used for map viewport redraw */
   private mapCamCellX = Number.NaN;
   private mapCamCellY = Number.NaN;
+  private mapZoomCell = -1;
   private mapRedrawPending = false;
+  private buildingLabelPool: Text[] = [];
 
   constructor(private canvas: HTMLCanvasElement) {
     this.app = new Application();
@@ -102,13 +137,11 @@ export class WorldView {
     await this.app.init({
       canvas: this.canvas,
       resizeTo: window,
-      background: 0x0a0c12,
+      background: 0x1a2018,
       antialias: false,
-      // Cap resolution for stable 60fps on integrated GPUs
       resolution: Math.min(window.devicePixelRatio || 1, 1),
       autoDensity: true,
       powerPreference: "high-performance",
-      // Prefer round pixels — cheaper than subpixel AA
       roundPixels: true,
     });
     this.app.stage.addChild(this.root);
@@ -121,7 +154,7 @@ export class WorldView {
     );
     this.mapLayer.addChild(this.tileGfx);
     this.buildingLayer.addChild(this.buildingGfx);
-    this.entityLayer.addChild(this.entityGfx, this.fxGfx, this.labels);
+    this.entityLayer.addChild(this.entityGfx, this.hoverGfx, this.fxGfx, this.labels);
     this.app.ticker.maxFPS = 60;
     this.app.ticker.minFPS = 30;
     this.app.ticker.add((ticker) => {
@@ -130,20 +163,39 @@ export class WorldView {
       this.frame++;
       this.tickFx(dt);
       this.stepPrediction(dt);
+      this.interpolateLocals(dt);
       this.interpolateRemotes(dt);
       this.updateCamera(dt);
-      // Viewport-culled ground only when camera cell changes (not every frame)
       if (this.mapRedrawPending && this.lastSnap) {
         this.drawMapViewport(this.lastSnap);
         this.mapRedrawPending = false;
       }
-      if (this.lastSnap) this.drawEntities(this.lastSnap);
-      this.entitiesDirty = false;
+      if (this.lastSnap) {
+        this.drawEntities(this.lastSnap);
+        this.drawHoverOverlay(this.lastSnap);
+      }
     });
   }
 
   getSnapshot(): WorldSnapshot | null {
     return this.lastSnap;
+  }
+
+  getZoom(): number {
+    return this.zoom;
+  }
+
+  /** Smooth zoom toward target (clamped). Positive = zoom in. */
+  adjustZoom(delta: number): void {
+    this.zoomTarget = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, this.zoomTarget + delta));
+  }
+
+  setZoom(z: number): void {
+    this.zoomTarget = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
+  }
+
+  getHover(): HoverTarget {
+    return this.hover;
   }
 
   /**
@@ -159,17 +211,19 @@ export class WorldView {
       if (!v) continue;
       if (len < 0.01) {
         v.predicted = false;
+        v.predMode = "none";
         v.predDirX = 0;
         v.predDirY = 0;
         v.moving = false;
       } else {
         v.predicted = true;
+        v.predMode = "dir";
         v.predDirX = dirX / len;
         v.predDirY = dirY / len;
         v.moving = true;
       }
     }
-    this.entitiesDirty = true;
+    this.moveMarker = null;
   }
 
   /** Instant click-to-move prediction toward world point */
@@ -180,23 +234,25 @@ export class WorldView {
       if (u.posseId !== this.localPosseId || !u.alive) continue;
       const v = this.visuals.get(u.id);
       if (!v) continue;
-      const ox = (i % 2 === 0 ? -0.45 : 0.45) * (u.isPlayerLeader || u.kind === "player" ? 0 : 1);
-      const oy = (i >= 2 ? 0.45 : -0.15) * (u.isPlayerLeader || u.kind === "player" ? 0 : 1);
+      const isLead = u.isPlayerLeader || u.kind === "player";
+      const ox = (i % 2 === 0 ? -0.45 : 0.45) * (isLead ? 0 : 1);
+      const oy = (i >= 2 ? 0.45 : -0.15) * (isLead ? 0 : 1);
       v.tx = wx + ox;
       v.ty = wy + oy;
       v.predicted = true;
+      v.predMode = "click";
       v.predDirX = 0;
       v.predDirY = 0;
-      // flag click-follow via non-zero distance
       v.moving = true;
       i++;
     }
-    this.entitiesDirty = true;
+    this.moveMarker = { x: wx, y: wy, life: 2.5 };
   }
 
   clearLocalPrediction(): void {
     for (const v of this.visuals.values()) {
       v.predicted = false;
+      v.predMode = "none";
       v.predDirX = 0;
       v.predDirY = 0;
     }
@@ -218,7 +274,6 @@ export class WorldView {
       ) ?? snap.units.find((u) => u.posseId === snap.you.posseId);
     if (me) {
       const v = this.visuals.get(me.id);
-      // Follow predicted position if predicting, else server
       this.followX = v?.predicted ? v.x : me.x;
       this.followY = v?.predicted ? v.y : me.y;
     }
@@ -237,6 +292,7 @@ export class WorldView {
           phase: Math.random() * 6,
           moving: false,
           predicted: false,
+          predMode: "none",
           predDirX: 0,
           predDirY: 0,
           lastServerX: u.x,
@@ -246,20 +302,31 @@ export class WorldView {
       } else {
         v.lastServerX = u.x;
         v.lastServerY = u.y;
-        // Soft-correct if not predicted, or if far from server (desync)
         if (!v.predicted) {
+          // server targets for interpolation (locals + remotes)
           v.tx = u.x;
           v.ty = u.y;
-        } else {
+        } else if (v.predMode === "dir") {
           const err = Math.hypot(v.x - u.x, v.y - u.y);
-          if (err > 2.2) {
-            // hard snap if badly desynced
+          if (err > 2.8) {
             v.x = u.x;
             v.y = u.y;
-          } else if (err > 0.08) {
-            // gentle reconcile so prediction stays glued to authority
-            v.x += (u.x - v.x) * 0.22;
-            v.y += (u.y - v.y) * 0.22;
+          } else if (err > 0.2) {
+            v.x += (u.x - v.x) * 0.1;
+            v.y += (u.y - v.y) * 0.1;
+          }
+        } else if (v.predMode === "click") {
+          // Never pull backward toward a lagging server position —
+          // only blend if authority is ahead toward the click target.
+          const myDist = Math.hypot(v.tx - v.x, v.ty - v.y);
+          const srvDist = Math.hypot(v.tx - u.x, v.ty - u.y);
+          const err = Math.hypot(v.x - u.x, v.y - u.y);
+          if (err > 3.5) {
+            v.x = u.x;
+            v.y = u.y;
+          } else if (srvDist + 0.12 < myDist) {
+            v.x += (u.x - v.x) * 0.28;
+            v.y += (u.y - v.y) * 0.28;
           }
         }
       }
@@ -271,6 +338,11 @@ export class WorldView {
         if (lab) {
           lab.destroy();
           this.labelPool.delete(id);
+        }
+        const gl = this.labelPool.get(id + ":g");
+        if (gl) {
+          gl.destroy();
+          this.labelPool.delete(id + ":g");
         }
       }
     }
@@ -284,7 +356,6 @@ export class WorldView {
       this.drawBuildings(snap);
       this.drawProps(snap.props ?? []);
     }
-    this.entitiesDirty = true;
   }
 
   private stepPrediction(dt: number): void {
@@ -295,19 +366,17 @@ export class WorldView {
       const v = this.visuals.get(u.id);
       if (!v || !v.predicted) continue;
 
-      if (v.predDirX !== 0 || v.predDirY !== 0) {
-        // Continuous WASD prediction
+      if (v.predMode === "dir" && (v.predDirX !== 0 || v.predDirY !== 0)) {
         v.x += v.predDirX * speed * dt;
         v.y += v.predDirY * speed * dt;
         v.facing = Math.round((Math.atan2(v.predDirY, v.predDirX) + Math.PI) / (Math.PI / 4)) % 8;
         v.phase += dt * 10;
         v.moving = true;
-      } else {
-        // Click-move prediction toward tx,ty
+      } else if (v.predMode === "click") {
         const dx = v.tx - v.x;
         const dy = v.ty - v.y;
         const d = Math.hypot(dx, dy);
-        if (d > 0.04) {
+        if (d > 0.05) {
           const step = Math.min(d, speed * dt);
           v.x += (dx / d) * step;
           v.y += (dy / d) * step;
@@ -315,14 +384,18 @@ export class WorldView {
           v.phase += dt * 10;
           v.moving = true;
         } else {
+          v.x = v.tx;
+          v.y = v.ty;
           v.moving = false;
-          // Keep predicted until server catches up, then release
+          // Hold prediction until server arrives nearby, then hand off to interpolation
           const err = Math.hypot(v.x - v.lastServerX, v.y - v.lastServerY);
-          if (err < 0.2) v.predicted = false;
+          if (err < 0.35) {
+            v.predicted = false;
+            v.predMode = "none";
+          }
         }
       }
     }
-    // Camera follows predicted leader
     const me = this.lastSnap.units.find(
       (u) => u.posseId === this.localPosseId && (u.isPlayerLeader || u.kind === "player"),
     );
@@ -335,11 +408,55 @@ export class WorldView {
     }
   }
 
+  /** Smooth local units when not actively predicting (prevents teleports). */
+  private interpolateLocals(dt: number): void {
+    if (!this.lastSnap || !this.localPosseId) return;
+    const k = 1 - Math.exp(-12 * dt);
+    for (const u of this.lastSnap.units) {
+      if (u.posseId !== this.localPosseId || !u.alive) continue;
+      const v = this.visuals.get(u.id);
+      if (!v || v.predicted) continue;
+      const dx = u.x - v.x;
+      const dy = u.y - v.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist > 0.001) {
+        // Cap step so we never jump a huge gap in one frame
+        const maxStep = PRED_SPEED * dt * 1.4;
+        if (dist > maxStep * 4) {
+          // still walk toward rather than teleport
+          v.x += (dx / dist) * maxStep * 2;
+          v.y += (dy / dist) * maxStep * 2;
+        } else {
+          v.x += dx * k;
+          v.y += dy * k;
+        }
+        v.moving = dist > 0.04;
+        if (dist > 0.03) {
+          v.facing = Math.round((Math.atan2(dy, dx) + Math.PI) / (Math.PI / 4)) % 8;
+          v.phase += dt * 9;
+        }
+      } else {
+        v.moving = false;
+      }
+    }
+    // Camera follows even when interpolating
+    const me = this.lastSnap.units.find(
+      (u) => u.posseId === this.localPosseId && (u.isPlayerLeader || u.kind === "player"),
+    );
+    if (me) {
+      const v = this.visuals.get(me.id);
+      if (v && !v.predicted) {
+        this.followX = v.x;
+        this.followY = v.y;
+      }
+    }
+  }
+
   private interpolateRemotes(dt: number): void {
     if (!this.lastSnap) return;
-    const k = 1 - Math.exp(-18 * dt); // snappy catch-up
+    const k = 1 - Math.exp(-16 * dt);
     for (const u of this.lastSnap.units) {
-      if (u.posseId === this.localPosseId) continue; // locals use prediction
+      if (u.posseId === this.localPosseId) continue;
       const v = this.visuals.get(u.id);
       if (!v) continue;
       const dx = u.x - v.x;
@@ -359,22 +476,20 @@ export class WorldView {
     }
   }
 
-  /**
-   * Draw only tiles near the camera. Skip plain grass outdoors (base fill covers
-   * that). Full 110×90 Graphics mesh tanks FPS — culling + grass skip keeps ~60.
-   */
   private drawMapViewport(snap: WorldSnapshot): void {
     const g = this.tileGfx;
     g.clear();
     const inside = snap.you.insideBuildingId;
     const { sx: camSx, sy: camSy } = worldToScreen(this.followX, this.followY);
-    const halfW = this.app.renderer.width * 0.65 + TILE_W * 10;
-    const halfH = this.app.renderer.height * 0.65 + TILE_H * 12;
+    const halfW = (this.app.renderer.width / this.zoom) * 0.65 + TILE_W * 10;
+    const halfH = (this.app.renderer.height / this.zoom) * 0.65 + TILE_H * 12;
 
-    // Solid outdoor ground under sparse tiles (avoids 9k grass polygons)
+    // Split base fill: PvE green-grey vs war scorched
     if (!inside) {
+      const wf = warFactor(this.followY);
+      const base = lerpColor(0x2e3a24, 0x2a1814, wf);
       g.rect(camSx - halfW, camSy - halfH, halfW * 2, halfH * 2);
-      g.fill({ color: 0x2e3a24 });
+      g.fill({ color: base });
     }
 
     const inView = (x: number, y: number): boolean => {
@@ -382,13 +497,21 @@ export class WorldView {
       return Math.abs(p.sx - camSx) < halfW && Math.abs(p.sy - camSy) < halfH;
     };
 
-    // Sparse grass sprinkle for texture
     if (!inside) {
       for (const f of this.cachedFloors ?? []) {
         if (f.type !== "grass") continue;
         if ((f.x + f.y * 3) % 7 !== 0) continue;
         if (!inView(f.x, f.y)) continue;
         this.drawGroundTile(g, f.x, f.y, "grass");
+      }
+      // War-zone scars
+      for (const f of this.cachedFloors ?? []) {
+        if (f.y < SAFE_Y_MAX) continue;
+        if ((f.x * 5 + f.y * 11) % 13 !== 0) continue;
+        if (!inView(f.x, f.y)) continue;
+        const p = worldToScreen(f.x + 0.5, f.y + 0.5);
+        g.circle(p.sx, p.sy + 4, 5 + ((f.x + f.y) % 4));
+        g.fill({ color: 0x1a100c, alpha: 0.45 });
       }
     }
 
@@ -413,11 +536,12 @@ export class WorldView {
     const { sx, sy } = worldToScreen(x, y);
     const hw = TILE_W / 2;
     const hh = TILE_H / 2;
+    const war = warFactor(y + 0.5);
 
     let color = 0x3d4a2c;
-    if (type === "road") color = 0x363640;
-    else if (type === "sidewalk") color = 0x6e685f;
-    else if (type === "parking") color = 0x32323c;
+    if (type === "road") color = lerpColor(0x3a3a46, 0x2a2220, war);
+    else if (type === "sidewalk") color = lerpColor(0x6e685f, 0x4a3a34, war);
+    else if (type === "parking") color = lerpColor(0x32323c, 0x282018, war);
     else if (type === "wall") color = 0x2c2622;
     else if (type === "floor") color = 0x4a4038;
     else if (type === "door") color = 0x9a6230;
@@ -426,14 +550,23 @@ export class WorldView {
     else if (type === "hospital") color = 0x405868;
     else if (type === "gym") color = 0x4a4030;
     else if (type === "void") color = 0x0c0c10;
-    else if (type === "grass") color = (x + y * 3) % 5 === 0 ? 0x42522e : 0x3a4a2a;
+    else if (type === "grass") {
+      const base = (x + y * 3) % 5 === 0 ? 0x42522e : 0x3a4a2a;
+      color = lerpColor(base, 0x2a2418, war);
+    }
 
     g.poly([sx, sy, sx + hw, sy + hh, sx, sy + TILE_H, sx - hw, sy + hh]);
     g.fill({ color });
 
     if (type === "road" && (x + y) % 3 === 0) {
+      // PvE: yellow lane marks; war: broken / blood-stained
+      const mark = war > 0.35 ? 0x6a3030 : 0xc9a227;
       g.rect(sx - 6, sy + 8, 12, 2);
-      g.fill({ color: 0xc9a227, alpha: 0.4 });
+      g.fill({ color: mark, alpha: 0.35 + war * 0.2 });
+    }
+    if (type === "sidewalk" && war > 0.2 && (x + y) % 4 === 0) {
+      g.rect(sx - 4, sy + 6, 8, 3);
+      g.fill({ color: 0x1a1210, alpha: 0.35 });
     }
     if (type === "door") {
       g.roundRect(sx - 5, sy + 2, 10, 12, 1);
@@ -444,10 +577,11 @@ export class WorldView {
   private drawBuildings(snap: WorldSnapshot): void {
     const g = this.buildingGfx;
     g.clear();
+    for (const t of this.buildingLabelPool) t.destroy();
+    this.buildingLabelPool = [];
     this.overlayLayer.removeChildren();
     if (snap.you.insideBuildingId) return;
 
-    // Safe/war zone divider visual
     this.drawZoneDivider(g);
 
     const buildings = [...snap.buildings]
@@ -455,14 +589,15 @@ export class WorldView {
       .sort((a, b) => a.ex0! + a.ey0! - (b.ex0! + b.ey0!));
 
     for (const b of buildings) {
-      this.drawIsoBuilding(g, b);
+      const midY = ((b.ey0 ?? 0) + (b.ey1 ?? 0)) / 2;
+      this.drawIsoBuilding(g, b, warFactor(midY));
       const { sx, sy } = worldToScreen((b.ex0! + b.ex1!) / 2, (b.ey0! + b.ey1!) / 2);
       const h = (b.stories ?? 2) * FLOOR_PX;
       const title = new Text({
         text: b.name,
         style: {
           fontSize: 11,
-          fill: 0xffe0a0,
+          fill: midY >= SAFE_Y_MAX ? 0xffb0a0 : 0xffe0a0,
           fontWeight: "700",
           fontFamily: "system-ui, sans-serif",
         },
@@ -470,11 +605,11 @@ export class WorldView {
       title.x = sx - title.width / 2;
       title.y = sy - h - 28;
       this.overlayLayer.addChild(title);
+      this.buildingLabelPool.push(title);
     }
   }
 
   private drawZoneDivider(g: Graphics): void {
-    // Visual line at SAFE_Y_MAX (PvE north / PvP south)
     const y = SAFE_Y_MAX;
     for (let x = 0; x < 110; x += 3) {
       const a = worldToScreen(x, y);
@@ -482,37 +617,48 @@ export class WorldView {
       g.moveTo(a.sx, a.sy);
       g.lineTo(b.sx, b.sy);
     }
-    g.stroke({ color: 0xff4040, width: 2, alpha: 0.4 });
-    // Fewer labels along the war line
+    g.stroke({ color: 0xff4040, width: 2.5, alpha: 0.45 });
+    // Barricade ticks
+    for (let x = 2; x < 110; x += 6) {
+      const p = worldToScreen(x, y);
+      g.rect(p.sx - 3, p.sy - 6, 6, 10);
+      g.fill({ color: 0x5a4030, alpha: 0.7 });
+    }
     for (const midX of [28, 55, 82]) {
       const mid = worldToScreen(midX, SAFE_Y_MAX - 0.8);
       const safe = new Text({
-        text: "▲ SAFE (PvE)",
+        text: "▲ SAFE DOWNTOWN",
         style: { fontSize: 11, fill: 0x60c080, fontWeight: "700" },
       });
       safe.x = mid.sx - safe.width / 2;
       safe.y = mid.sy - 28;
       this.overlayLayer.addChild(safe);
+      this.buildingLabelPool.push(safe);
       const war = new Text({
-        text: "▼ WAR (PvP)",
+        text: "▼ WARZONE",
         style: { fontSize: 11, fill: 0xff6060, fontWeight: "700" },
       });
       war.x = mid.sx - war.width / 2;
-      war.y = mid.sy + 6;
+      war.y = mid.sy + 8;
       this.overlayLayer.addChild(war);
+      this.buildingLabelPool.push(war);
     }
   }
 
-  private drawIsoBuilding(g: Graphics, b: BuildingPublic): void {
+  private drawIsoBuilding(g: Graphics, b: BuildingPublic, war: number): void {
     const x0 = b.ex0!;
     const y0 = b.ey0!;
     const x1 = b.ex1!;
     const y1 = b.ey1!;
     const stories = b.stories ?? 2;
     const h = stories * FLOOR_PX;
-    const wall = b.wallColor ?? 0x3a3430;
-    const roof = b.roofColor ?? 0x1a1816;
+    let wall = b.wallColor ?? 0x3a3430;
+    let roof = b.roofColor ?? 0x1a1816;
     const accent = b.accentColor ?? 0xc9a227;
+    if (war > 0.15) {
+      wall = lerpColor(wall, 0x2a2018, war);
+      roof = lerpColor(roof, 0x14100c, war);
+    }
 
     const c00 = worldToScreen(x0, y0);
     const c10 = worldToScreen(x1 + 1, y0);
@@ -533,29 +679,45 @@ export class WorldView {
     g.poly([c10.sx, c10.sy, c11.sx, c11.sy, t11.sx, t11.sy, t10.sx, t10.sy]);
     g.fill({ color: shade(wall, 0.8), alpha: 0.9 });
 
-    // Fewer windows for perf
     for (let f = 0; f < stories; f++) {
       const fy = 1 - (f + 0.55) / stories;
       for (let i = 1; i <= 2; i++) {
         const t = i / 3;
         const bx = c00.sx + (c10.sx - c00.sx) * t;
         const by = c00.sy + (c10.sy - c00.sy) * t;
-        const lit = (b.id.charCodeAt(0) + f + i) % 2 === 0;
+        const broken = war > 0.25 && (b.id.charCodeAt(0) + f + i) % 3 === 0;
+        const lit = !broken && (b.id.charCodeAt(0) + f + i) % 2 === 0;
         g.rect(bx - 3, by - h * fy - 4, 6, 5);
-        g.fill({ color: lit ? accent : 0x1a2030, alpha: lit ? 0.8 : 0.45 });
+        if (broken) {
+          g.fill({ color: 0x0a0808, alpha: 0.85 });
+          // jagged edge
+          g.rect(bx - 1, by - h * fy - 2, 3, 2);
+          g.fill({ color: 0x3a2010, alpha: 0.6 });
+        } else {
+          g.fill({ color: lit ? accent : 0x1a2030, alpha: lit ? 0.8 : 0.45 });
+        }
       }
     }
 
     g.poly([t00.sx, t00.sy, t10.sx, t10.sy, t11.sx, t11.sy, t01.sx, t01.sy]);
     g.fill({ color: roof });
-    g.poly([t00.sx, t00.sy, t10.sx, t10.sy, t11.sx, t11.sy, t01.sx, t01.sy]);
-    g.stroke({ color: shade(accent, 0.7), width: 1, alpha: 0.45 });
+    if (war > 0.4) {
+      // damaged roof corner
+      g.poly([t10.sx, t10.sy, t11.sx, t11.sy, (t10.sx + t11.sx) / 2, t10.sy + 6]);
+      g.fill({ color: 0x0c0a08, alpha: 0.7 });
+    } else {
+      g.poly([t00.sx, t00.sy, t10.sx, t10.sy, t11.sx, t11.sy, t01.sx, t01.sy]);
+      g.stroke({ color: shade(accent, 0.7), width: 1, alpha: 0.45 });
+    }
 
     const door = worldToScreen(b.doorX + 0.5, b.doorY + 0.5);
     g.roundRect(door.sx - 6, door.sy - 14, 12, 16, 1);
     g.fill({ color: 0x1a1008 });
     g.roundRect(door.sx - 5, door.sy - 13, 10, 14, 1);
     g.fill({ color: shade(wall, 0.45) });
+    // Door glow — interactive cue
+    g.circle(door.sx, door.sy - 4, 8);
+    g.stroke({ color: 0xffcc66, width: 1, alpha: 0.25 });
   }
 
   private drawProps(props: PropPublic[]): void {
@@ -563,12 +725,20 @@ export class WorldView {
     g.clear();
     for (const p of props) {
       const { sx, sy } = worldToScreen(p.x, p.y);
+      const war = warFactor(p.y);
       if (p.kind === "dumpster") {
         g.roundRect(sx - 14, sy - 12, 28, 18, 2);
-        g.fill({ color: 0x2a4a32 });
+        g.fill({ color: lerpColor(0x2a4a32, 0x2a3020, war) });
+        g.rect(sx - 12, sy - 14, 24, 4);
+        g.fill({ color: 0x1a2a1a, alpha: 0.8 });
       } else if (p.kind === "car") {
+        // wrecked in war zone
         g.roundRect(sx - 16, sy - 10, 32, 16, 4);
-        g.fill({ color: 0x5a2828 });
+        g.fill({ color: war > 0.3 ? 0x3a2820 : 0x5a2828 });
+        if (war > 0.3) {
+          g.rect(sx - 8, sy - 14, 10, 6);
+          g.fill({ color: 0x2a1810, alpha: 0.7 });
+        }
         g.circle(sx - 10, sy + 6, 3);
         g.fill({ color: 0x1a1a1a });
         g.circle(sx + 10, sy + 6, 3);
@@ -583,7 +753,7 @@ export class WorldView {
         g.fill({ color: 0x6a5030 });
       } else if (p.kind === "neon") {
         g.roundRect(sx - 12, sy - 18, 24, 10, 2);
-        g.fill({ color: 0xff40aa, alpha: 0.7 });
+        g.fill({ color: war > 0.4 ? 0x603040 : 0xff40aa, alpha: war > 0.4 ? 0.4 : 0.7 });
       } else if (p.kind === "hydrant") {
         g.roundRect(sx - 4, sy - 12, 8, 14, 1);
         g.fill({ color: 0xc04030 });
@@ -591,31 +761,37 @@ export class WorldView {
     }
   }
 
-  private getLabel(id: string, text: string, style: ConstructorParameters<typeof Text>[0] extends infer T ? T : never): Text {
-    let lab = this.labelPool.get(id);
-    if (!lab) {
-      lab = new Text({ text, style: { fontSize: 10, fill: 0xffffff, fontFamily: "system-ui,sans-serif" } });
-      this.labelPool.set(id, lab);
-      this.labels.addChild(lab);
-    }
-    if (lab.text !== text) lab.text = text;
-    return lab;
-  }
-
   private drawEntities(snap: WorldSnapshot): void {
     const g = this.entityGfx;
     g.clear();
 
-    // Hide unused labels
+    // Click move marker
+    if (this.moveMarker) {
+      this.moveMarker.life -= 1 / 60;
+      if (this.moveMarker.life <= 0) this.moveMarker = null;
+      else {
+        const { sx, sy } = worldToScreen(this.moveMarker.x, this.moveMarker.y);
+        const pulse = 0.55 + Math.sin(this.time * 8) * 0.25;
+        g.moveTo(sx, sy - 8);
+        g.lineTo(sx + 10, sy);
+        g.lineTo(sx, sy + 8);
+        g.lineTo(sx - 10, sy);
+        g.closePath();
+        g.stroke({ color: 0x80c0ff, width: 2, alpha: pulse });
+        g.circle(sx, sy, 3);
+        g.fill({ color: 0xa0d0ff, alpha: pulse });
+      }
+    }
+
     const used = new Set<string>();
     const { sx: camSx, sy: camSy } = worldToScreen(this.followX, this.followY);
-    const cullR = Math.max(this.app.renderer.width, this.app.renderer.height) * 0.75;
+    const cullR =
+      (Math.max(this.app.renderer.width, this.app.renderer.height) / this.zoom) * 0.8;
 
     const sorted = snap.units
       .filter((u) => {
         const v = this.visuals.get(u.id) ?? u;
         const p = worldToScreen(v.x, v.y);
-        // Always draw own posse (prediction) even if slightly off-screen
         if (u.posseId === snap.you.posseId) return true;
         return Math.hypot(p.sx - camSx, p.sy - camSy) < cullR;
       })
@@ -630,7 +806,7 @@ export class WorldView {
     }
 
     for (const [id, lab] of this.labelPool) {
-      if (!used.has(id) && !used.has(id + ":g")) {
+      if (!used.has(id) && !used.has(id + ":g") && id !== "hoverTip") {
         lab.visible = false;
       }
     }
@@ -644,6 +820,74 @@ export class WorldView {
     }
   }
 
+  private drawHoverOverlay(snap: WorldSnapshot): void {
+    const g = this.hoverGfx;
+    g.clear();
+    const tip = this.labelPool.get("hoverTip");
+    if (tip) tip.visible = false;
+    if (!this.hover) return;
+
+    const pulse = 0.55 + Math.sin(this.time * 6) * 0.3;
+
+    if (this.hover.kind === "unit") {
+      const u = snap.units.find((x) => x.id === this.hover!.id);
+      if (!u) return;
+      const v = this.visuals.get(u.id) ?? u;
+      const { sx, sy } = worldToScreen(v.x, v.y);
+      const mine = u.posseId === snap.you.posseId;
+      const isNpc = u.kind === "npc";
+      const col = mine ? 0xffe080 : isNpc ? 0x60d0ff : 0xff6060;
+      g.circle(sx, sy + 10, 16 + Math.sin(this.time * 5) * 2);
+      g.stroke({ color: col, width: 2, alpha: pulse });
+      g.circle(sx, sy + 10, 5);
+      g.fill({ color: col, alpha: 0.25 });
+      this.showHoverTip(sx, sy - 48, `${this.hover.label} — ${this.hover.action}`, col);
+    } else if (this.hover.kind === "building") {
+      const b = snap.buildings.find((x) => x.id === this.hover!.id);
+      if (!b || b.ex0 == null) return;
+      const door = worldToScreen(b.doorX + 0.5, b.doorY + 0.5);
+      g.circle(door.sx, door.sy - 4, 14 + Math.sin(this.time * 5) * 2);
+      g.stroke({ color: 0xffcc66, width: 2, alpha: pulse });
+      // Footprint outline (simple diamond of center)
+      const cx = (b.ex0! + b.ex1! + 1) / 2;
+      const cy = (b.ey0! + b.ey1! + 1) / 2;
+      const c = worldToScreen(cx, cy);
+      const h = (b.stories ?? 2) * FLOOR_PX;
+      g.rect(c.sx - 18, c.sy - h - 8, 36, 6);
+      g.fill({ color: 0xffcc66, alpha: 0.35 * pulse });
+      this.showHoverTip(door.sx, door.sy - 36, `${this.hover.label} — ${this.hover.action}`, 0xffcc66);
+    } else if (this.hover.kind === "prop") {
+      const p = snap.props.find((x) => x.id === this.hover!.id);
+      if (!p) return;
+      const { sx, sy } = worldToScreen(p.x, p.y);
+      g.circle(sx, sy, 14 + Math.sin(this.time * 5) * 2);
+      g.stroke({ color: 0xa0e080, width: 2, alpha: pulse });
+      this.showHoverTip(sx, sy - 28, `${this.hover.label} — ${this.hover.action}`, 0xa0e080);
+    }
+  }
+
+  private showHoverTip(sx: number, sy: number, text: string, color: number): void {
+    let lab = this.labelPool.get("hoverTip");
+    if (!lab) {
+      lab = new Text({
+        text,
+        style: {
+          fontSize: 12,
+          fill: 0xffffff,
+          fontWeight: "700",
+          fontFamily: "system-ui,sans-serif",
+        },
+      });
+      this.labelPool.set("hoverTip", lab);
+      this.labels.addChild(lab);
+    }
+    lab.visible = true;
+    lab.text = text;
+    lab.style.fill = color;
+    lab.x = sx - lab.width / 2;
+    lab.y = sy;
+  }
+
   private drawUnit(g: Graphics, u: UnitPublic, snap: WorldSnapshot, used: Set<string>): void {
     const vis = this.visuals.get(u.id) ?? {
       x: u.x,
@@ -654,6 +898,7 @@ export class WorldView {
       phase: 0,
       moving: false,
       predicted: false,
+      predMode: "none" as const,
       predDirX: 0,
       predDirY: 0,
       lastServerX: u.x,
@@ -669,6 +914,7 @@ export class WorldView {
     const mine = u.posseId === snap.you.posseId;
     const bulk = armorBulk(u.armor);
     const threat = threatPips(u);
+    const isNpc = u.kind === "npc";
 
     g.ellipse(sx, baseSy + 11, 10 + bulk, 4.5);
     g.fill({ color: 0x000000, alpha: 0.3 });
@@ -677,6 +923,17 @@ export class WorldView {
       g.ellipse(sx, baseSy + 4, 12, 6);
       g.fill({ color: 0x4a2020, alpha: 0.8 });
       return;
+    }
+
+    // Ambient interact ring for NPCs (subtle always-on cue)
+    if (isNpc && !mine) {
+      g.circle(sx, baseSy + 10, 13);
+      g.stroke({ color: 0x60b0e0, width: 1, alpha: 0.28 + Math.sin(this.time * 3 + u.x) * 0.08 });
+    }
+    // Hostile gang threat ring
+    if (!mine && !isNpc && (posse?.hostile || threat >= 2)) {
+      g.circle(sx, baseSy + 10, 14);
+      g.stroke({ color: 0xe04040, width: 1, alpha: 0.3 });
     }
 
     const leg = vis.moving ? Math.sin(vis.phase) * 2.5 : 0;
@@ -701,6 +958,10 @@ export class WorldView {
       g.roundRect(sx - bw / 2 + sway, sy - bh - 2, bw, bh, 2);
       g.stroke({ color: 0xffe080, width: 1 });
     }
+    if (isNpc) {
+      g.roundRect(sx - bw / 2 + sway, sy - bh - 2, bw, bh, 2);
+      g.stroke({ color: 0x70c8f0, width: 1, alpha: 0.55 });
+    }
     if (posse?.hostile && !mine) {
       g.circle(sx + bw / 2 + 2 + sway, sy - bh - 5, 3);
       g.fill({ color: 0xff3030 });
@@ -711,11 +972,11 @@ export class WorldView {
     }
 
     g.circle(sx + sway * 0.5, sy - bh - 5, 4.5);
-    g.fill({ color: u.kind === "npc" ? 0xd0b090 : 0xe8c8a0 });
+    g.fill({ color: isNpc ? 0xd0b090 : 0xe8c8a0 });
 
     this.drawWeapon(g, sx + sway, sy - bh / 2 - 2, u.weapon, mine, vis.facing);
 
-    if (threat > 0) {
+    if (threat > 0 && !isNpc) {
       for (let i = 0; i < threat; i++) {
         g.rect(sx - threat * 3 + i * 6, sy - bh - 17, 4, 3);
         g.fill({ color: i < 3 ? 0x60c080 : 0xffcc33 });
@@ -729,7 +990,6 @@ export class WorldView {
       g.fill({ color: mine ? 0x60c080 : 0xe04040 });
     }
 
-    // Pooled name label
     const name = u.name.split(" ")[0] ?? u.name;
     let lab = this.labelPool.get(u.id);
     if (!lab) {
@@ -747,12 +1007,12 @@ export class WorldView {
     }
     lab.visible = true;
     if (lab.text !== name) lab.text = name;
-    lab.style.fill = mine ? 0xffe080 : threat >= 3 ? 0xffa0a0 : 0xe8e8e8;
+    lab.style.fill = mine ? 0xffe080 : isNpc ? 0x90d8ff : threat >= 3 ? 0xffa0a0 : 0xe8e8e8;
     lab.x = sx - lab.width / 2;
     lab.y = sy - bh - 34;
     used.add(u.id);
 
-    if (!mine && (threat >= 2 || u.armor !== "none")) {
+    if (!mine && !isNpc && (threat >= 2 || u.armor !== "none")) {
       const gid = u.id + ":g";
       const gtxt = `${u.weapon}${u.armor !== "none" ? " · " + u.armor : ""}`;
       let gl = this.labelPool.get(gid);
@@ -837,34 +1097,49 @@ export class WorldView {
   }
 
   private updateCamera(dt: number): void {
+    // Smooth zoom
+    this.zoom += (this.zoomTarget - this.zoom) * Math.min(1, 12 * dt);
+    if (Math.abs(this.zoom - this.zoomTarget) < 0.001) this.zoom = this.zoomTarget;
+
     const { sx, sy } = worldToScreen(this.followX, this.followY);
     const w = this.app.renderer.width;
     const h = this.app.renderer.height;
-    const targetX = sx - w / 2;
-    const targetY = sy - h / 2;
-    // Snappier follow so predicted movement doesn't feel laggy on camera
     const k = 1 - Math.exp(-18 * dt);
+    // Desired top-left of world in screen space such that follow is centered under zoom
+    const targetX = sx - w / (2 * this.zoom);
+    const targetY = sy - h / (2 * this.zoom);
     this.camX += (targetX - this.camX) * k;
     this.camY += (targetY - this.camY) * k;
-    this.root.x = -this.camX;
-    this.root.y = -this.camY;
 
-    // Rebuild ground mesh when camera moves ~4 tiles (keeps tile count low)
+    this.root.scale.set(this.zoom);
+    this.root.x = -this.camX * this.zoom;
+    this.root.y = -this.camY * this.zoom;
+
     const cellX = Math.floor(this.followX / 4);
     const cellY = Math.floor(this.followY / 4);
-    if (cellX !== this.mapCamCellX || cellY !== this.mapCamCellY) {
+    const zCell = Math.round(this.zoom * 10);
+    if (cellX !== this.mapCamCellX || cellY !== this.mapCamCellY || zCell !== this.mapZoomCell) {
       this.mapCamCellX = cellX;
       this.mapCamCellY = cellY;
+      this.mapZoomCell = zCell;
       this.mapRedrawPending = true;
     }
   }
 
+  /** Canvas client coords → world tiles (respects zoom + camera). */
   screenToWorld(clientX: number, clientY: number): { x: number; y: number } {
     const rect = this.canvas.getBoundingClientRect();
-    return screenToWorld(clientX - rect.left, clientY - rect.top, this.camX, this.camY);
+    const scaleX = this.app.renderer.width / Math.max(1, rect.width);
+    const scaleY = this.app.renderer.height / Math.max(1, rect.height);
+    const mx = (clientX - rect.left) * scaleX;
+    const my = (clientY - rect.top) * scaleY;
+    // Inverse of root transform: worldScreen = (screen - root.pos) / zoom
+    const lx = (mx - this.root.x) / this.zoom;
+    const ly = (my - this.root.y) / this.zoom;
+    return isoScreenToWorld(lx, ly);
   }
 
-  pickUnit(clientX: number, clientY: number, radius = 1.2): string | null {
+  pickUnit(clientX: number, clientY: number, radius = 1.35): string | null {
     const snap = this.lastSnap;
     if (!snap) return null;
     const w = this.screenToWorld(clientX, clientY);
@@ -881,4 +1156,133 @@ export class WorldView {
     }
     return best?.id ?? null;
   }
+
+  pickBuilding(clientX: number, clientY: number): BuildingPublic | null {
+    const snap = this.lastSnap;
+    if (!snap || snap.you.insideBuildingId) return null;
+    const w = this.screenToWorld(clientX, clientY);
+    let best: BuildingPublic | null = null;
+    let bestD = 2.2;
+    for (const b of snap.buildings) {
+      if (b.ex0 == null) continue;
+      // Prefer door hit
+      const dd = Math.hypot(b.doorX + 0.5 - w.x, b.doorY + 0.5 - w.y);
+      if (dd < bestD) {
+        bestD = dd;
+        best = b;
+      }
+      // Footprint soft hit
+      if (
+        w.x >= b.ex0! - 0.3 &&
+        w.x <= b.ex1! + 1.3 &&
+        w.y >= b.ey0! - 0.3 &&
+        w.y <= b.ey1! + 1.3
+      ) {
+        const cx = (b.ex0! + b.ex1! + 1) / 2;
+        const cy = (b.ey0! + b.ey1! + 1) / 2;
+        const d = Math.hypot(cx - w.x, cy - w.y);
+        if (d < bestD + 1.5) {
+          bestD = Math.min(bestD, d);
+          best = b;
+        }
+      }
+    }
+    return best;
+  }
+
+  pickProp(clientX: number, clientY: number, radius = 1.4): PropPublic | null {
+    const snap = this.lastSnap;
+    if (!snap) return null;
+    const w = this.screenToWorld(clientX, clientY);
+    let best: PropPublic | null = null;
+    let bestD = radius;
+    for (const p of snap.props ?? []) {
+      const d = Math.hypot(p.x - w.x, p.y - w.y);
+      if (d < bestD) {
+        bestD = d;
+        best = p;
+      }
+    }
+    return best;
+  }
+
+  /** Update hover target from pointer; returns cursor CSS hint. */
+  updateHover(clientX: number, clientY: number): string {
+    const snap = this.lastSnap;
+    if (!snap) {
+      this.hover = null;
+      return "default";
+    }
+    if (snap.you.respawnIn != null && snap.you.respawnIn > 0) {
+      this.hover = null;
+      return "default";
+    }
+
+    const unitId = this.pickUnit(clientX, clientY, 1.5);
+    if (unitId) {
+      const u = snap.units.find((x) => x.id === unitId);
+      if (u) {
+        if (u.posseId === snap.you.posseId) {
+          this.hover = { kind: "unit", id: u.id, label: u.name, action: "Select" };
+          return "pointer";
+        }
+        if (u.kind === "npc") {
+          this.hover = { kind: "unit", id: u.id, label: u.name, action: "Talk / Recruit" };
+          return "pointer";
+        }
+        // Rival / other player
+        const inSafe = u.y < SAFE_Y_MAX;
+        this.hover = {
+          kind: "unit",
+          id: u.id,
+          label: u.name,
+          action: inSafe ? "Rival (safe — no fire)" : "RMB Attack",
+        };
+        return inSafe ? "help" : "crosshair";
+      }
+    }
+
+    const b = this.pickBuilding(clientX, clientY);
+    if (b) {
+      this.hover = { kind: "building", id: b.id, label: b.name, action: "Enter" };
+      return "pointer";
+    }
+
+    const p = this.pickProp(clientX, clientY);
+    if (p) {
+      const label = p.label ?? p.kind;
+      const action =
+        p.kind === "dumpster" || p.kind === "crate"
+          ? "Search"
+          : p.kind === "protection"
+            ? "Collect"
+            : "Inspect";
+      this.hover = { kind: "prop", id: p.id, label, action };
+      return "pointer";
+    }
+
+    this.hover = null;
+    return "default";
+  }
+
+  leaderWorldPos(): { x: number; y: number } | null {
+    if (!this.lastSnap || !this.localPosseId) return null;
+    const me =
+      this.lastSnap.units.find(
+        (u) =>
+          u.posseId === this.localPosseId && (u.isPlayerLeader || u.kind === "player"),
+      ) ?? this.lastSnap.units.find((u) => u.posseId === this.localPosseId);
+    if (!me) return null;
+    const v = this.visuals.get(me.id);
+    return { x: v?.x ?? me.x, y: v?.y ?? me.y };
+  }
+
+  distToLeader(x: number, y: number): number {
+    const p = this.leaderWorldPos();
+    if (!p) return Infinity;
+    return Math.hypot(p.x - x, p.y - y);
+  }
 }
+
+// re-export for callers that need range constant from view usage
+export { INTERACT_RANGE };

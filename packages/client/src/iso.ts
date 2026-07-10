@@ -7,12 +7,8 @@ export function worldToScreen(x: number, y: number): { sx: number; sy: number } 
   };
 }
 
-export function screenToWorld(
-  sx: number,
-  sy: number,
-  camX: number,
-  camY: number,
-): { x: number; y: number } {
+/** Pure inverse of worldToScreen (no camera). Prefer WorldView.screenToWorld for input. */
+export function screenToWorld(sx: number, sy: number, camX = 0, camY = 0): { x: number; y: number } {
   const lx = sx + camX;
   const ly = sy + camY;
   const x = ly / TILE_H + lx / TILE_W;
