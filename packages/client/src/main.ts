@@ -728,28 +728,38 @@ function onSnapshot(s: WorldSnapshot): void {
 }
 
 function weaponFireSfx(weapon: WeaponId): void {
+  sfx.unlock();
   if (weapon === "shotgun") sfx.play("shotgun");
-  else if (weapon === "uzi" || weapon === "tommy") sfx.play("uzi");
-  else if (weapon === "pipe" || weapon === "switchblade") sfx.play("melee");
+  else if (weapon === "tommy") sfx.play("tommy");
+  else if (weapon === "uzi") sfx.play("uzi");
+  else if (weapon === "pipe") sfx.play("melee");
+  else if (weapon === "switchblade") sfx.play("blade");
   else if (weapon === "flamethrower") sfx.play("flame");
+  else if (weapon === "pistol") sfx.play("pistol");
   else sfx.play("gun");
 }
 
 function playCombatFxAudio(events: CombatFxEvent[]): void {
-  // Deduplicate rapid auto-fire SFX a bit
+  if (!events.length) return;
+  sfx.unlock();
+  // Cap concurrent one-shots per snapshot so auto-fire stays audible but not clipped
   let shots = 0;
+  let hits = 0;
   for (const e of events) {
     if (e.kind === "shot" || e.kind === "melee" || e.kind === "flame") {
-      if (shots < 4) {
+      if (shots < 6) {
         weaponFireSfx(e.weapon);
         shots++;
       }
     } else if (e.kind === "hit") {
-      sfx.play(e.crit ? "hit" : "hit");
+      if (hits < 5) {
+        sfx.play(e.crit ? "crit" : "hit");
+        hits++;
+      }
     } else if (e.kind === "miss") {
       sfx.play("miss");
     } else if (e.kind === "death") {
-      sfx.play("death");
+      sfx.play("death", { force: true });
     }
   }
 }
@@ -1004,24 +1014,28 @@ function bindInput(): void {
         s.units.find((u) => u.posseId === s.you.posseId && u.alive);
       const from = view.leaderWorldPos();
       const weapon = (shooter?.weapon ?? "pistol") as WeaponId;
-      // Optimistic muzzle only when target is already in range — continuous fire VFX/SFX come from server
+      // Instant local muzzle so combat reads immediately; server streams ongoing FX
       if (best) {
         const tgt = s.units.find((u) => u.id === best!.id);
-        if (from && tgt && shooter) {
-          const range = WEAPONS[weapon]?.range ?? 4;
-          if (Math.hypot(from.x - tgt.x, from.y - tgt.y) <= range + 0.5) {
-            view.playLocalShot(from.x, from.y, tgt.x, tgt.y, weapon);
-          }
+        if (from && tgt) {
+          view.playLocalShot(from.x, from.y, tgt.x, tgt.y, weapon);
+          weaponFireSfx(weapon);
         }
         socket.send({ type: "intent.fire", targetId: best.id });
+      } else if (from) {
+        view.playLocalShot(from.x, from.y, w.x, w.y, weapon);
+        weaponFireSfx(weapon);
+        socket.send({ type: "intent.fire", x: w.x, y: w.y });
       } else {
         socket.send({ type: "intent.fire", x: w.x, y: w.y });
       }
     }
   });
 
-  // Unlock audio on first gesture
-  window.addEventListener("pointerdown", () => sfx.unlock(), { once: true });
+  // Browsers block audio until a gesture — unlock often so combat SFX always work
+  const unlockAudio = () => sfx.unlock();
+  window.addEventListener("pointerdown", unlockAudio);
+  window.addEventListener("keydown", unlockAudio);
 
   window.addEventListener("keydown", (e) => {
     if (chatFocused) {

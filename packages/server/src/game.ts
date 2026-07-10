@@ -874,6 +874,7 @@ export class GameWorld {
       y1: target.y,
       weapon,
       crit,
+      dmg,
     });
     if (session && !isAi) {
       this.log(
@@ -2334,12 +2335,12 @@ export class GameWorld {
         ? {
             // Only send FX near the player's layer / outdoor proximity
             fx: fxBatch.filter((f) => {
-              if (posse.insideBuildingId) return false;
+              // Show combat FX outdoors; also when inside only if both ends near 0,0 interior
               const lead = this.leader(posse);
               if (!lead) return true;
               const mx = (f.x0 + f.x1) / 2;
               const my = (f.y0 + f.y1) / 2;
-              return dist(lead.x, lead.y, mx, my) < 28;
+              return dist(lead.x, lead.y, mx, my) < 36;
             }),
           }
         : {}),

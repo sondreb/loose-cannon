@@ -122,6 +122,8 @@ export interface CombatFxEvent {
   y1: number;
   weapon: WeaponId;
   crit?: boolean;
+  /** Damage dealt (hit only) — client floating numbers */
+  dmg?: number;
 }
 
 export interface WorldSnapshot {

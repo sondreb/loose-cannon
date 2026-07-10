@@ -32,7 +32,16 @@ type FxParticle =
   | { kind: "spark"; x: number; y: number; life: number; max: number; vx: number; vy: number }
   | { kind: "flame"; x: number; y: number; life: number; max: number; vx: number; vy: number; r: number }
   | { kind: "impact"; x: number; y: number; life: number; max: number; crit: boolean }
-  | { kind: "shell"; x: number; y: number; life: number; max: number; vx: number; vy: number };
+  | { kind: "shell"; x: number; y: number; life: number; max: number; vx: number; vy: number }
+  | {
+      kind: "dmgText";
+      x: number;
+      y: number;
+      life: number;
+      max: number;
+      text: string;
+      crit: boolean;
+    };
 
 function armorBulk(armor: string): number {
   if (armor === "plate") return 3;
@@ -139,11 +148,14 @@ export class WorldView {
   private visuals = new Map<string, UnitVisual>();
   private labelPool = new Map<string, Text>();
   private fx: FxParticle[] = [];
+  private dmgLabels: Text[] = [];
   private moveMarker: { x: number; y: number; life: number } | null = null;
   private hover: HoverTarget = null;
   private time = 0;
   private localPosseId: string | null = null;
   private frame = 0;
+  /** Brief camera shake from nearby combat */
+  private shake = 0;
   private mapCamCellX = Number.NaN;
   private mapCamCellY = Number.NaN;
   private mapZoomCell = -1;
@@ -344,6 +356,14 @@ export class WorldView {
     const ang = Math.atan2(dy, dx);
     const dist = Math.hypot(dx, dy) || 0.01;
 
+    // Local shake if combat is near the camera follow point
+    const near = Math.hypot((e.x0 + e.x1) / 2 - this.followX, (e.y0 + e.y1) / 2 - this.followY);
+    if (near < 10) {
+      const kick =
+        e.kind === "death" ? 0.55 : e.kind === "hit" && e.crit ? 0.4 : e.kind === "shot" ? 0.18 : 0.12;
+      this.shake = Math.min(1.2, this.shake + kick);
+    }
+
     if (e.kind === "shot" || e.kind === "flame" || e.kind === "melee") {
       const big = e.weapon === "shotgun" || e.weapon === "tommy";
       // Muzzle flash at shooter
@@ -352,8 +372,8 @@ export class WorldView {
           kind: "muzzle",
           x: e.x0 + Math.cos(ang) * 0.35,
           y: e.y0 + Math.sin(ang) * 0.35,
-          life: big ? 0.14 : 0.1,
-          max: big ? 0.14 : 0.1,
+          life: big ? 0.22 : 0.16,
+          max: big ? 0.22 : 0.16,
           ang,
           big,
         });
@@ -364,147 +384,173 @@ export class WorldView {
             kind: "shell",
             x: e.x0,
             y: e.y0,
-            life: 0.45,
-            max: 0.45,
-            vx: Math.cos(side) * (1.2 + Math.random()) + Math.cos(ang) * -0.3,
-            vy: Math.sin(side) * (1.2 + Math.random()) + Math.sin(ang) * -0.3,
+            life: 0.55,
+            max: 0.55,
+            vx: Math.cos(side) * (1.5 + Math.random()) + Math.cos(ang) * -0.3,
+            vy: Math.sin(side) * (1.5 + Math.random()) + Math.sin(ang) * -0.3,
           });
         }
       }
 
       if (e.kind === "melee") {
-        // Arc slash toward target
         this.fx.push({
           kind: "slash",
-          x0: e.x0 + Math.cos(ang) * 0.2,
-          y0: e.y0 + Math.sin(ang) * 0.2,
-          x1: e.x0 + Math.cos(ang) * Math.min(1.4, dist),
-          y1: e.y0 + Math.sin(ang) * Math.min(1.4, dist),
-          life: 0.16,
-          max: 0.16,
+          x0: e.x0 + Math.cos(ang) * 0.15,
+          y0: e.y0 + Math.sin(ang) * 0.15,
+          x1: e.x0 + Math.cos(ang) * Math.min(1.6, dist),
+          y1: e.y0 + Math.sin(ang) * Math.min(1.6, dist),
+          life: 0.22,
+          max: 0.22,
         });
       } else if (e.kind === "flame") {
-        const n = 8 + Math.floor(dist * 2);
+        const n = 10 + Math.floor(dist * 3);
         for (let i = 0; i < n; i++) {
           const t = (i + 0.5) / n;
-          const jx = (Math.random() - 0.5) * 0.25;
-          const jy = (Math.random() - 0.5) * 0.25;
+          const jx = (Math.random() - 0.5) * 0.3;
+          const jy = (Math.random() - 0.5) * 0.3;
           this.fx.push({
             kind: "flame",
             x: e.x0 + dx * t + jx,
             y: e.y0 + dy * t + jy,
-            life: 0.22 + Math.random() * 0.15,
-            max: 0.35,
-            vx: Math.cos(ang) * 1.5 + (Math.random() - 0.5),
-            vy: Math.sin(ang) * 1.5 + (Math.random() - 0.5),
-            r: 3 + Math.random() * 5,
+            life: 0.28 + Math.random() * 0.18,
+            max: 0.45,
+            vx: Math.cos(ang) * 1.8 + (Math.random() - 0.5),
+            vy: Math.sin(ang) * 1.8 + (Math.random() - 0.5),
+            r: 4 + Math.random() * 6,
           });
         }
       } else {
-        // Bullet tracer(s)
-        const pellets = e.weapon === "shotgun" ? 5 : e.weapon === "uzi" || e.weapon === "tommy" ? 2 : 1;
+        // Bright full-path tracer + traveling bolt (readable at a glance)
+        const pellets = e.weapon === "shotgun" ? 6 : e.weapon === "uzi" || e.weapon === "tommy" ? 2 : 1;
         const color =
           e.weapon === "shotgun"
             ? 0xffe080
             : e.weapon === "tommy" || e.weapon === "uzi"
-              ? 0xffd040
-              : 0xfff0a0;
+              ? 0xffcc40
+              : 0xfff2a8;
         for (let i = 0; i < pellets; i++) {
-          const spread = pellets > 1 ? (i - (pellets - 1) / 2) * 0.08 : 0;
+          const spread = pellets > 1 ? (i - (pellets - 1) / 2) * 0.1 : 0;
           const px = -Math.sin(ang) * spread;
           const py = Math.cos(ang) * spread;
           this.fx.push({
             kind: "tracer",
-            x0: e.x0 + Math.cos(ang) * 0.4 + px,
-            y0: e.y0 + Math.sin(ang) * 0.4 + py,
-            x1: e.x1 + px * 3 + (Math.random() - 0.5) * 0.15,
-            y1: e.y1 + py * 3 + (Math.random() - 0.5) * 0.15,
-            life: e.weapon === "shotgun" ? 0.1 : 0.08,
-            max: 0.1,
+            x0: e.x0 + Math.cos(ang) * 0.35 + px,
+            y0: e.y0 + Math.sin(ang) * 0.35 + py,
+            x1: e.x1 + px * 2.5 + (Math.random() - 0.5) * 0.12,
+            y1: e.y1 + py * 2.5 + (Math.random() - 0.5) * 0.12,
+            life: e.weapon === "shotgun" ? 0.2 : 0.18,
+            max: 0.2,
             color,
-            wide: e.weapon === "shotgun",
+            wide: e.weapon === "shotgun" || e.weapon === "tommy",
           });
         }
       }
     }
 
     if (e.kind === "hit") {
-      const n = e.crit ? 10 : 5;
+      const n = e.crit ? 12 : 7;
       for (let i = 0; i < n; i++) {
         this.fx.push({
           kind: "blood",
           x: e.x1,
           y: e.y1,
-          life: 0.3 + Math.random() * 0.25,
-          max: 0.55,
-          vx: (Math.random() - 0.5) * (e.crit ? 4 : 2.5),
-          vy: (Math.random() - 0.5) * (e.crit ? 4 : 2.5) - 0.5,
-          r: 2 + Math.random() * (e.crit ? 5 : 3),
+          life: 0.4 + Math.random() * 0.3,
+          max: 0.7,
+          vx: (Math.random() - 0.5) * (e.crit ? 5 : 3),
+          vy: (Math.random() - 0.5) * (e.crit ? 5 : 3) - 0.6,
+          r: 2.5 + Math.random() * (e.crit ? 6 : 3.5),
         });
       }
       this.fx.push({
         kind: "impact",
         x: e.x1,
         y: e.y1,
-        life: e.crit ? 0.22 : 0.14,
-        max: e.crit ? 0.22 : 0.14,
+        life: e.crit ? 0.32 : 0.2,
+        max: e.crit ? 0.32 : 0.2,
         crit: !!e.crit,
       });
-      // Melee impact sparks
+      if (e.dmg != null && e.dmg > 0) {
+        this.fx.push({
+          kind: "dmgText",
+          x: e.x1,
+          y: e.y1,
+          life: 0.85,
+          max: 0.85,
+          text: e.crit ? `CRIT ${e.dmg}` : `-${e.dmg}`,
+          crit: !!e.crit,
+        });
+      }
       if (e.weapon === "pipe" || e.weapon === "switchblade") {
-        for (let i = 0; i < 4; i++) {
+        for (let i = 0; i < 6; i++) {
           this.fx.push({
             kind: "spark",
             x: e.x1,
             y: e.y1,
-            life: 0.18,
-            max: 0.18,
-            vx: (Math.random() - 0.5) * 4,
-            vy: (Math.random() - 0.5) * 4,
+            life: 0.22,
+            max: 0.22,
+            vx: (Math.random() - 0.5) * 5,
+            vy: (Math.random() - 0.5) * 5,
           });
         }
       }
     }
 
     if (e.kind === "miss") {
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < 5; i++) {
         this.fx.push({
           kind: "spark",
           x: e.x1,
           y: e.y1,
-          life: 0.15 + Math.random() * 0.1,
-          max: 0.25,
-          vx: (Math.random() - 0.5) * 3,
-          vy: (Math.random() - 0.5) * 3,
+          life: 0.2 + Math.random() * 0.12,
+          max: 0.32,
+          vx: (Math.random() - 0.5) * 4,
+          vy: (Math.random() - 0.5) * 4,
         });
       }
+      this.fx.push({
+        kind: "dmgText",
+        x: e.x1,
+        y: e.y1,
+        life: 0.5,
+        max: 0.5,
+        text: "miss",
+        crit: false,
+      });
     }
 
     if (e.kind === "death") {
-      for (let i = 0; i < 14; i++) {
+      for (let i = 0; i < 18; i++) {
         this.fx.push({
           kind: "blood",
           x: e.x0,
           y: e.y0,
-          life: 0.45 + Math.random() * 0.35,
-          max: 0.8,
-          vx: (Math.random() - 0.5) * 5,
-          vy: (Math.random() - 0.5) * 5 - 0.8,
-          r: 2 + Math.random() * 5,
+          life: 0.5 + Math.random() * 0.4,
+          max: 0.9,
+          vx: (Math.random() - 0.5) * 6,
+          vy: (Math.random() - 0.5) * 6 - 1,
+          r: 3 + Math.random() * 6,
         });
       }
       this.fx.push({
         kind: "impact",
         x: e.x0,
         y: e.y0,
-        life: 0.28,
-        max: 0.28,
+        life: 0.35,
+        max: 0.35,
+        crit: true,
+      });
+      this.fx.push({
+        kind: "dmgText",
+        x: e.x0,
+        y: e.y0,
+        life: 1.0,
+        max: 1.0,
+        text: "DOWN",
         crit: true,
       });
     }
 
-    // Cap particles for FPS
-    if (this.fx.length > 220) this.fx.splice(0, this.fx.length - 220);
+    if (this.fx.length > 280) this.fx.splice(0, this.fx.length - 280);
   }
 
   applySnapshot(snap: WorldSnapshot): void {
@@ -1326,6 +1372,12 @@ export class WorldView {
   private tickFx(dt: number): void {
     const g = this.fxGfx;
     g.clear();
+    // Hide unused floating damage labels
+    for (const lab of this.dmgLabels) lab.visible = false;
+    let dmgIdx = 0;
+
+    if (this.shake > 0) this.shake = Math.max(0, this.shake - dt * 3.5);
+
     if (this.fx.length === 0) return;
 
     const next: FxParticle[] = [];
@@ -1337,92 +1389,116 @@ export class WorldView {
       if (f.kind === "blood" || f.kind === "spark" || f.kind === "shell" || f.kind === "flame") {
         f.x += f.vx * dt;
         f.y += f.vy * dt;
-        if (f.kind === "blood" || f.kind === "shell") f.vy += 3 * dt; // gravity-ish
+        if (f.kind === "blood" || f.kind === "shell") f.vy += 3.5 * dt;
         if (f.kind === "flame") {
-          f.vx *= 0.92;
-          f.vy *= 0.92;
-          f.r *= 0.98;
+          f.vx *= 0.9;
+          f.vy *= 0.9;
+          f.r *= 0.97;
         }
+      }
+      if (f.kind === "dmgText") {
+        f.y -= 0.9 * dt; // float up in world space
       }
 
       next.push(f);
       const t = Math.max(0, f.life / f.max);
-      const a = Math.min(1, t * 1.4);
+      const a = Math.min(1, t * 1.6);
 
       if (f.kind === "muzzle") {
         const p = worldToScreen(f.x, f.y);
-        const r = (f.big ? 14 : 9) * (0.5 + t);
-        g.circle(p.sx, p.sy - 10, r);
-        g.fill({ color: 0xfff0a0, alpha: a * 0.9 });
-        g.circle(p.sx, p.sy - 10, r * 0.45);
+        const r = (f.big ? 18 : 12) * (0.55 + t * 0.6);
+        g.circle(p.sx, p.sy - 12, r);
+        g.fill({ color: 0xfff0a0, alpha: a * 0.95 });
+        g.circle(p.sx, p.sy - 12, r * 0.4);
         g.fill({ color: 0xffffff, alpha: a });
-        // cone
-        const len = (f.big ? 22 : 14) * t;
         const cos = Math.cos(f.ang);
         const sin = Math.sin(f.ang);
-        // Approximate cone in screen space using iso-ish offset
-        const tip = worldToScreen(f.x + cos * 0.55, f.y + sin * 0.55);
-        g.moveTo(p.sx, p.sy - 10);
-        g.lineTo(tip.sx + sin * 6, tip.sy - 10 - cos * 3);
-        g.lineTo(tip.sx - sin * 6, tip.sy - 10 + cos * 3);
+        const tip = worldToScreen(f.x + cos * 0.7, f.y + sin * 0.7);
+        g.moveTo(p.sx, p.sy - 12);
+        g.lineTo(tip.sx + sin * 10, tip.sy - 12 - cos * 4);
+        g.lineTo(tip.sx - sin * 10, tip.sy - 12 + cos * 4);
         g.closePath();
-        g.fill({ color: 0xffaa40, alpha: a * 0.65 });
+        g.fill({ color: 0xff9020, alpha: a * 0.75 });
       } else if (f.kind === "tracer") {
         const a0 = worldToScreen(f.x0, f.y0);
         const a1 = worldToScreen(f.x1, f.y1);
-        // Short bright segment that travels along the line (stylized)
-        const head = 1 - t; // 0→1 over life
-        const seg = f.wide ? 0.35 : 0.22;
-        const s0 = Math.max(0, head - seg);
-        const s1 = Math.min(1, head + 0.05);
-        const x0 = a0.sx + (a1.sx - a0.sx) * s0;
-        const y0 = a0.sy - 12 + (a1.sy - a0.sy) * s0;
-        const x1 = a0.sx + (a1.sx - a0.sx) * s1;
-        const y1 = a0.sy - 12 + (a1.sy - a0.sy) * s1;
-        g.moveTo(x0, y0);
-        g.lineTo(x1, y1);
-        g.stroke({ color: f.color, width: f.wide ? 3 : 1.8, alpha: a });
-        g.circle(x1, y1, f.wide ? 3 : 2);
-        g.fill({ color: 0xffffff, alpha: a * 0.9 });
-        // faint full path
-        g.moveTo(a0.sx, a0.sy - 12);
-        g.lineTo(a1.sx, a1.sy - 12);
-        g.stroke({ color: f.color, width: 1, alpha: a * 0.2 });
+        const yOff = -14;
+        // Full path glow (very readable)
+        g.moveTo(a0.sx, a0.sy + yOff);
+        g.lineTo(a1.sx, a1.sy + yOff);
+        g.stroke({ color: f.color, width: f.wide ? 4 : 2.5, alpha: a * 0.85 });
+        g.moveTo(a0.sx, a0.sy + yOff);
+        g.lineTo(a1.sx, a1.sy + yOff);
+        g.stroke({ color: 0xffffff, width: f.wide ? 1.5 : 1, alpha: a * 0.7 });
+        // Traveling bolt head
+        const head = 1 - t;
+        const hx = a0.sx + (a1.sx - a0.sx) * head;
+        const hy = a0.sy + yOff + (a1.sy - a0.sy) * head;
+        g.circle(hx, hy, f.wide ? 5 : 3.5);
+        g.fill({ color: 0xffffff, alpha: a });
+        g.circle(hx, hy, f.wide ? 8 : 6);
+        g.fill({ color: f.color, alpha: a * 0.45 });
       } else if (f.kind === "slash") {
         const a0 = worldToScreen(f.x0, f.y0);
         const a1 = worldToScreen(f.x1, f.y1);
-        g.moveTo(a0.sx, a0.sy - 8);
-        g.lineTo(a1.sx, a1.sy - 14);
-        g.stroke({ color: 0xe8e8f0, width: 3, alpha: a * 0.9 });
-        g.moveTo(a0.sx + 2, a0.sy - 4);
-        g.lineTo(a1.sx + 2, a1.sy - 10);
-        g.stroke({ color: 0x90c0ff, width: 1.5, alpha: a * 0.5 });
+        g.moveTo(a0.sx, a0.sy - 10);
+        g.lineTo(a1.sx, a1.sy - 16);
+        g.stroke({ color: 0xffffff, width: 4, alpha: a });
+        g.moveTo(a0.sx + 3, a0.sy - 6);
+        g.lineTo(a1.sx + 3, a1.sy - 12);
+        g.stroke({ color: 0x80c0ff, width: 2, alpha: a * 0.7 });
       } else if (f.kind === "blood") {
         const p = worldToScreen(f.x, f.y);
-        g.circle(p.sx, p.sy - 6, f.r * (0.6 + t * 0.4));
-        g.fill({ color: 0xa01818, alpha: a * 0.85 });
+        g.circle(p.sx, p.sy - 6, f.r * (0.7 + t * 0.5));
+        g.fill({ color: 0xb01818, alpha: a * 0.9 });
       } else if (f.kind === "spark") {
         const p = worldToScreen(f.x, f.y);
-        g.circle(p.sx, p.sy - 8, 2.5);
+        g.circle(p.sx, p.sy - 8, 3.2);
         g.fill({ color: 0xffe080, alpha: a });
-        g.circle(p.sx + f.vx * 2, p.sy - 8 + f.vy * 2, 1.2);
-        g.fill({ color: 0xffffff, alpha: a * 0.7 });
+        g.circle(p.sx + f.vx * 2, p.sy - 8 + f.vy * 2, 1.6);
+        g.fill({ color: 0xffffff, alpha: a * 0.8 });
       } else if (f.kind === "flame") {
         const p = worldToScreen(f.x, f.y);
         const col = t > 0.6 ? 0xfff0a0 : t > 0.3 ? 0xff8020 : 0xc02010;
-        g.circle(p.sx, p.sy - 8, f.r * (0.7 + t * 0.5));
-        g.fill({ color: col, alpha: a * 0.75 });
+        g.circle(p.sx, p.sy - 8, f.r * (0.75 + t * 0.55));
+        g.fill({ color: col, alpha: a * 0.8 });
       } else if (f.kind === "impact") {
         const p = worldToScreen(f.x, f.y);
-        const r = (f.crit ? 22 : 12) * (1 - t * 0.3);
-        g.circle(p.sx, p.sy - 8, r);
-        g.stroke({ color: f.crit ? 0xffe060 : 0xff6060, width: 2, alpha: a * 0.8 });
-        g.circle(p.sx, p.sy - 8, r * 0.4);
-        g.fill({ color: f.crit ? 0xfff0a0 : 0xff4040, alpha: a * 0.35 });
+        const r = (f.crit ? 28 : 16) * (1.05 - t * 0.35);
+        g.circle(p.sx, p.sy - 10, r);
+        g.stroke({ color: f.crit ? 0xffe060 : 0xff5050, width: 2.5, alpha: a * 0.9 });
+        g.circle(p.sx, p.sy - 10, r * 0.45);
+        g.fill({ color: f.crit ? 0xfff0a0 : 0xff3030, alpha: a * 0.4 });
       } else if (f.kind === "shell") {
         const p = worldToScreen(f.x, f.y);
-        g.rect(p.sx - 1.5, p.sy - 9, 3, 2);
-        g.fill({ color: 0xc9a227, alpha: a * 0.9 });
+        g.rect(p.sx - 2, p.sy - 10, 4, 2.5);
+        g.fill({ color: 0xe0b040, alpha: a });
+      } else if (f.kind === "dmgText") {
+        const p = worldToScreen(f.x, f.y);
+        let lab = this.dmgLabels[dmgIdx];
+        if (!lab) {
+          lab = new Text({
+            text: f.text,
+            style: {
+              fontSize: f.crit ? 16 : 13,
+              fill: f.crit ? 0xffe060 : f.text === "miss" ? 0xa0a8b8 : 0xff6060,
+              fontWeight: "800",
+              fontFamily: "system-ui,sans-serif",
+              stroke: { color: 0x000000, width: 3 },
+            },
+          });
+          this.dmgLabels.push(lab);
+          this.labels.addChild(lab);
+        }
+        lab.visible = true;
+        lab.text = f.text;
+        lab.style.fontSize = f.crit || f.text === "DOWN" ? 16 : 13;
+        lab.style.fill =
+          f.crit || f.text === "DOWN" ? 0xffe060 : f.text === "miss" ? 0xa0a8b8 : 0xff7070;
+        lab.alpha = a;
+        lab.x = p.sx - lab.width / 2;
+        lab.y = p.sy - 40 - (1 - t) * 18;
+        dmgIdx++;
       }
     }
     this.fx = next;
@@ -1443,9 +1519,13 @@ export class WorldView {
     this.camX += (targetX - this.camX) * k;
     this.camY += (targetY - this.camY) * k;
 
+    // Screen shake from nearby gunfire / hits
+    const sh = this.shake;
+    const ox = sh > 0 ? (Math.random() - 0.5) * sh * 10 : 0;
+    const oy = sh > 0 ? (Math.random() - 0.5) * sh * 10 : 0;
     this.root.scale.set(this.zoom);
-    this.root.x = -this.camX * this.zoom;
-    this.root.y = -this.camY * this.zoom;
+    this.root.x = -this.camX * this.zoom + ox;
+    this.root.y = -this.camY * this.zoom + oy;
 
     const cellX = Math.floor(this.followX / 4);
     const cellY = Math.floor(this.followY / 4);
