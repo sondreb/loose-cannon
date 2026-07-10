@@ -24,9 +24,7 @@ export class GameSocket {
   }
 
   connect(name: string): void {
-    const url =
-      (import.meta as ImportMeta & { env: Record<string, string> }).env.VITE_WS_URL ||
-      `ws://${location.hostname}:3001`;
+    const url = resolveWsUrl();
     this.ws = new WebSocket(url);
     this.ws.addEventListener("open", () => {
       this.send({ type: "auth", name, protocolVersion: PROTOCOL_VERSION });
@@ -72,4 +70,28 @@ export class GameSocket {
       this.ws.send(JSON.stringify(msg));
     }
   }
+}
+
+/** Local dev → :3001; production → VITE_WS_URL or sibling Azure host. */
+function resolveWsUrl(): string {
+  const env = (import.meta as ImportMeta & { env: Record<string, string> }).env;
+  if (env.VITE_WS_URL) return env.VITE_WS_URL;
+
+  const host = location.hostname;
+  // Azure beta client → dedicated server web app
+  if (host === "loose-cannon-beta.azurewebsites.net") {
+    return "wss://loose-cannon-beta-server.azurewebsites.net";
+  }
+  // Generic azurewebsites client hostname pattern: foo → foo-server
+  if (host.endsWith(".azurewebsites.net") && !host.includes("-server.")) {
+    const base = host.replace(".azurewebsites.net", "");
+    return `wss://${base}-server.azurewebsites.net`;
+  }
+
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  // Local Vite (5173) or same-host
+  if (host === "localhost" || host === "127.0.0.1") {
+    return `${proto}://${host}:3001`;
+  }
+  return `${proto}://${host}`;
 }

@@ -3,7 +3,8 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
-    "noEmit": true
+    "noEmit": false,
+    "declaration": false
   },
   "include": ["src/**/*"],
   "references": [{ "path": "../shared" }]

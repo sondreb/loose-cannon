@@ -1,0 +1,101 @@
+# Deploy Loose Cannon client + in-memory game server to Azure App Service on every push to main.
+#
+# Required GitHub repository secrets (Settings → Secrets and variables → Actions):
+#   AZURE_WEBAPP_PUBLISH_PROFILE_CLIENT  — publish profile XML for loose-cannon-beta
+#   AZURE_WEBAPP_PUBLISH_PROFILE_SERVER  — publish profile XML for loose-cannon-beta-server
+#
+# How to get a publish profile:
+#   Azure Portal → Web App → Overview → "Download publish profile"
+#   Paste the entire .PublishSettings XML as the secret value.
+#
+# Azure portal (each app):
+#   - Stack: Node 20 LTS (Linux recommended)
+#   - Server app: Configuration → General settings → Web sockets: On
+#   - Startup command (usually automatic via package.json "start"):
+#       Client: npm start
+#       Server: npm start
+
+name: Deploy Azure (beta)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-azure-beta
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "20.x"
+  VITE_WS_URL: wss://loose-cannon-beta-server.azurewebsites.net
+  CLIENT_APP_NAME: loose-cannon-beta
+  SERVER_APP_NAME: loose-cannon-beta-server
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install monorepo dependencies
+        run: npm ci
+
+      - name: Build Azure deploy packages
+        env:
+          VITE_WS_URL: ${{ env.VITE_WS_URL }}
+        run: npm run build:azure
+
+      - name: Deploy game server (WebSocket + in-memory world)
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.SERVER_APP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE_SERVER }}
+          package: deploy/server
+
+      - name: Deploy game client (static SPA)
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.CLIENT_APP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE_CLIENT }}
+          package: deploy/client
+
+      - name: Smoke — server health
+        run: |
+          set -e
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if curl -fsS "https://${{ env.SERVER_APP_NAME }}.azurewebsites.net/health"; then
+              echo
+              echo "Server healthy"
+              exit 0
+            fi
+            echo "Waiting for server... ($i)"
+            sleep 6
+          done
+          echo "Server health check failed"
+          exit 1
+
+      - name: Smoke — client health
+        run: |
+          set -e
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if curl -fsS "https://${{ env.CLIENT_APP_NAME }}.azurewebsites.net/health"; then
+              echo
+              echo "Client healthy"
+              exit 0
+            fi
+            echo "Waiting for client... ($i)"
+            sleep 6
+          done
+          echo "Client health check failed"
+          exit 1

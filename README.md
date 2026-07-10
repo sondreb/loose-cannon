@@ -41,11 +41,26 @@ Death: **3 second** respawn delay, then a random outdoor spot with few other pla
 - Basic Web Audio SFX
 - Proximity chat
 
+## Beta (Azure)
+
+| | URL |
+|--|-----|
+| **Play** | https://loose-cannon-beta.azurewebsites.net |
+| **Game server** | wss://loose-cannon-beta-server.azurewebsites.net |
+
+Deploy: push to **`main`** → GitHub Actions builds and deploys both Web Apps.  
+Setup (publish profiles + WebSockets): [`.github/DEPLOY.md`](./.github/DEPLOY.md)
+
+```bash
+npm run build:azure   # produces deploy/client + deploy/server
+```
+
 ## Docs
 
 - [Game design](./docs/game-design.md)
 - [Architecture](./docs/architecture.md)
 - [PRD](./docs/prd.md)
+- [Azure deploy](./.github/DEPLOY.md)
 
 ## Inspiration
 

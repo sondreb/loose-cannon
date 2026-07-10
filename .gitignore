@@ -1,9 +1,10 @@
 node_modules/
 dist/
+deploy/
 *.log
-.DS_Store
 .env
 .env.*
-packages/client/dist/
-packages/server/dist/
-packages/shared/dist/
+!.env.example
+.DS_Store
+*.tsbuildinfo
+.azure/
