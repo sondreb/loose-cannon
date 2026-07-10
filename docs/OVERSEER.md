@@ -88,9 +88,15 @@ Flags:
 
 The loop:
 
-1. Runs one headless overseer cycle.
-2. Continues the same session (`-Continue` after the first).
+1. Runs one headless overseer cycle (fresh session by default).
+2. If the worktree is dirty: **`git commit` + `git push`** via `scripts/overseer/commit-cycle.ps1`  
+   (message from the latest `docs/OVERSEER_LOG.md` Focus/Done when present).
 3. Sleeps, then repeats until max cycles or you Ctrl+C.
+
+| Flag | Effect |
+|------|--------|
+| `-NoPush` | Commit after each cycle, but do not push |
+| `-NoCommit` | Skip git entirely |
 
 **Ctrl+C behavior**
 
@@ -100,7 +106,7 @@ The loop:
 | Cycle currently running (1st Ctrl+C) | Notes the request, **lets the cycle finish**, then exits (does not kill the active `grok` run) |
 | Cycle currently running (2nd Ctrl+C) | **Force-kills** the active `grok` process tree and exits immediately |
 
-Bash equivalent: `scripts/overseer/overseer-loop.sh` (Git Bash / WSL / Linux / macOS).
+Bash equivalent: `scripts/overseer/overseer-loop.sh` (calls `commit-cycle.sh` the same way).
 
 ### Run in background (Windows)
 

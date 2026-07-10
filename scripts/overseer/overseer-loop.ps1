@@ -8,6 +8,9 @@
   C# stdout pump, -Yolo → --always-approve). Continuity lives in docs/STATUS.md;
   bloated sessions are auto-bootstrapped by run-cycle.
 
+  After each cycle (except force-kill 130), if the worktree is dirty: git commit + push
+  via commit-cycle.ps1 (message from OVERSEER_LOG Focus when present).
+
   Ctrl+C behavior:
   - During idle sleep: stop immediately.
   - During an active cycle (1st): request stop after the cycle finishes (do not kill the run).
@@ -16,13 +19,18 @@
 .EXAMPLE
   .\scripts\overseer\overseer-loop.ps1 -Yolo
   .\scripts\overseer\overseer-loop.ps1 -Yolo -SleepSeconds 90 -MaxCycles 10
+  .\scripts\overseer\overseer-loop.ps1 -Yolo -NoPush
 #>
 param(
   [switch]$Yolo,
   [int]$SleepSeconds = 60,
   [int]$MaxCycles = 0,
   [int]$MaxTurns = 80,
-  [switch]$BootstrapFirst
+  [switch]$BootstrapFirst,
+  # Commit after each cycle but do not git push
+  [switch]$NoPush,
+  # Skip commit and push entirely
+  [switch]$NoCommit
 )
 
 $ErrorActionPreference = "Stop"
@@ -30,6 +38,7 @@ $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 Set-Location $RepoRoot
 
 $cycleScript = Join-Path $PSScriptRoot "run-cycle.ps1"
+$commitScript = Join-Path $PSScriptRoot "commit-cycle.ps1"
 $SessionFile = Join-Path $PSScriptRoot ".session-id"
 
 $script:stopRequested = $false
@@ -110,6 +119,7 @@ Write-Host "  MaxCycles:    $(if ($MaxCycles -eq 0) { 'unlimited' } else { $MaxC
 Write-Host "  MaxTurns:     $MaxTurns"
 Write-Host "  Sessions:     FRESH every cycle (no --resume; STATUS.md is continuity)"
 Write-Host "  Runner:       run-cycle.ps1 (streaming logs; startup stall 90s / working 20m)"
+Write-Host "  Git:          $(if ($NoCommit) { 'off' } elseif ($NoPush) { 'commit only (no push)' } else { 'commit + push after each cycle' })"
 Write-Host "  Ctrl+C idle:  stop immediately"
 Write-Host "  Ctrl+C busy:  finish current cycle, then stop"
 Write-Host "  Ctrl+C x2:    force-kill active cycle and exit"
@@ -177,6 +187,23 @@ try {
       }
     } else {
       $stallStreak = 0
+    }
+
+    # Commit + push after the cycle (skip force-kill mid-run — tree may be half-written)
+    if (-not $NoCommit -and $code -ne 130) {
+      Write-Host "--- git publish (cycle $n) ---"
+      try {
+        $commitParams = @{ CycleNumber = $n }
+        if ($NoPush) { $commitParams.SkipPush = $true }
+        & $commitScript @commitParams
+        $gitCode = $LASTEXITCODE
+        if ($null -eq $gitCode) { $gitCode = 0 }
+        if ($gitCode -ne 0) {
+          Write-Host "commit-cycle exited $gitCode (loop continues)."
+        }
+      } catch {
+        Write-Host "commit-cycle error: $_ (loop continues)."
+      }
     }
 
     if ($script:stopRequested) {

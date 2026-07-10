@@ -14,10 +14,13 @@ YOLO=0
 SLEEP=60
 MAX_CYCLES=0
 MAX_TURNS=80
+NO_PUSH=0
+NO_COMMIT=0
 SESSION_FILE="$(dirname "$0")/.session-id"
 PROMPT_BOOT="$(dirname "$0")/prompts/bootstrap.txt"
 PROMPT_CYCLE="$(dirname "$0")/prompts/cycle.txt"
 LOG_DIR="$(dirname "$0")/logs"
+COMMIT_SCRIPT="$(dirname "$0")/commit-cycle.sh"
 mkdir -p "$LOG_DIR"
 
 CYCLE_RUNNING=0
@@ -25,7 +28,7 @@ STOP_REQUESTED=0
 CHILD_PID=""
 
 usage() {
-  echo "Usage: $0 [--yolo] [--sleep N] [--max-cycles N] [--max-turns N]"
+  echo "Usage: $0 [--yolo] [--sleep N] [--max-cycles N] [--max-turns N] [--no-push] [--no-commit]"
   exit 1
 }
 
@@ -35,6 +38,8 @@ while [[ $# -gt 0 ]]; do
     --sleep) SLEEP="${2:?}"; shift 2 ;;
     --max-cycles) MAX_CYCLES="${2:?}"; shift 2 ;;
     --max-turns) MAX_TURNS="${2:?}"; shift 2 ;;
+    --no-push) NO_PUSH=1; shift ;;
+    --no-commit) NO_COMMIT=1; shift ;;
     -h|--help) usage ;;
     *) echo "Unknown: $1"; usage ;;
   esac
@@ -163,6 +168,18 @@ while true; do
   fi
 
   echo "Cycle $n finished with exit code $code"
+
+  # Commit + push after cycle (skip force-kill mid-run)
+  if [[ "$NO_COMMIT" -eq 0 && "$code" -ne 130 ]]; then
+    echo "--- git publish (cycle $n) ---"
+    set +e
+    if [[ "$NO_PUSH" -eq 1 ]]; then
+      bash "$COMMIT_SCRIPT" "$n" --skip-push
+    else
+      bash "$COMMIT_SCRIPT" "$n"
+    fi
+    set -e
+  fi
 
   if [[ "$STOP_REQUESTED" -eq 1 ]]; then
     echo "Stop was requested during the cycle — exiting without starting another."
