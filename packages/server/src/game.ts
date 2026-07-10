@@ -797,7 +797,7 @@ export class GameWorld {
         if (posse.memberIds.includes(msg.unitId)) posse.selectedUnitId = msg.unitId;
         break;
       case "intent.interact":
-        this.cmdInteract(session, posse);
+        this.cmdInteract(session, posse, msg.targetUnitId);
         break;
       case "intent.exit":
         this.cmdExitBuilding(session, posse);
@@ -2358,7 +2358,7 @@ export class GameWorld {
     return { x: pick.pt.x, y: pick.pt.y };
   }
 
-  private cmdInteract(session: CharacterSession, posse: Posse): void {
+  private cmdInteract(session: CharacterSession, posse: Posse, targetUnitId?: string): void {
     const leader = this.leader(posse);
     if (!leader || !leader.alive) return;
 
@@ -2368,18 +2368,32 @@ export class GameWorld {
     // Exit mats use a tight radius. Interior spawn (e.g. Rusty Nail 5,5 → exit 5,7)
     // is ~2.5 tiles from the door — full INTERACT_RANGE would false-exit on any E/click.
     const EXIT_USE_RANGE = 1.35;
+    // Client walk-then-interact fires around INTERACT_RANGE+0.35; keep server at least as loose
+    // so "click Rita from spawn" (~2.24 tiles) actually opens dialogue instead of empty fail.
+    const NPC_TALK_RANGE = INTERACT_RANGE + 0.55;
 
     const exitDist = (exitX: number, exitY: number): number =>
       dist(leader.x, leader.y, exitX + 0.5, exitY + 0.5);
 
-    /** Nearest in-layer NPC within talk range (prefer talk over leave when both possible). */
-    const nearestNpcInRange = (): { unit: Unit; d: number } | null => {
+    const npcLayerOk = (u: Unit): boolean =>
+      u.kind === "npc" &&
+      u.alive &&
+      (u.buildingId ?? null) === (posse.insideBuildingId ?? null);
+
+    /** Prefer explicit click target, else nearest in-layer NPC in talk range. */
+    const pickNpcInRange = (): { unit: Unit; d: number } | null => {
+      if (targetUnitId) {
+        const preferred = this.units.get(targetUnitId);
+        if (preferred && npcLayerOk(preferred)) {
+          const d = dist(leader.x, leader.y, preferred.x, preferred.y);
+          if (d <= NPC_TALK_RANGE) return { unit: preferred, d };
+        }
+      }
       let best: { unit: Unit; d: number } | null = null;
       for (const u of this.units.values()) {
-        if (u.kind !== "npc" || !u.alive) continue;
-        if ((u.buildingId ?? null) !== (posse.insideBuildingId ?? null)) continue;
+        if (!npcLayerOk(u)) continue;
         const d = dist(leader.x, leader.y, u.x, u.y);
-        if (d > INTERACT_RANGE) continue;
+        if (d > NPC_TALK_RANGE) continue;
         if (!best || d < best.d) best = { unit: u, d };
       }
       return best;
@@ -2390,7 +2404,7 @@ export class GameWorld {
       const tmpl = this.resolveBuildingDef(posse.mission.instanceLayerId);
       if (tmpl && exitDist(tmpl.exitX, tmpl.exitY) <= EXIT_USE_RANGE) {
         // Prefer talking to an NPC only if they're clearly closer than the door
-        const npc = nearestNpcInRange();
+        const npc = pickNpcInRange();
         if (!npc || npc.d >= exitDist(tmpl.exitX, tmpl.exitY) - 0.15) {
           if (posse.mission.phase === "extract") {
             this.cmdMissionExtract(session, posse);
@@ -2442,7 +2456,7 @@ export class GameWorld {
     }
 
     // 3) NPCs / shop counter — before exit so spawn-room talks don't boot you outside
-    const npcPick = nearestNpcInRange();
+    const npcPick = pickNpcInRange();
     if (npcPick) {
       const u = npcPick.unit;
       const spawn = this.map.npcSpawns.find((n) => n.id === u.id);

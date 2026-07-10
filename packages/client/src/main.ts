@@ -230,8 +230,8 @@ let lastKeyMoveSent = 0;
 let keyMoving = false;
 const DIR_RESEND_MS = 50;
 
-/** After click-to-interact: walk here then send intent.interact */
-let pendingInteract: { x: number; y: number } | null = null;
+/** After click-to-interact: walk here then send intent.interact (optional NPC target) */
+let pendingInteract: { x: number; y: number; targetUnitId?: string } | null = null;
 
 /** Mobile: next map tap is attack-move instead of walk */
 let mobileAttackMode = false;
@@ -319,9 +319,11 @@ function handlePrimaryPointer(clientX: number, clientY: number, asAttack: boolea
   const s = snap;
   if (!s || !socket || !view) return;
   if (s.you.respawnIn != null && s.you.respawnIn > 0) return;
-  if (s.dialogue || s.shop) return;
+  // Shop stays modal; dialogue allows retargeting another NPC (Vince → Rita)
+  if (s.shop) return;
 
   if (asAttack || mobileAttackMode) {
+    if (s.dialogue) return;
     fireAttackAtClient(clientX, clientY);
     return;
   }
@@ -332,15 +334,19 @@ function handlePrimaryPointer(clientX: number, clientY: number, asAttack: boolea
   if (unitId) {
     const u = s.units.find((x) => x.id === unitId);
     if (u && u.posseId === s.you.posseId) {
+      if (s.dialogue) return;
       pendingInteract = null;
       socket.send({ type: "intent.select", unitId });
       return;
     }
     if (u && u.kind === "npc") {
+      // Closing an open chat first so click-to-Rita isn't swallowed by the modal
+      if (s.dialogue) {
+        socket.send({ type: "dialogue.close" });
+      }
       // Walk up and open chat / profile (dancers include tip options).
-      // Prefer NPC foot position so we never route a "talk" click to the exit door.
-      pendingInteract = null;
-      clickInteractAt(u.x, u.y);
+      // Pass unit id so server talks to Rita even when Vince is slightly nearer.
+      clickInteractAt(u.x, u.y, u.id);
       return;
     }
     if (u && u.posseId !== s.you.posseId) {
@@ -351,6 +357,8 @@ function handlePrimaryPointer(clientX: number, clientY: number, asAttack: boolea
       return;
     }
   }
+
+  if (s.dialogue) return;
 
   const building = view.pickBuilding(clientX, clientY);
   if (building) {
@@ -1822,12 +1830,14 @@ function onSnapshot(s: WorldSnapshot): void {
   } else {
     respawnOverlay.classList.add("hidden");
   }
-  // Auto-complete click-to-interact when in range
+  // Auto-complete click-to-interact when in range (must stay within server NPC_TALK_RANGE)
   if (pendingInteract && view) {
     const d = view.distToLeader(pendingInteract.x, pendingInteract.y);
-    if (d <= INTERACT_RANGE + 0.35) {
+    // Slightly tighter than server (INTERACT_RANGE+0.55) so we don't fire one frame too early
+    if (d <= INTERACT_RANGE + 0.4) {
+      const target = pendingInteract.targetUnitId;
       pendingInteract = null;
-      fireInteract();
+      fireInteract(target);
     }
   }
 }
@@ -1870,7 +1880,7 @@ function playCombatFxAudio(events: CombatFxEvent[]): void {
   }
 }
 
-function fireInteract(): void {
+function fireInteract(targetUnitId?: string): void {
   if (!socket) return;
   keys.up = keys.down = keys.left = keys.right = false;
   keyMoving = false;
@@ -1878,12 +1888,16 @@ function fireInteract(): void {
   view?.clearLocalPrediction();
   socket.send({ type: "intent.dir", dx: 0, dy: 0 });
   socket.send({ type: "intent.stop" });
-  socket.send({ type: "intent.interact" });
+  if (targetUnitId) {
+    socket.send({ type: "intent.interact", targetUnitId });
+  } else {
+    socket.send({ type: "intent.interact" });
+  }
   sfx.play("ui");
 }
 
 /** Walk toward a world point, then interact when close enough. */
-function clickInteractAt(x: number, y: number): void {
+function clickInteractAt(x: number, y: number, targetUnitId?: string): void {
   if (!socket || !view || !snap) return;
   keys.up = keys.down = keys.left = keys.right = false;
   if (keyMoving) {
@@ -1891,12 +1905,13 @@ function clickInteractAt(x: number, y: number): void {
     socket.send({ type: "intent.dir", dx: 0, dy: 0 });
   }
   const d = view.distToLeader(x, y);
-  if (d <= INTERACT_RANGE + 0.2) {
+  // Server NPC talk range is INTERACT_RANGE+0.55 — fire only when safely inside it
+  if (d <= INTERACT_RANGE + 0.35) {
     pendingInteract = null;
-    fireInteract();
+    fireInteract(targetUnitId);
     return;
   }
-  pendingInteract = { x, y };
+  pendingInteract = { x, y, targetUnitId };
   view.predictClickMove(x, y);
   socket.send({ type: "intent.move", x, y });
 }

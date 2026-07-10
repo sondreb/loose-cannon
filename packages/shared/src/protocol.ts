@@ -335,7 +335,8 @@ export type ClientMessage =
   | { type: "intent.stop" }
   | { type: "intent.fire"; targetId?: string; x?: number; y?: number }
   | { type: "intent.select"; unitId: string }
-  | { type: "intent.interact" }
+  /** Optional targetUnitId: talk to that NPC when in range (click-to-talk). */
+  | { type: "intent.interact"; targetUnitId?: string }
   | { type: "intent.exit" }
   | { type: "dialogue.choice"; choiceId: string }
   | { type: "dialogue.close" }
