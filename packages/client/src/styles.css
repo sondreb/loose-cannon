@@ -2700,6 +2700,11 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
     padding: 0.45rem 0.5rem;
   }
 
+  #minimap {
+    display: none !important;
+  }
+} /* end @media (max-width: 900px) primary mobile block */
+
 /* MAP top-right (session/mission stack sits just below) */
 .minimap-btn {
   position: absolute;
@@ -2830,10 +2835,7 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
   }
 }
 
-  #minimap {
-    display: none !important;
-  }
-
+@media (max-width: 900px) {
   #mobileControls {
     display: flex;
     position: absolute;
