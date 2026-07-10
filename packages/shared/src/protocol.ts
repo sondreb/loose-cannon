@@ -46,7 +46,7 @@ export interface UnitPublic {
   isPlayerLeader?: boolean;
   /** Boss is too hurt to fight but still "alive" while goons cover him */
   incapacitated?: boolean;
-  /** Presentation / portrait (street mix ~20% female) */
+  /** Presentation / portrait (street mix ~40% female) */
   gender?: "male" | "female";
   /** Present for your own posse units */
   ownedWeapons?: WeaponId[];
@@ -118,6 +118,8 @@ export interface DialogueState {
   choices: DialogueChoice[];
   /** Offline Grok TTS clip under /voice/{id}.mp3 */
   voiceLineId?: string;
+  /** For portrait selection (crew art / gender) */
+  gender?: "male" | "female";
 }
 
 export interface ShopState {

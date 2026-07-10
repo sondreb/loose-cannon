@@ -1,4 +1,4 @@
-/** Street names — ~20% female when using randomRecruitProfile */
+/** Street names — ~40% female when using randomRecruitProfile */
 
 const FIRST_M = [
   "Rico",
@@ -67,8 +67,8 @@ const LAST = [
 
 export type Gender = "male" | "female";
 
-/** Street meat / hire / AI goon gender mix */
-export const FEMALE_SPAWN_CHANCE = 0.2;
+/** Street meat / hire / AI goon gender mix (~40% women) */
+export const FEMALE_SPAWN_CHANCE = 0.4;
 
 export function rollGender(rng = Math.random): Gender {
   return rng() < FEMALE_SPAWN_CHANCE ? "female" : "male";

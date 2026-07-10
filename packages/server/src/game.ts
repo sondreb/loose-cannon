@@ -331,7 +331,7 @@ export class GameWorld {
       const gender: Gender = femaleNpc
         ? "female"
         : street
-          ? Math.random() < 0.2
+          ? Math.random() < 0.4
             ? "female"
             : "male"
           : "male";
@@ -500,7 +500,7 @@ export class GameWorld {
       });
     };
 
-    // Boss dead-center; goons on a protective circle (~20% female street meat)
+    // Boss dead-center; goons on a protective circle (~40% female street meat)
     make(leaderId, `${name} Boss`, "ai_boss", x, y, threat, "male");
     const g1 = `${id}_g1`;
     const g2 = `${id}_g2`;
@@ -2127,7 +2127,9 @@ export class GameWorld {
         this.serviceGym(session, posse);
         return;
       }
-      posse.dialogue = this.buildDialogue(u, posse);
+      const dlg = this.buildDialogue(u, posse);
+      dlg.gender = u.gender;
+      posse.dialogue = dlg;
       posse.shop = null;
       return;
     }

@@ -18,7 +18,8 @@ import {
 } from "@loose-cannon/shared";
 import { sfx } from "./audio.js";
 import { voice } from "./voice.js";
-import { portraitDataUrl, statBonus, upgradeTier } from "./avatar.js";
+import { statBonus, upgradeTier } from "./avatar.js";
+import { crewPortraitUrl, isFemaleUnit } from "./crewPortraits.js";
 import {
   ARMOR_BAR_ORDER,
   armorIconDataUrl,
@@ -70,7 +71,7 @@ const dlgClose = $("dlgClose");
 const dlgPortraitWrap = $("dlgPortraitWrap");
 const dlgPortrait = $("dlgPortrait") as HTMLImageElement;
 
-/** Static NPC art for dialogue (public/art) — -2 variants for alt characters. */
+/** Static named-NPC art for dialogue (public/art). */
 const DIALOGUE_PORTRAITS: Record<string, string> = {
   npc_bartender: "/art/bartender-male.jpg",
   npc_club: "/art/bartender-female.jpg",
@@ -78,14 +79,32 @@ const DIALOGUE_PORTRAITS: Record<string, string> = {
   npc_gun: "/art/bartender-female-2.jpg",
 };
 
-function dialoguePortraitUrl(npcId: string, npcName: string): string | null {
-  if (DIALOGUE_PORTRAITS[npcId]) return DIALOGUE_PORTRAITS[npcId];
+/** Unit / dialogue face: named NPC art, else stable crew portrait pool. */
+function unitFaceUrl(
+  key: string,
+  opts?: { gender?: string | null; name?: string; leader?: boolean; dead?: boolean },
+): string {
+  const named = opts?.name ? DIALOGUE_PORTRAITS[key] : undefined;
+  if (named) return named;
+  // Named keys (npc_bartender etc.)
+  if (DIALOGUE_PORTRAITS[key]) return DIALOGUE_PORTRAITS[key]!;
+  const female = isFemaleUnit(opts?.gender, opts?.name);
+  return crewPortraitUrl(key, female);
+}
+
+function dialoguePortraitUrl(
+  npcId: string,
+  npcName: string,
+  gender?: string | null,
+): string {
+  if (DIALOGUE_PORTRAITS[npcId]) return DIALOGUE_PORTRAITS[npcId]!;
   const n = npcName.toLowerCase();
   if (n.includes("vince") || n.includes("barman")) return "/art/bartender-male.jpg";
   if (n.includes("venus") || n.includes("static")) return "/art/bartender-female.jpg";
   if (n.includes("rita")) return "/art/club-female-2.jpg";
   if (n.includes("kate") || n.includes("caliber")) return "/art/bartender-female-2.jpg";
-  return null;
+  // Hireable street meat / generic talkers — painted crew faces
+  return crewPortraitUrl(npcId + npcName, isFemaleUnit(gender, npcName));
 }
 const shopModal = $("shopModal");
 const shopTitle = $("shopTitle");
@@ -515,11 +534,11 @@ function renderPosse(): void {
   units.forEach((u, i) => {
     const tier = upgradeTier(u.stats);
     const boss = isBossUnit(u);
-    const portrait = portraitDataUrl(u.id + u.name, {
+    const portrait = unitFaceUrl(u.id + u.name, {
+      gender: u.gender,
+      name: u.name,
       leader: boss,
       dead: !u.alive,
-      upgradeTier: tier,
-      female: u.gender === "female",
     });
     const card = document.createElement("div");
     card.className =
@@ -531,7 +550,7 @@ function renderPosse(): void {
     card.innerHTML = `
       <div class="card-top">
         <div class="portrait-wrap tier-${tier}">
-          <img class="portrait" src="${portrait}" alt="" width="48" height="48" draggable="false" />
+          <img class="portrait photo" src="${portrait}" alt="" width="48" height="48" draggable="false" />
           <span class="slot-num">${i + 1}</span>
         </div>
         <div class="card-main">
@@ -682,16 +701,16 @@ function renderGear(): void {
   if (key === lastGearKey) return;
   lastGearKey = key;
 
-  const portrait = portraitDataUrl(u.id + u.name, {
+  const portrait = unitFaceUrl(u.id + u.name, {
+    gender: u.gender,
+    name: u.name,
     leader: !!(u.isPlayerLeader || u.kind === "player"),
     dead: !u.alive,
-    upgradeTier: tier,
-    female: u.gender === "female",
   });
 
   statsView.innerHTML = `
     <div class="gear-profile">
-      <img class="portrait lg" src="${portrait}" alt="" width="56" height="56" draggable="false" />
+      <img class="portrait photo lg" src="${portrait}" alt="" width="56" height="56" draggable="false" />
       <div>
         <div class="gear-name">${escapeHtml(u.name)}</div>
         <div class="badge up-tier t${tier}">${tierLabel(tier)} ${tierStars(tier)}</div>
@@ -720,28 +739,28 @@ function renderCrewEditor(): void {
   if (!u) return;
   const units = myUnits();
   const tier = upgradeTier(u.stats);
-  const portrait = portraitDataUrl(u.id + u.name, {
+  const portrait = unitFaceUrl(u.id + u.name, {
+    gender: u.gender,
+    name: u.name,
     leader: !!(u.isPlayerLeader || u.kind === "player"),
     dead: !u.alive,
-    upgradeTier: tier,
-    female: u.gender === "female",
   });
 
   crewEditorRoster.innerHTML = "";
   units.forEach((member, i) => {
     const t = upgradeTier(member.stats);
-    const img = portraitDataUrl(member.id + member.name, {
+    const img = unitFaceUrl(member.id + member.name, {
+      gender: member.gender,
+      name: member.name,
       leader: !!(member.isPlayerLeader || member.kind === "player"),
       dead: !member.alive,
-      upgradeTier: t,
-      female: member.gender === "female",
     });
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className =
       "crew-roster-card" + (member.id === u.id ? " active" : "") + (!member.alive ? " dead" : "");
     btn.innerHTML = `
-      <img src="${img}" alt="" width="40" height="40" draggable="false" />
+      <img class="photo" src="${img}" alt="" width="40" height="40" draggable="false" />
       <div>
         <div class="name">${i + 1}. ${escapeHtml(member.name)}</div>
         <div class="muted tiny">${tierLabel(t)} · ${escapeHtml(WEAPONS[member.weapon].name)}</div>
@@ -755,7 +774,7 @@ function renderCrewEditor(): void {
 
   crewEditorProfile.innerHTML = `
     <div class="crew-profile-hero">
-      <img class="portrait xl" src="${portrait}" alt="" width="72" height="72" draggable="false" />
+      <img class="portrait photo xl" src="${portrait}" alt="" width="72" height="72" draggable="false" />
       <div>
         <h3>${escapeHtml(u.name)}</h3>
         <div class="badge up-tier t${tier}">${tierLabel(tier)} ${tierStars(tier)}</div>
@@ -831,20 +850,13 @@ function renderDialogue(): void {
     voice.play(d.voiceLineId, { force: true });
   }
 
-  const portrait = dialoguePortraitUrl(d.npcId, d.npcName);
-  if (portrait) {
-    dlgPortraitWrap.classList.remove("hidden");
-    if (dlgPortrait.getAttribute("src") !== portrait) {
-      dlgPortrait.src = portrait;
-    }
-    dlgPortrait.alt = d.npcName;
-    dialogueModal.querySelector(".dialogue-card")?.classList.add("has-portrait");
-  } else {
-    dlgPortraitWrap.classList.add("hidden");
-    dlgPortrait.removeAttribute("src");
-    dlgPortrait.alt = "";
-    dialogueModal.querySelector(".dialogue-card")?.classList.remove("has-portrait");
+  const portrait = dialoguePortraitUrl(d.npcId, d.npcName, d.gender);
+  dlgPortraitWrap.classList.remove("hidden");
+  if (dlgPortrait.getAttribute("src") !== portrait) {
+    dlgPortrait.src = portrait;
   }
+  dlgPortrait.alt = d.npcName;
+  dialogueModal.querySelector(".dialogue-card")?.classList.add("has-portrait");
 
   dlgName.textContent = d.npcName;
   dlgText.textContent = d.text;
@@ -976,11 +988,15 @@ function renderMemorialWall(): void {
     const card = document.createElement("article");
     card.className = "memorial-entry";
     const who = m.gender === "female" ? "She" : m.gender === "male" ? "He" : "They";
+    const face = unitFaceUrl(m.id + m.name, { gender: m.gender, name: m.name, dead: true });
     card.innerHTML = `
-      <div class="memorial-name">${escapeHtml(m.name)}</div>
-      <p class="memorial-epitaph">"${escapeHtml(m.epitaph)}"</p>
-      <p class="memorial-cause">${escapeHtml(m.cause)}</p>
-      <p class="muted tiny">${who} will be remembered. Briefly.</p>
+      <img class="photo memorial-face" src="${face}" alt="" width="48" height="48" draggable="false" />
+      <div class="memorial-body">
+        <div class="memorial-name">${escapeHtml(m.name)}</div>
+        <p class="memorial-epitaph">"${escapeHtml(m.epitaph)}"</p>
+        <p class="memorial-cause">${escapeHtml(m.cause)}</p>
+        <p class="muted tiny">${who} will be remembered. Briefly.</p>
+      </div>
     `;
     memorialList.appendChild(card);
   }
@@ -1255,14 +1271,14 @@ function renderShop(): void {
     chip.type = "button";
     chip.className = "shop-buyer-chip" + (m.id === u?.id ? " active" : "");
     chip.dataset.selectUnit = m.id;
-    const img = portraitDataUrl(m.id + m.name, {
+    const img = unitFaceUrl(m.id + m.name, {
+      gender: m.gender,
+      name: m.name,
       leader: !!(m.isPlayerLeader || m.kind === "player"),
       dead: !m.alive,
-      upgradeTier: t,
-      female: m.gender === "female",
     });
     chip.innerHTML = `
-      <img src="${img}" alt="" width="32" height="32" draggable="false" />
+      <img class="photo" src="${img}" alt="" width="32" height="32" draggable="false" />
       <span>${escapeHtml(m.name.split(" ")[0] ?? m.name)}</span>
     `;
     shopBuyerRow.appendChild(chip);
@@ -2119,7 +2135,7 @@ const ONBOARD_STEPS: OnboardStep[] = [
     text: "Talk to street NPCs and bar muscle. Hire them, equip better iron, and keep the boss in the middle of the pack.",
     bullets: [
       "E / Use — doors, shops, talk, recruit.",
-      "Street meat is ~20% women / 80% men — both can join the crew.",
+      "Street meat is ~40% women / 60% men — both can join the crew.",
       "Boss goes DOWNED if bodyguards still stand — they cover you until the wipe.",
     ],
     art: "/art/gangster-female.jpg",

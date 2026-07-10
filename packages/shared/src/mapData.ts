@@ -589,7 +589,7 @@ export function createSkidrowMap(): WorldMapDef {
       { id: "npc_gun", name: "Caliber Kate", x: 74, y: 85, role: "dealer", buildingId: "shop_gun" },
       { id: "npc_booze", name: "Bottle Bob", x: 86, y: 3, role: "dealer", buildingId: "shop_liquor" },
       { id: "npc_club", name: "Venus Static", x: 38, y: 3, role: "bartender", buildingId: "club_neon" },
-      // Recruitable street meat in SAFE DOWNTOWN (~20% women by name + spawn gender)
+      // Recruitable street meat in SAFE DOWNTOWN (~40% women by name + spawn gender)
       { id: "npc_street", name: "Corner Carl", x: 36, y: 28, role: "thug" },
       { id: "npc_street2", name: "Alley Ace", x: 22, y: 30, role: "thug" },
       { id: "npc_street3", name: "Meter Maid Mayhem", x: 48, y: 24, role: "thug" },
