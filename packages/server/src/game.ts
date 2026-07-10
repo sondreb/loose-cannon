@@ -59,6 +59,8 @@ interface Unit {
   alive: boolean;
   fireCd: number;
   isPlayerLeader: boolean;
+  /** Boss is too hurt to fight; stays alive until the rest of the posse falls */
+  incapacitated: boolean;
   ownedWeapons: Set<WeaponId>;
   ownedArmors: Set<ArmorId>;
   aiWanderT: number;
@@ -66,6 +68,16 @@ interface Unit {
   respawnT?: number;
   /** Posse that last damaged this unit (for wipe loot attribution) */
   lastHitByPosseId: string | null;
+}
+
+function weaponScore(w: WeaponId): number {
+  const d = WEAPONS[w];
+  if (!d) return 0;
+  return d.damage / Math.max(0.05, d.fireCooldown) + d.range * 0.4;
+}
+
+function armorScore(a: ArmorId): number {
+  return ARMORS[a]?.damageReduce ?? 0;
 }
 
 const STARTER_WEAPONS: WeaponId[] = ["pipe", "pistol", "tommy"];
@@ -221,6 +233,7 @@ export class GameWorld {
         alive: true,
         fireCd: 0,
         isPlayerLeader: false,
+        incapacitated: false,
         ownedWeapons: new Set(["pipe"]),
         ownedArmors: new Set(["none"]),
         aiWanderT: 0,
@@ -274,9 +287,9 @@ export class GameWorld {
     const gearFor = (t: number): { weapon: WeaponId; armor: ArmorId; weapons: WeaponId[]; armors: ArmorId[]; stats: Partial<UnitStats> } => {
       if (t >= 4) {
         return {
-          weapon: "tommy",
+          weapon: "minigun",
           armor: "plate",
-          weapons: ["pipe", "pistol", "uzi", "tommy", "shotgun"],
+          weapons: ["pipe", "pistol", "uzi", "tommy", "shotgun", "minigun"],
           armors: ["none", "leather", "kevlar", "plate"],
           stats: { aim: 9, guts: 8, muscle: 8, speed: 7, maxHealth: 130 },
         };
@@ -344,6 +357,7 @@ export class GameWorld {
         alive: true,
         fireCd: 0,
         isPlayerLeader: false,
+        incapacitated: false,
         ownedWeapons: new Set(g.weapons),
         ownedArmors: new Set(g.armors),
         aiWanderT: Math.random() * 3,
@@ -437,6 +451,7 @@ export class GameWorld {
       alive: true,
       fireCd: 0,
       isPlayerLeader: true,
+      incapacitated: false,
       ownedWeapons: new Set(STARTER_WEAPONS),
       ownedArmors: new Set(["none"]),
       aiWanderT: 0,
@@ -466,6 +481,7 @@ export class GameWorld {
       alive: true,
       fireCd: 0,
       isPlayerLeader: false,
+      incapacitated: false,
       ownedWeapons: new Set(STARTER_WEAPONS),
       ownedArmors: new Set(["none"]),
       aiWanderT: 0,
@@ -810,6 +826,14 @@ export class GameWorld {
     if (len >= 0.001) {
       posse.attackTargetId = null;
       posse.moveLabel = "MOVING";
+      // Downed boss can't free-run — bodyguards still form up and can retreat with him via click-move
+      if (leader.incapacitated) {
+        leader.moveMode = "idle";
+        leader.dirX = 0;
+        leader.dirY = 0;
+        this.assignCircleFormation(posse, leader.x, leader.y, { moveBoss: false });
+        return;
+      }
       // Only the boss steers free; goons escort in a circle (updated each tick)
       leader.moveMode = "dir";
       leader.dirX = ndx;
@@ -957,6 +981,8 @@ export class GameWorld {
 
   private resolveShot(shooter: Unit, target: Unit, session?: CharacterSession): void {
     if (shooter.fireCd > 0 || !shooter.alive || !target.alive) return;
+    // Downed boss cannot fight
+    if (shooter.incapacitated) return;
     // No lethal combat in safe downtown
     if (this.unitInSafeZone(shooter) || this.unitInSafeZone(target)) return;
     const w = WEAPONS[shooter.weapon];
@@ -1049,31 +1075,101 @@ export class GameWorld {
     }
 
     if (target.health <= 0) {
-      target.health = 0;
-      target.alive = false;
-      target.tx = target.x;
-      target.ty = target.y;
-      target.moveMode = "idle";
-      target.dirX = 0;
-      target.dirY = 0;
-      this.pushCombatFx({
-        kind: "death",
-        x0: target.x,
-        y0: target.y,
-        x1: target.x,
-        y1: target.y,
-        weapon,
-      });
-      if (session) this.log(session, `${target.name} is down!`);
-      // Clear attack orders that pointed at them
-      for (const p of this.posses.values()) {
-        if (p.attackTargetId === target.id) {
-          p.attackTargetId = null;
-          p.moveLabel = null;
-        }
+      // Boss is kept alive (incapacitated) while bodyguards still stand
+      if (this.tryIncapacitateBoss(target, shooter.posseId, session)) {
+        return;
       }
-      this.onUnitDown(target, shooter.posseId);
+      this.killUnit(target, shooter.posseId, session);
     }
+  }
+
+  /**
+   * If this is a posse boss and goons remain, put the boss in a downed state
+   * instead of killing them — they can't fight until healed (or until wipe).
+   */
+  private tryIncapacitateBoss(
+    target: Unit,
+    killerPosseId: string | null,
+    session?: CharacterSession,
+  ): boolean {
+    const posse = this.posses.get(target.posseId);
+    if (!posse) return false;
+    const isBoss = target.id === posse.leaderId || target.isPlayerLeader || target.kind === "ai_boss";
+    if (!isBoss) return false;
+    if (target.incapacitated) return false; // already downed — allow true death path if forced
+
+    const goonsLeft = this.goons(posse).filter((g) => g.alive && g.id !== target.id).length;
+    if (goonsLeft <= 0) return false;
+
+    target.health = Math.max(1, Math.round(target.stats.maxHealth * 0.08));
+    target.alive = true;
+    target.incapacitated = true;
+    target.moveMode = "idle";
+    target.dirX = 0;
+    target.dirY = 0;
+    target.tx = target.x;
+    target.ty = target.y;
+    if (killerPosseId && killerPosseId !== posse.id) {
+      posse.lastKillerPosseId = killerPosseId;
+    }
+    posse.hostile = true;
+    posse.combatUntil = this.tick + TICK_HZ * 20;
+
+    this.pushCombatFx({
+      kind: "hit",
+      x0: target.x,
+      y0: target.y,
+      x1: target.x,
+      y1: target.y,
+      weapon: target.weapon,
+      crit: true,
+      dmg: 0,
+    });
+
+    const victimSession = [...this.sessions.values()].find((s) => s.posseId === posse.id);
+    if (victimSession) {
+      this.log(
+        victimSession,
+        `${target.name} is DOWNED — bodyguards cover the boss! Can't fight until the crew falls or you recover.`,
+      );
+      victimSession.conn?.send({
+        type: "notify",
+        kind: "downed",
+        title: "BOSS DOWNED",
+        body: "You're too hurt to fight. Your posse is covering you — stay alive!",
+      });
+    }
+    if (session && session.posseId !== posse.id) {
+      this.log(session, `${target.name} is downed — their crew still stands!`);
+    }
+    return true;
+  }
+
+  private killUnit(target: Unit, killerPosseId: string | null, session?: CharacterSession): void {
+    target.health = 0;
+    target.alive = false;
+    target.incapacitated = false;
+    target.tx = target.x;
+    target.ty = target.y;
+    target.moveMode = "idle";
+    target.dirX = 0;
+    target.dirY = 0;
+    this.pushCombatFx({
+      kind: "death",
+      x0: target.x,
+      y0: target.y,
+      x1: target.x,
+      y1: target.y,
+      weapon: target.weapon,
+    });
+    if (session) this.log(session, `${target.name} is down!`);
+    for (const p of this.posses.values()) {
+      if (p.attackTargetId === target.id) {
+        p.attackTargetId = null;
+        p.moveLabel = null;
+      }
+    }
+    this.onUnitDown(target, killerPosseId);
   }
 
   /** Per-tick: chase attack targets in front-line formation and auto-fire when in range */
@@ -1105,6 +1201,7 @@ export class GameWorld {
         : undefined;
 
       for (const u of this.members(posse)) {
+        if (u.incapacitated) continue;
         const w = WEAPONS[u.weapon];
         const d = dist(u.x, u.y, target.x, target.y);
         const engageRange = Math.max(1.1, w.range * 0.88);
@@ -1165,6 +1262,7 @@ export class GameWorld {
     const leader = this.leader(posse);
     if (!leader) return { action: "IDLE", actionDetail: null };
     if (!leader.alive) return { action: "DOWN", actionDetail: "Awaiting respawn" };
+    if (leader.incapacitated) return { action: "DOWNED", actionDetail: "Bodyguards covering boss" };
     if (posse.shop) return { action: "SHOPPING", actionDetail: posse.shop.shopName };
     if (posse.dialogue) return { action: "PERSUADE", actionDetail: posse.dialogue.npcName };
 
@@ -1206,29 +1304,43 @@ export class GameWorld {
     }
 
     // Player goons: bank gear, remove permanently (no DOWN ghosts)
-    if (posse.isPlayer && !unit.isPlayerLeader) {
+    if (posse.isPlayer && !unit.isPlayerLeader && unit.id !== posse.leaderId) {
       this.bankUnitGear(posse, unit);
       const session = [...this.sessions.values()].find((s) => s.posseId === posse.id);
       if (session) this.log(session, `${unit.name} is gone. Permanent.`);
       this.removeMember(posse, unit.id, true);
+      // If only a downed boss remains, the whole crew falls
+      this.finishIncapacitatedBossIfAlone(posse);
       this.tryWipeLoot(posse);
       return;
     }
 
-    if (posse.isPlayer && unit.isPlayerLeader) {
+    if (posse.isPlayer && (unit.isPlayerLeader || unit.id === posse.leaderId)) {
       unit.respawnT = RESPAWN_DELAY_SEC;
       unit.moveMode = "idle";
       unit.dirX = 0;
       unit.dirY = 0;
       unit.tx = unit.x;
       unit.ty = unit.y;
+      unit.incapacitated = false;
       const session = [...this.sessions.values()].find((s) => s.posseId === posse.id);
       if (session) {
-        this.log(session, `You're down. Respawning in ${RESPAWN_DELAY_SEC}s…`);
+        this.log(session, `You're dead. Respawning in ${RESPAWN_DELAY_SEC}s…`);
+        session.conn?.send({
+          type: "notify",
+          kind: "killed",
+          title: "YOU'RE DEAD",
+          body: `The crew is wiped. Respawning in ${RESPAWN_DELAY_SEC}s…`,
+        });
       }
       this.purgeDeadGoons(posse);
       this.tryWipeLoot(posse);
       return;
+    }
+
+    // AI goon died — maybe finish incapacitated boss
+    if (!posse.isPlayer && unit.id !== posse.leaderId) {
+      this.finishIncapacitatedBossIfAlone(posse);
     }
 
     // AI / NPC posses — wipe when nobody left standing
@@ -1237,6 +1349,14 @@ export class GameWorld {
       this.tryWipeLoot(posse);
       posse.respawnT = TICK_HZ * 20;
     }
+  }
+
+  /** When the last bodyguard falls, a downed boss dies for real. */
+  private finishIncapacitatedBossIfAlone(posse: Posse): void {
+    const leader = this.leader(posse);
+    if (!leader || !leader.alive || !leader.incapacitated) return;
+    if (this.goons(posse).some((g) => g.alive)) return;
+    this.killUnit(leader, posse.lastKillerPosseId);
   }
 
   private hasLivingMembers(posse: Posse): boolean {
@@ -1257,6 +1377,7 @@ export class GameWorld {
 
   /**
    * If the whole crew is down, the killer posse steals all weapons, armor, and cash.
+   * Better gear than the killer already owned gets a fancy upgrade toast.
    */
   private tryWipeLoot(victim: Posse): void {
     if (victim.lootedThisWipe) return;
@@ -1268,6 +1389,16 @@ export class GameWorld {
     if (!killer) return;
 
     victim.lootedThisWipe = true;
+
+    // Snapshot killer's best gear before loot (for upgrade detection)
+    let prevBestWeaponScore = 0;
+    let prevBestArmorScore = 0;
+    for (const m of this.members(killer)) {
+      for (const w of m.ownedWeapons) prevBestWeaponScore = Math.max(prevBestWeaponScore, weaponScore(w));
+      for (const a of m.ownedArmors) prevBestArmorScore = Math.max(prevBestArmorScore, armorScore(a));
+      prevBestWeaponScore = Math.max(prevBestWeaponScore, weaponScore(m.weapon));
+      prevBestArmorScore = Math.max(prevBestArmorScore, armorScore(m.armor));
+    }
 
     const weapons = new Set<WeaponId>(victim.fallenWeapons);
     const armors = new Set<ArmorId>(victim.fallenArmors);
@@ -1303,24 +1434,21 @@ export class GameWorld {
       for (const a of armors) m.ownedArmors.add(a);
     }
     const leader = this.leader(killer);
-    if (leader && leader.alive) {
+    if (leader && leader.alive && !leader.incapacitated) {
       let bestW: WeaponId = leader.weapon;
-      let bestD = WEAPONS[bestW]?.damage ?? 0;
+      let bestScore = weaponScore(bestW);
       for (const w of leader.ownedWeapons) {
-        const d = WEAPONS[w]?.damage ?? 0;
-        // Prefer higher damage; machine gun/tommy over pistol slightly via dps-ish
-        const score = d / Math.max(0.05, WEAPONS[w].fireCooldown);
-        const bestScore = bestD / Math.max(0.05, WEAPONS[bestW].fireCooldown);
+        const score = weaponScore(w);
         if (score > bestScore) {
           bestW = w;
-          bestD = d;
+          bestScore = score;
         }
       }
       leader.weapon = bestW;
       let bestA: ArmorId = "none";
       let bestR = 0;
       for (const a of leader.ownedArmors) {
-        const r = ARMORS[a]?.damageReduce ?? 0;
+        const r = armorScore(a);
         if (r > bestR) {
           bestR = r;
           bestA = a;
@@ -1329,11 +1457,38 @@ export class GameWorld {
       leader.armor = bestA;
     }
 
-    const gearList = [
-      ...[...weapons].map((w) => WEAPONS[w].name),
-      ...[...armors].map((a) => ARMORS[a].name),
-    ];
-    const gearTxt = gearList.length ? gearList.join(", ") : "nothing special";
+    // Classify loot vs upgrades
+    const upgrades: Array<{
+      kind: "weapon" | "armor";
+      id: string;
+      name: string;
+      upgrade: boolean;
+    }> = [];
+    const otherItems: string[] = [];
+    for (const w of weapons) {
+      const better = weaponScore(w) > prevBestWeaponScore + 0.01;
+      const entry = {
+        kind: "weapon" as const,
+        id: w,
+        name: WEAPONS[w].name,
+        upgrade: better,
+      };
+      if (better) upgrades.push(entry);
+      else otherItems.push(WEAPONS[w].name);
+    }
+    for (const a of armors) {
+      const better = armorScore(a) > prevBestArmorScore + 0.001;
+      const entry = {
+        kind: "armor" as const,
+        id: a,
+        name: ARMORS[a].name,
+        upgrade: better,
+      };
+      if (better) upgrades.push(entry);
+      else otherItems.push(ARMORS[a].name);
+    }
+
+    const gearTxt = [...upgrades.map((u) => u.name), ...otherItems].join(", ") || "nothing special";
 
     const killerSession = [...this.sessions.values()].find((s) => s.posseId === killer.id);
     const victimSession = [...this.sessions.values()].find((s) => s.posseId === victim.id);
@@ -1342,6 +1497,18 @@ export class GameWorld {
         killerSession,
         `Wiped ${victim.name}! Looted $${cashTaken} and gear: ${gearTxt}.`,
       );
+      killerSession.conn?.send({
+        type: "notify",
+        kind: "loot",
+        title: upgrades.length ? "GEAR UPGRADE!" : "WIPE LOOT",
+        subtitle: upgrades.length
+          ? `Better iron from ${victim.name}`
+          : `Spoils from ${victim.name}`,
+        cash: cashTaken,
+        victimName: victim.name,
+        upgrades,
+        otherItems,
+      });
     }
     if (victimSession) {
       this.log(
@@ -1905,6 +2072,7 @@ export class GameWorld {
       alive: true,
       fireCd: 0,
       isPlayerLeader: false,
+      incapacitated: false,
       ownedWeapons: new Set(STARTER_WEAPONS),
       ownedArmors: new Set(["none"]),
       aiWanderT: 0,
@@ -1939,6 +2107,7 @@ export class GameWorld {
     npc.ownerId = session.characterId;
     npc.posseId = posse.id;
     npc.isPlayerLeader = false;
+    npc.incapacitated = false;
     npc.alive = true;
     npc.health = Math.max(npc.health, npc.stats.maxHealth * 0.8);
     npc.weapon = "pistol";
@@ -2163,9 +2332,18 @@ export class GameWorld {
       if (!u.alive) continue;
       if (u.fireCd > 0) u.fireCd = Math.max(0, u.fireCd - dt);
 
-      const speed = MOVE_SPEED * (0.7 + u.stats.speed * 0.06);
+      // Downed boss: crawl slowly if forced to move with formation, no free sprint
+      const baseSpeed = MOVE_SPEED * (0.7 + u.stats.speed * 0.06);
+      const speed = u.incapacitated ? baseSpeed * 0.35 : baseSpeed;
       const posse = this.posses.get(u.posseId);
       const bid = posse?.insideBuildingId ?? u.buildingId;
+
+      if (u.incapacitated && u.moveMode === "dir") {
+        // Boss can be dragged with the crew but not free-run alone
+        u.moveMode = "idle";
+        u.dirX = 0;
+        u.dirY = 0;
+      }
 
       if (u.moveMode === "dir" && (u.dirX !== 0 || u.dirY !== 0)) {
         const step = speed * dt;
@@ -2357,6 +2535,7 @@ export class GameWorld {
       const spawn = this.pickQuietRespawn(u.posseId);
       u.alive = true;
       u.health = u.stats.maxHealth * 0.6;
+      u.incapacitated = false;
       u.x = spawn.x;
       u.y = spawn.y;
       u.tx = u.x;
@@ -2455,6 +2634,7 @@ export class GameWorld {
         facing: u.facing,
         alive: u.alive,
         isPlayerLeader: u.isPlayerLeader,
+        incapacitated: u.incapacitated || undefined,
       };
       if (u.posseId === posse.id) {
         pub.ownedWeapons = [...u.ownedWeapons];

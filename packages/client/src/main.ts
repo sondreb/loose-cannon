@@ -8,6 +8,7 @@ import {
   WEAPONS,
   type ArmorId,
   type CombatFxEvent,
+  type ServerMessage,
   type UnitPublic,
   type UpgradeId,
   type WeaponId,
@@ -74,6 +75,7 @@ const shopBuyerRow = $("shopBuyerRow");
 const shopClose = $("shopClose");
 const respawnOverlay = $("respawnOverlay");
 const respawnCount = $("respawnCount");
+const notifyToasts = $("notifyToasts");
 
 let snap: WorldSnapshot | null = null;
 let myName = "";
@@ -111,6 +113,58 @@ function pushEvent(text: string): void {
   // hit/miss/death handled by combat FX to avoid double-playing with VFX path
 }
 
+function showNotify(msg: Extract<ServerMessage, { type: "notify" }>): void {
+  sfx.unlock();
+  const el = document.createElement("div");
+  el.className = "notify-toast";
+
+  if (msg.kind === "loot") {
+    const hasUpgrade = msg.upgrades.some((u) => u.upgrade);
+    el.classList.add(hasUpgrade ? "loot-upgrade" : "loot");
+    if (hasUpgrade) sfx.play("lootFanfare", { force: true });
+    else sfx.play("cash", { force: true });
+    const upgradeHtml = msg.upgrades
+      .filter((u) => u.upgrade)
+      .map(
+        (u) =>
+          `<div class="nt-upgrade"><span class="tag">NEW BEST</span><span class="name">${escapeHtml(u.name)}</span></div>`,
+      )
+      .join("");
+    const other =
+      msg.otherItems.length > 0
+        ? `<p class="nt-other">Also looted: ${msg.otherItems.map(escapeHtml).join(", ")}</p>`
+        : "";
+    el.innerHTML = `
+      <div class="nt-kicker">${hasUpgrade ? "CREW UPGRADE" : "SPOILS OF WAR"}</div>
+      <div class="nt-title">${escapeHtml(msg.title)}</div>
+      <p class="nt-sub">${escapeHtml(msg.subtitle ?? `Wiped ${msg.victimName}`)}</p>
+      ${msg.cash > 0 ? `<span class="nt-cash">+$${msg.cash}</span>` : ""}
+      ${upgradeHtml ? `<div class="nt-upgrades">${upgradeHtml}</div>` : ""}
+      ${other}
+    `;
+  } else if (msg.kind === "killed") {
+    el.classList.add("killed");
+    sfx.play("playerDeath", { force: true });
+    el.innerHTML = `
+      <div class="nt-kicker">WIPED</div>
+      <div class="nt-title">${escapeHtml(msg.title)}</div>
+      <p class="nt-sub">${escapeHtml(msg.body)}</p>
+    `;
+  } else if (msg.kind === "downed") {
+    el.classList.add("downed");
+    sfx.play("hurt", { force: true });
+    el.innerHTML = `
+      <div class="nt-kicker">CRITICAL</div>
+      <div class="nt-title">${escapeHtml(msg.title)}</div>
+      <p class="nt-sub">${escapeHtml(msg.body)}</p>
+    `;
+  }
+
+  notifyToasts.appendChild(el);
+  window.setTimeout(() => el.remove(), 4200);
+  while (notifyToasts.children.length > 4) notifyToasts.firstChild?.remove();
+}
+
 function pushChat(from: string, text: string, system?: boolean): void {
   const d = document.createElement("div");
   if (system) {
@@ -128,14 +182,26 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+function isBossUnit(u: UnitPublic): boolean {
+  return !!(u.isPlayerLeader || u.kind === "player" || u.kind === "ai_boss");
+}
+
 function myUnits(): UnitPublic[] {
   if (!snap) return [];
   // Only living posse members (dead goons are removed server-side; leader may show while respawning)
-  return snap.units.filter(
-    (u) =>
-      u.posseId === snap!.you.posseId &&
-      (u.alive || u.isPlayerLeader || u.kind === "player"),
-  );
+  // Boss is always slot #1
+  return snap.units
+    .filter(
+      (u) =>
+        u.posseId === snap!.you.posseId &&
+        (u.alive || u.isPlayerLeader || u.kind === "player"),
+    )
+    .sort((a, b) => {
+      const ab = isBossUnit(a) ? 0 : 1;
+      const bb = isBossUnit(b) ? 0 : 1;
+      if (ab !== bb) return ab - bb;
+      return a.name.localeCompare(b.name);
+    });
 }
 
 function selectedUnit(): UnitPublic | undefined {
@@ -178,7 +244,7 @@ function renderPosse(): void {
   const key = units
     .map(
       (u) =>
-        `${u.id}:${u.health}:${u.weapon}:${u.armor}:${u.alive}:${u.stats.aim},${u.stats.guts},${u.stats.muscle},${u.stats.speed},${u.stats.maxHealth}`,
+        `${u.id}:${u.health}:${u.weapon}:${u.armor}:${u.alive}:${u.incapacitated ? 1 : 0}:${u.stats.aim},${u.stats.guts},${u.stats.muscle},${u.stats.speed},${u.stats.maxHealth}`,
     )
     .join("|") + `|sel:${snap.you.selectedUnitId}`;
   if (key === lastPosseKey) {
@@ -190,8 +256,9 @@ function renderPosse(): void {
   posseList.innerHTML = "";
   units.forEach((u, i) => {
     const tier = upgradeTier(u.stats);
+    const boss = isBossUnit(u);
     const portrait = portraitDataUrl(u.id + u.name, {
-      leader: !!(u.isPlayerLeader || u.kind === "player"),
+      leader: boss,
       dead: !u.alive,
       upgradeTier: tier,
     });
@@ -200,7 +267,8 @@ function renderPosse(): void {
       "posse-card" +
       (u.id === snap!.you.selectedUnitId ? " selected" : "") +
       (tier > 0 ? " upgraded" : "") +
-      (!u.alive ? " dead" : "");
+      (!u.alive ? " dead" : "") +
+      (u.incapacitated ? " incapacitated" : "");
     card.innerHTML = `
       <div class="card-top">
         <div class="portrait-wrap tier-${tier}">
@@ -210,7 +278,8 @@ function renderPosse(): void {
         <div class="card-main">
           <div class="name-row">
             <span class="name">${escapeHtml(u.name)}</span>
-            ${u.isPlayerLeader || u.kind === "player" ? '<span class="badge boss">BOSS</span>' : ""}
+            ${boss ? '<span class="badge boss">BOSS</span>' : ""}
+            ${u.incapacitated ? '<span class="badge downed">DOWNED</span>' : ""}
             ${tier > 0 ? `<span class="badge up-tier t${tier}">${tierLabel(tier)}</span>` : '<span class="badge street">Street</span>'}
           </div>
           <div class="stars" title="Upgrade tier">${tierStars(tier)}</div>
@@ -219,6 +288,7 @@ function renderPosse(): void {
             <span class="arm">🛡 ${escapeHtml(ARMORS[u.armor].name)}</span>
           </div>
           ${!u.alive ? '<div class="status-dead">RESPAWNING…</div>' : ""}
+          ${u.incapacitated && u.alive ? '<div class="status-dead">CAN\'T FIGHT — covered by crew</div>' : ""}
         </div>
       </div>
       <div class="mini-stats">
@@ -730,6 +800,7 @@ function onSnapshot(s: WorldSnapshot): void {
 function weaponFireSfx(weapon: WeaponId): void {
   sfx.unlock();
   if (weapon === "shotgun") sfx.play("shotgun");
+  else if (weapon === "minigun") sfx.play("minigun");
   else if (weapon === "tommy") sfx.play("tommy");
   else if (weapon === "uzi") sfx.play("uzi");
   else if (weapon === "pipe") sfx.play("melee");
@@ -921,6 +992,7 @@ async function startGame(): Promise<void> {
     onSnapshot,
     onEvent: pushEvent,
     onChat: pushChat,
+    onNotify: showNotify,
     onClose: () => {
       pushEvent("Disconnected from server.");
     },

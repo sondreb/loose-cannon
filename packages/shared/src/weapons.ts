@@ -5,6 +5,7 @@ export type WeaponId =
   | "uzi"
   | "shotgun"
   | "tommy"
+  | "minigun"
   | "flamethrower";
 
 export type ArmorId = "none" | "leather" | "kevlar" | "plate";
@@ -99,6 +100,15 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     price: 700,
     description: "Full-auto street sweeper. Classic crime-movie swagger.",
   },
+  minigun: {
+    id: "minigun",
+    name: "Minigun",
+    damage: 16,
+    range: 7,
+    fireCooldown: 0.055,
+    price: 1400,
+    description: "Rotary doom. Spins up your problems into confetti.",
+  },
   flamethrower: {
     id: "flamethrower",
     name: "Flamethrower",
@@ -185,6 +195,7 @@ export const SHOP_WEAPON_ORDER: WeaponId[] = [
   "uzi",
   "shotgun",
   "tommy",
+  "minigun",
   "flamethrower",
 ];
 

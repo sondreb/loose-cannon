@@ -118,6 +118,27 @@ export function weaponIconDataUrl(
       for (let x = 10; x <= 14; x++) for (let y = 10; y <= 13; y++) p(x, y, accent);
       p(16, 7, ink);
       break;
+    case "minigun":
+      // Long multi-barrel rotary gun
+      for (let x = 1; x <= 17; x++) {
+        p(x, 8, ink);
+        p(x, 9, mid);
+        p(x, 10, ink);
+      }
+      for (let y = 7; y <= 11; y++) {
+        p(14, y, mid);
+        p(15, y, accent);
+        p(16, y, mid);
+      }
+      p(4, 11, ink);
+      p(5, 11, mid);
+      p(4, 12, mid);
+      p(6, 7, accent);
+      p(8, 7, accent);
+      p(10, 7, accent);
+      p(17, 8, hot);
+      p(18, 9, hot);
+      break;
     case "flamethrower":
       for (let x = 3; x <= 12; x++) {
         p(x, 9, ink);
@@ -225,6 +246,7 @@ export const WEAPON_BAR_ORDER: WeaponId[] = [
   "uzi",
   "shotgun",
   "tommy",
+  "minigun",
   "flamethrower",
 ];
 

@@ -44,6 +44,8 @@ export interface UnitPublic {
   facing: number; // 0-7
   alive: boolean;
   isPlayerLeader?: boolean;
+  /** Boss is too hurt to fight but still "alive" while goons cover him */
+  incapacitated?: boolean;
   /** Present for your own posse units */
   ownedWeapons?: WeaponId[];
   ownedArmors?: ArmorId[];
@@ -183,7 +185,15 @@ export type ClientMessage =
   | { type: "chat"; text: string }
   | { type: "ping"; t: number };
 
-/** Server -> Client */
+/** Fancy loot / combat notifications (UI toasts) */
+export interface NotifyLootUpgrade {
+  kind: "weapon" | "armor";
+  id: string;
+  name: string;
+  /** true = strictly better than anything the crew had before the wipe */
+  upgrade: boolean;
+}
+
 export type ServerMessage =
   | { type: "auth.ok"; characterId: string; posseId: string; token: string }
   | { type: "auth.fail"; reason: string }
@@ -191,4 +201,17 @@ export type ServerMessage =
   | { type: "event"; text: string }
   | { type: "chat"; line: ChatLine }
   | { type: "reject"; reason: string }
-  | { type: "pong"; t: number };
+  | { type: "pong"; t: number }
+  /** Dramatic UI notifications (loot upgrades, death, downed) */
+  | {
+      type: "notify";
+      kind: "loot";
+      title: string;
+      subtitle?: string;
+      cash: number;
+      victimName: string;
+      upgrades: NotifyLootUpgrade[];
+      otherItems: string[];
+    }
+  | { type: "notify"; kind: "killed"; title: string; body: string }
+  | { type: "notify"; kind: "downed"; title: string; body: string };

@@ -9,6 +9,7 @@ export type Sfx =
   | "shotgun"
   | "uzi"
   | "tommy"
+  | "minigun"
   | "melee"
   | "blade"
   | "flame"
@@ -16,6 +17,8 @@ export type Sfx =
   | "crit"
   | "miss"
   | "death"
+  | "playerDeath"
+  | "lootFanfare"
   | "buy"
   | "door"
   | "ui"
@@ -60,13 +63,15 @@ export class SfxBus {
   play(name: Sfx, opts?: { force?: boolean; gain?: number }): void {
     const now = performance.now();
     const minGap =
-      name === "uzi" || name === "tommy"
-        ? 40
-        : name === "gun" || name === "pistol"
-          ? 55
-          : name === "hit" || name === "crit"
-            ? 35
-            : 20;
+      name === "minigun"
+        ? 28
+        : name === "uzi" || name === "tommy"
+          ? 40
+          : name === "gun" || name === "pistol"
+            ? 55
+            : name === "hit" || name === "crit"
+              ? 35
+              : 20;
     const last = this.lastPlay.get(name) ?? 0;
     if (!opts?.force && now - last < minGap) return;
     this.lastPlay.set(name, now);
@@ -97,6 +102,12 @@ export class SfxBus {
       case "tommy":
         this.gunshot(ctx, out, t, { bass: 110, body: 0.055, crack: 0.85, noise: 0.28 });
         this.tone(ctx, out, t, 90, 0.04, "sawtooth", 0.12);
+        break;
+      case "minigun":
+        // High-rate rotary brrrt
+        this.gunshot(ctx, out, t, { bass: 95, body: 0.035, crack: 0.75, noise: 0.26 });
+        this.tone(ctx, out, t, 160, 0.025, "sawtooth", 0.1);
+        this.noiseBurst(ctx, out, t, 0.03, 0.18, 2500);
         break;
       case "melee":
         // Pipe / blunt thwack
@@ -136,6 +147,22 @@ export class SfxBus {
         this.tone(ctx, out, t, 180, 0.12, "sawtooth", 0.22);
         this.tone(ctx, out, t + 0.06, 70, 0.22, "square", 0.18);
         this.tone(ctx, out, t + 0.12, 40, 0.2, "sine", 0.12);
+        break;
+      case "playerDeath":
+        // Heavier, longer "you're dead" sting
+        this.noiseBurst(ctx, out, t, 0.14, 0.5, 400);
+        this.tone(ctx, out, t, 200, 0.1, "sawtooth", 0.28);
+        this.tone(ctx, out, t + 0.05, 110, 0.18, "square", 0.24);
+        this.tone(ctx, out, t + 0.12, 55, 0.35, "sine", 0.22);
+        this.tone(ctx, out, t + 0.2, 40, 0.4, "triangle", 0.15);
+        this.noiseBurst(ctx, out, t + 0.08, 0.2, 0.25, 200);
+        break;
+      case "lootFanfare":
+        this.tone(ctx, out, t, 392, 0.08, "square", 0.14);
+        this.tone(ctx, out, t + 0.07, 523, 0.09, "square", 0.16);
+        this.tone(ctx, out, t + 0.15, 659, 0.12, "square", 0.18);
+        this.tone(ctx, out, t + 0.24, 784, 0.18, "triangle", 0.14);
+        this.noiseBurst(ctx, out, t + 0.1, 0.06, 0.12, 3000);
         break;
       case "buy":
         this.tone(ctx, out, t, 520, 0.05, "square", 0.12);

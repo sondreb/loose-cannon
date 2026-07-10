@@ -1280,6 +1280,184 @@ body {
   font-size: 1.4rem;
 }
 
+/* Fancy combat / loot toasts */
+#notifyToasts {
+  position: absolute;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  pointer-events: none;
+  width: min(420px, 92vw);
+  align-items: stretch;
+}
+
+.notify-toast {
+  pointer-events: none;
+  border-radius: 14px;
+  padding: 0.85rem 1.1rem 1rem;
+  background: linear-gradient(145deg, rgba(28, 22, 12, 0.94), rgba(12, 10, 16, 0.96));
+  border: 1px solid rgba(255, 204, 51, 0.55);
+  box-shadow:
+    0 0 0 1px rgba(255, 160, 40, 0.15),
+    0 16px 40px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  animation: toast-in 0.35s ease-out, toast-out 0.4s ease-in 3.6s forwards;
+  overflow: hidden;
+}
+
+.notify-toast.loot-upgrade {
+  border-color: rgba(255, 210, 80, 0.85);
+  background: linear-gradient(145deg, rgba(48, 36, 8, 0.96), rgba(18, 12, 8, 0.97));
+  box-shadow:
+    0 0 24px rgba(255, 180, 40, 0.35),
+    0 16px 40px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 240, 180, 0.2);
+}
+
+.notify-toast.killed {
+  border-color: rgba(255, 80, 70, 0.75);
+  background: linear-gradient(145deg, rgba(48, 12, 12, 0.96), rgba(16, 8, 8, 0.97));
+}
+
+.notify-toast.downed {
+  border-color: rgba(255, 140, 60, 0.7);
+  background: linear-gradient(145deg, rgba(40, 24, 8, 0.96), rgba(14, 10, 8, 0.97));
+}
+
+.notify-toast .nt-kicker {
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  font-weight: 800;
+  color: #ffcc33;
+  margin-bottom: 0.2rem;
+}
+
+.notify-toast.loot-upgrade .nt-kicker {
+  color: #ffe08a;
+  text-shadow: 0 0 12px rgba(255, 200, 60, 0.6);
+}
+
+.notify-toast.killed .nt-kicker {
+  color: #ff7060;
+}
+
+.notify-toast .nt-title {
+  font-size: 1.15rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  color: #fff6e0;
+  margin: 0 0 0.25rem;
+}
+
+.notify-toast.loot-upgrade .nt-title {
+  font-size: 1.35rem;
+  background: linear-gradient(90deg, #fff6c0, #ffcc33, #ff9a30);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.notify-toast .nt-sub {
+  margin: 0 0 0.55rem;
+  font-size: 0.82rem;
+  color: #c8b8a0;
+}
+
+.notify-toast .nt-cash {
+  display: inline-block;
+  margin-bottom: 0.45rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(80, 200, 100, 0.18);
+  border: 1px solid rgba(80, 200, 100, 0.45);
+  color: #7dffa0;
+  font-weight: 800;
+  font-size: 0.85rem;
+}
+
+.notify-toast .nt-upgrades {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.25rem;
+}
+
+.notify-toast .nt-upgrade {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: 10px;
+  background: rgba(255, 200, 60, 0.1);
+  border: 1px solid rgba(255, 200, 60, 0.35);
+  animation: upgrade-pulse 1.2s ease-in-out infinite;
+}
+
+.notify-toast .nt-upgrade .tag {
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  color: #1a1208;
+  background: linear-gradient(90deg, #ffd040, #ff9a20);
+  border-radius: 4px;
+  padding: 0.12rem 0.35rem;
+}
+
+.notify-toast .nt-upgrade .name {
+  font-weight: 800;
+  color: #fff0c0;
+  font-size: 0.95rem;
+}
+
+.notify-toast .nt-other {
+  margin: 0.45rem 0 0;
+  font-size: 0.75rem;
+  color: #9a9080;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-16px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+  }
+}
+
+@keyframes upgrade-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 200, 60, 0.15);
+  }
+  50% {
+    box-shadow: 0 0 16px 2px rgba(255, 200, 60, 0.25);
+  }
+}
+
+.posse-card.incapacitated {
+  opacity: 0.85;
+  border-color: rgba(255, 140, 60, 0.5);
+}
+
+.posse-card .badge.downed {
+  background: rgba(255, 120, 40, 0.25);
+  color: #ffb070;
+  border: 1px solid rgba(255, 140, 60, 0.5);
+}
+
 /* Modals */
 .modal {
   position: absolute;

@@ -11,6 +11,7 @@ export type NetHandlers = {
   onSnapshot: (snap: WorldSnapshot) => void;
   onEvent: (text: string) => void;
   onChat: (from: string, text: string, system?: boolean) => void;
+  onNotify: (msg: Extract<ServerMessage, { type: "notify" }>) => void;
   onClose: () => void;
 };
 
@@ -52,6 +53,9 @@ export class GameSocket {
           break;
         case "chat":
           this.handlers.onChat(msg.line.from, msg.line.text, msg.line.system);
+          break;
+        case "notify":
+          this.handlers.onNotify(msg);
           break;
         case "reject":
           this.handlers.onEvent(`Rejected: ${msg.reason}`);

@@ -51,7 +51,16 @@ function armorBulk(armor: string): number {
 }
 
 function weaponTier(weapon: string): number {
-  const order = ["pipe", "switchblade", "pistol", "uzi", "shotgun", "tommy", "flamethrower"];
+  const order = [
+    "pipe",
+    "switchblade",
+    "pistol",
+    "uzi",
+    "shotgun",
+    "tommy",
+    "minigun",
+    "flamethrower",
+  ];
   return Math.max(0, order.indexOf(weapon));
 }
 
@@ -382,7 +391,7 @@ export class WorldView {
     }
 
     if (e.kind === "shot" || e.kind === "flame" || e.kind === "melee") {
-      const big = e.weapon === "shotgun" || e.weapon === "tommy";
+      const big = e.weapon === "shotgun" || e.weapon === "tommy" || e.weapon === "minigun";
       // Muzzle flash at shooter
       if (e.kind !== "melee") {
         this.fx.push({
@@ -438,13 +447,22 @@ export class WorldView {
         }
       } else {
         // Bright full-path tracer + traveling bolt (readable at a glance)
-        const pellets = e.weapon === "shotgun" ? 6 : e.weapon === "uzi" || e.weapon === "tommy" ? 2 : 1;
+        const pellets =
+          e.weapon === "shotgun"
+            ? 6
+            : e.weapon === "minigun"
+              ? 3
+              : e.weapon === "uzi" || e.weapon === "tommy"
+                ? 2
+                : 1;
         const color =
           e.weapon === "shotgun"
             ? 0xffe080
-            : e.weapon === "tommy" || e.weapon === "uzi"
-              ? 0xffcc40
-              : 0xfff2a8;
+            : e.weapon === "minigun"
+              ? 0xffb040
+              : e.weapon === "tommy" || e.weapon === "uzi"
+                ? 0xffcc40
+                : 0xfff2a8;
         for (let i = 0; i < pellets; i++) {
           const spread = pellets > 1 ? (i - (pellets - 1) / 2) * 0.1 : 0;
           const px = -Math.sin(ang) * spread;
@@ -455,10 +473,10 @@ export class WorldView {
             y0: e.y0 + Math.sin(ang) * 0.35 + py,
             x1: e.x1 + px * 2.5 + (Math.random() - 0.5) * 0.12,
             y1: e.y1 + py * 2.5 + (Math.random() - 0.5) * 0.12,
-            life: e.weapon === "shotgun" ? 0.2 : 0.18,
+            life: e.weapon === "shotgun" ? 0.2 : e.weapon === "minigun" ? 0.14 : 0.18,
             max: 0.2,
             color,
-            wide: e.weapon === "shotgun" || e.weapon === "tommy",
+            wide: e.weapon === "shotgun" || e.weapon === "tommy" || e.weapon === "minigun",
           });
         }
       }
@@ -1375,6 +1393,15 @@ export class WorldView {
         g.circle(ox + flip * 6, sy + 3, 2.5);
         g.fill({ color: 0x4a4a4a });
       }
+    } else if (weapon === "minigun") {
+      g.rect(ox, sy - 3, flip * 18, 5);
+      g.fill({ color: dark });
+      g.rect(ox + flip * 2, sy - 4, flip * 12, 2);
+      g.fill({ color: 0x6a6a72 });
+      g.circle(ox + flip * 14, sy - 1, 3.5);
+      g.fill({ color: 0x5a5a62 });
+      g.circle(ox + flip * 4, sy + 3, 2);
+      g.fill({ color: 0x3a3a42 });
     } else if (weapon === "shotgun") {
       g.rect(ox, sy - 1, flip * 16, 2);
       g.fill({ color: col });
