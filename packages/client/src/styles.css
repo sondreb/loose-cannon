@@ -1177,20 +1177,40 @@ body {
   color: #ddd;
   text-shadow: 0 1px 2px #000;
   z-index: 5;
-  pointer-events: none;
+  pointer-events: auto;
   text-align: right;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 0.2rem;
+  opacity: 1;
+  transition: opacity 0.55s ease;
+  /* Invisible hit target so hover still works when faded */
+  min-height: 2.5rem;
+  min-width: 8rem;
 }
 
-#eventLog div {
+#eventLog.faded {
+  opacity: 0;
+}
+
+#eventLog.faded:hover,
+#eventLog.visible {
+  opacity: 1;
+}
+
+#eventLog .event-line {
   opacity: 0.92;
   background: #00000088;
   padding: 0.15rem 0.45rem;
   border-radius: 2px;
   max-width: 100%;
+  transition: opacity 0.55s ease, transform 0.55s ease;
+}
+
+#eventLog .event-line.fade-out {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 
 #chatBox {
@@ -2436,25 +2456,89 @@ body {
 
 .onboard-nav {
   display: flex;
-  gap: 0.4rem;
+  gap: 0.5rem;
   align-items: center;
 }
 
-.onboard-nav .login-cta {
-  margin: 0;
-  width: auto;
-  padding: 0.55rem 1.1rem;
-  min-width: 7rem;
+.onboard-nav-btn {
+  margin: 0 !important;
+  width: auto !important;
+  min-width: 7.5rem;
+  padding: 0.6rem 1.15rem !important;
+  font-size: 0.9rem;
+  border-radius: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.onboard-nav-btn.login-cta {
+  /* Match primary CTA height/weight as Next */
+  background: linear-gradient(180deg, #e09020, #a05010);
+  border: 1px solid #ffcc66;
+  color: #1a1008;
+}
+
+.onboard-nav-btn.login-secondary {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #f0e8d8;
+}
+
+.onboard-nav-btn.login-secondary:hover {
+  border-color: rgba(255, 204, 51, 0.5);
+  color: #ffcc33;
+  background: rgba(255, 204, 51, 0.08);
+}
+
+.onboard-nav-btn[disabled],
+.onboard-nav-btn[style*="visibility: hidden"] {
+  opacity: 0.35;
+  pointer-events: none;
 }
 
 @media (max-width: 720px) {
-  .onboard-card {
-    grid-template-columns: 1fr;
-    max-height: min(92dvh, 800px);
+  #onboard {
+    place-items: stretch;
+    padding: 0;
+    background: #07080c;
   }
+
+  .onboard-card {
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    max-height: none;
+    min-height: 100dvh;
+    grid-template-columns: 1fr;
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+  }
+
   .onboard-art-wrap {
-    height: 28vh;
-    min-height: 140px;
-    max-height: 220px;
+    height: 32vh;
+    min-height: 160px;
+    max-height: 280px;
+  }
+
+  .onboard-body {
+    flex: 1;
+    border-radius: 0;
+    padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .onboard-nav-btn {
+    min-width: 6.5rem;
+    flex: 1;
+  }
+
+  .onboard-actions {
+    flex-wrap: wrap;
+  }
+
+  .onboard-nav {
+    flex: 1;
+    justify-content: flex-end;
   }
 }

@@ -252,11 +252,34 @@ function handlePrimaryPointer(clientX: number, clientY: number, asAttack: boolea
   socket.send({ type: "intent.move", x: w.x, y: w.y });
 }
 
+const EVENT_LINE_FADE_MS = 6500;
+const EVENT_PANEL_IDLE_MS = 4000;
+let eventPanelFadeTimer: number | null = null;
+
+function bumpEventLogVisible(): void {
+  eventLog.classList.add("visible");
+  eventLog.classList.remove("faded");
+  if (eventPanelFadeTimer != null) window.clearTimeout(eventPanelFadeTimer);
+  eventPanelFadeTimer = window.setTimeout(() => {
+    if (!eventLog.matches(":hover")) {
+      eventLog.classList.add("faded");
+      eventLog.classList.remove("visible");
+    }
+  }, EVENT_PANEL_IDLE_MS);
+}
+
 function pushEvent(text: string): void {
   const d = document.createElement("div");
   d.textContent = text;
+  d.className = "event-line";
   eventLog.appendChild(d);
   while (eventLog.children.length > 8) eventLog.removeChild(eventLog.firstChild!);
+  bumpEventLogVisible();
+  window.setTimeout(() => {
+    d.classList.add("fade-out");
+    window.setTimeout(() => d.remove(), 600);
+  }, EVENT_LINE_FADE_MS);
+
   // Heuristic SFX from non-combat log lines (combat audio comes from fx events)
   const t = text.toLowerCase();
   if (t.includes("bought") || t.includes("equip")) sfx.play("buy");
@@ -1550,7 +1573,10 @@ function renderOnboard(): void {
       (_, i) => `<span class="${i <= onboardStep ? "on" : ""}"></span>`,
     ).join("");
   }
-  if (onboardBack) onboardBack.style.visibility = onboardStep === 0 ? "hidden" : "visible";
+  if (onboardBack) {
+    onboardBack.style.visibility = onboardStep === 0 ? "hidden" : "visible";
+    onboardBack.toggleAttribute("disabled", onboardStep === 0);
+  }
   if (onboardNext) {
     onboardNext.textContent = onboardStep >= ONBOARD_STEPS.length - 1 ? "Let's go" : "Next";
   }
@@ -1622,5 +1648,23 @@ onboardSkip?.addEventListener("click", () => closeOnboard(true));
 nameInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") joinBtn.click();
 });
+
+// Event log: show on hover, fade when idle
+eventLog.addEventListener("mouseenter", () => {
+  eventLog.classList.add("visible");
+  eventLog.classList.remove("faded");
+  if (eventPanelFadeTimer != null) window.clearTimeout(eventPanelFadeTimer);
+});
+eventLog.addEventListener("mouseleave", () => {
+  bumpEventLogVisible();
+});
+// Touch: brief tap on log region keeps it visible
+eventLog.addEventListener(
+  "touchstart",
+  () => {
+    bumpEventLogVisible();
+  },
+  { passive: true },
+);
 
 nameInput.focus();

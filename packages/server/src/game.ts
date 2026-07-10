@@ -1561,12 +1561,17 @@ export class GameWorld {
     for (const id of dead) this.removeMember(posse, id, true);
   }
 
-  /** Pick an outdoor spawn with few nearby player leaders — prefer safe downtown */
+  /** Pick an outdoor spawn in SAFE DOWNTOWN only (never war zone). */
   private pickQuietRespawn(excludePosseId: string): { x: number; y: number } {
-    const points =
+    const all =
       this.map.respawnPoints.length > 0
         ? this.map.respawnPoints
         : [this.map.playerSpawn];
+    // Hard filter: only PvE / safe downtown (y < SAFE_Y_MAX)
+    let points = all.filter((pt) => pt.y < SAFE_Y_MAX);
+    if (points.length === 0) {
+      points = [this.map.playerSpawn];
+    }
 
     const playerLeaders: Unit[] = [];
     for (const p of this.posses.values()) {
@@ -1584,9 +1589,8 @@ export class GameWorld {
         if (d < 12) nearby += 1;
         if (d < 6) nearby += 2;
       }
-      // Prefer empty neighborhoods + safe downtown (PvE); slight random noise
-      const warPenalty = pt.y >= SAFE_Y_MAX ? 40 : 0;
-      const score = nearby * 100 - minD + warPenalty + Math.random() * 3;
+      // Prefer empty neighborhoods; slight random noise
+      const score = nearby * 100 - minD + Math.random() * 3;
       return { pt, score, nearby };
     });
 
