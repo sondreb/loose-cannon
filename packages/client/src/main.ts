@@ -454,13 +454,13 @@ function pushEvent(text: string): void {
   // hit/miss/death handled by combat FX to avoid double-playing with VFX path
 }
 
-/** How long combat/loot toasts stay readable (ms). Kill/wipe needs longest. */
+/** How long combat/loot toasts stay readable (ms). Readable but not sticky. */
 function notifyHoldMs(kind: string, upgrade = false): number {
-  if (kind === "killed") return 11000;
-  if (kind === "downed") return 8000;
-  if (kind === "loot") return upgrade ? 9000 : 7000;
-  if (kind === "mission") return 7500;
-  return 6500;
+  if (kind === "killed") return 6500;
+  if (kind === "downed") return 4800;
+  if (kind === "loot") return upgrade ? 5500 : 4200;
+  if (kind === "mission") return 4500;
+  return 3800;
 }
 
 function showNotify(msg: Extract<ServerMessage, { type: "notify" }>): void {
