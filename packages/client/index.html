@@ -176,6 +176,25 @@
           <span id="realmHudLabel">REALM · public</span>
           <button type="button" id="realmInviteBtn" class="tiny-btn" title="Copy invite link">INVITE</button>
         </div>
+        <div id="partyHud" class="party-hud" title="Party with players in this realm">
+          <button type="button" id="partyHudToggle" class="party-hud-toggle" aria-expanded="false">
+            <span id="partyHudLabel">PARTY · SOLO</span>
+            <span class="party-hud-chev">▾</span>
+          </button>
+          <div id="partyHudBody" class="party-hud-body hidden">
+            <div id="partyInviteBanner" class="party-invite-banner hidden"></div>
+            <div class="party-section">
+              <div class="party-section-title">CREW</div>
+              <div id="partyRoster" class="party-roster"></div>
+              <button type="button" id="partyLeaveBtn" class="tiny-btn party-leave-btn hidden">LEAVE PARTY</button>
+            </div>
+            <div class="party-section">
+              <div class="party-section-title">ONLINE (REALM)</div>
+              <div id="partyPresence" class="party-presence"></div>
+            </div>
+            <p class="muted tiny party-foot">Invite by name · chat <kbd>/p</kbd> for party channel</p>
+          </div>
+        </div>
         <button type="button" id="minimap" class="minimap-btn" title="City map (M)">MAP</button>
         <button type="button" id="settingsBtnDesktop" class="settings-fab desktop-only" title="Settings" aria-label="Settings">
           ⚙
@@ -264,7 +283,12 @@
           <div id="chatBody">
             <div id="chatLog"></div>
             <form id="chatForm">
-              <input id="chatInput" maxlength="160" placeholder="Proximity chat…" autocomplete="off" />
+              <input
+                id="chatInput"
+                maxlength="160"
+                placeholder="Proximity chat…  /p party"
+                autocomplete="off"
+              />
               <button type="submit">Say</button>
             </form>
           </div>

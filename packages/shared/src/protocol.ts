@@ -123,6 +123,42 @@ export interface ChatLine {
   text: string;
   t: number;
   system?: boolean;
+  /** Default proximity when omitted; party chat only to party members */
+  channel?: "proximity" | "party";
+}
+
+/** One member of a player party (same realm) */
+export interface PartyMemberPublic {
+  posseId: string;
+  name: string;
+  isLeader: boolean;
+  /** Active job title, if any */
+  missionTitle?: string;
+}
+
+/** Your party roster (null when solo) */
+export interface PartyState {
+  id: string;
+  leaderPosseId: string;
+  isLeader: boolean;
+  members: PartyMemberPublic[];
+}
+
+/** Pending invite to join someone's party */
+export interface PartyInvitePublic {
+  fromPosseId: string;
+  fromName: string;
+  partyId: string;
+}
+
+/** Online players in this realm (hub presence) */
+export interface PresenceEntry {
+  posseId: string;
+  name: string;
+  /** District / interior short label */
+  where: string;
+  inParty: boolean;
+  isSelf?: boolean;
 }
 
 export interface DialogueChoice {
@@ -298,6 +334,8 @@ export interface WorldSnapshot {
     realmId: string;
     /** Display label for HUD (usually same as realmId) */
     realmLabel?: string;
+    /** Party id when in a crew with other players */
+    partyId?: string | null;
   };
   /** City districts for map UI (rep unlocks) */
   districts: DistrictPublic[];
@@ -325,6 +363,12 @@ export interface WorldSnapshot {
   memorials: MemorialEntry[];
   /** Server wants memorial wall open (priest / message) */
   memorialOpen: boolean;
+  /** Party roster when grouped with other players (same realm) */
+  party: PartyState | null;
+  /** Pending invite for you (accept/decline) */
+  partyInvite: PartyInvitePublic | null;
+  /** Online player presence in this realm */
+  presence: PresenceEntry[];
   recentChat: ChatLine[];
   combatLog: string[];
   /** Combat VFX that occurred since last snapshot (this tick) */
@@ -372,7 +416,15 @@ export type ClientMessage =
   | { type: "memorial.close" }
   | { type: "posse.setWeapon"; unitId: string; weaponId: WeaponId }
   | { type: "posse.setArmor"; unitId: string; armorId: ArmorId }
-  | { type: "chat"; text: string }
+  /** Invite another player by display name (same realm) */
+  | { type: "party.invite"; targetName: string }
+  | { type: "party.accept" }
+  | { type: "party.decline" }
+  | { type: "party.leave" }
+  /** Leader kicks a member by posse id */
+  | { type: "party.kick"; posseId: string }
+  /** Proximity by default; party channel only if you are in a party */
+  | { type: "chat"; text: string; channel?: "proximity" | "party" }
   | { type: "ping"; t: number };
 
 /** Fancy loot / combat notifications (UI toasts) */

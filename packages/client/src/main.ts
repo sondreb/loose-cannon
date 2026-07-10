@@ -52,6 +52,14 @@ const joinBtn = $("joinBtn");
 const loginError = $("loginError");
 const realmHudLabel = $("realmHudLabel");
 const realmInviteBtn = $("realmInviteBtn");
+const partyHud = document.getElementById("partyHud") as HTMLElement | null;
+const partyHudToggle = document.getElementById("partyHudToggle") as HTMLButtonElement | null;
+const partyHudLabel = document.getElementById("partyHudLabel") as HTMLElement | null;
+const partyHudBody = document.getElementById("partyHudBody") as HTMLElement | null;
+const partyInviteBanner = document.getElementById("partyInviteBanner") as HTMLElement | null;
+const partyRoster = document.getElementById("partyRoster") as HTMLElement | null;
+const partyLeaveBtn = document.getElementById("partyLeaveBtn") as HTMLButtonElement | null;
+const partyPresence = document.getElementById("partyPresence") as HTMLElement | null;
 const settingsBtnDesktop = document.getElementById("settingsBtnDesktop") as HTMLButtonElement | null;
 const mobSettings = document.getElementById("mobSettings") as HTMLButtonElement | null;
 const settingsModal = $("settingsModal");
@@ -479,7 +487,13 @@ function classifyEventLine(text: string): string {
   if (t.includes("entered") || t.includes("left ") || t.includes("door") || t.includes("exit")) {
     return "door";
   }
-  if (t.includes("disconnect") || t.includes("connect") || t.includes("realm") || t.includes("invite")) {
+  if (
+    t.includes("disconnect") ||
+    t.includes("connect") ||
+    t.includes("realm") ||
+    t.includes("invite") ||
+    t.includes("party")
+  ) {
     return "system";
   }
   return "info";
@@ -688,11 +702,114 @@ function pushChat(from: string, text: string, system?: boolean): void {
     d.className = "sys";
     d.textContent = text;
   } else {
-    d.innerHTML = `<span class="${from === myName ? "me" : ""}">${escapeHtml(from)}:</span> ${escapeHtml(text)}`;
+    const isParty = text.startsWith("[P] ");
+    const body = isParty ? text.slice(4) : text;
+    d.className = isParty ? "chat-line party-chat" : "chat-line";
+    d.innerHTML = `<span class="chat-from ${from === myName ? "me" : ""}">${escapeHtml(from)}${isParty ? " [P]" : ""}:</span> ${escapeHtml(body)}`;
   }
   chatLog.appendChild(d);
   chatLog.scrollTop = chatLog.scrollHeight;
   while (chatLog.children.length > 50) chatLog.removeChild(chatLog.firstChild!);
+}
+
+let partyPanelOpen = false;
+let lastPartyInviteKey = "";
+
+function setPartyPanelOpen(open: boolean): void {
+  partyPanelOpen = open;
+  partyHud?.classList.toggle("open", open);
+  partyHudBody?.classList.toggle("hidden", !open);
+  partyHudToggle?.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+function renderPartyHud(): void {
+  if (!snap || !partyHudLabel) return;
+  const party = snap.party;
+  const invite = snap.partyInvite;
+  const presence = snap.presence ?? [];
+
+  if (party && party.members.length > 0) {
+    partyHudLabel.textContent = `PARTY · ${party.members.length}`;
+  } else if (invite) {
+    partyHudLabel.textContent = "PARTY · INVITE";
+  } else {
+    partyHudLabel.textContent = "PARTY · SOLO";
+  }
+
+  // Auto-open once when a new invite arrives
+  if (invite) {
+    const key = `${invite.partyId}:${invite.fromPosseId}`;
+    if (key !== lastPartyInviteKey) {
+      lastPartyInviteKey = key;
+      setPartyPanelOpen(true);
+    }
+  } else {
+    lastPartyInviteKey = "";
+  }
+
+  if (partyInviteBanner) {
+    if (invite) {
+      partyInviteBanner.classList.remove("hidden");
+      partyInviteBanner.innerHTML = `
+        <div><strong>${escapeHtml(invite.fromName)}</strong> invited you.</div>
+        <div class="party-invite-actions">
+          <button type="button" class="tiny-btn" data-party-act="accept">ACCEPT</button>
+          <button type="button" class="tiny-btn" data-party-act="decline">DECLINE</button>
+        </div>`;
+    } else {
+      partyInviteBanner.classList.add("hidden");
+      partyInviteBanner.innerHTML = "";
+    }
+  }
+
+  if (partyRoster) {
+    if (party && party.members.length) {
+      partyRoster.innerHTML = party.members
+        .map((m) => {
+          const lead = m.isLeader ? `<span class="pleader">LEAD</span>` : "";
+          const job = m.missionTitle
+            ? `<span class="pjob">${escapeHtml(m.missionTitle)}</span>`
+            : `<span class="pmeta">idle</span>`;
+          const kick =
+            party.isLeader && !m.isLeader
+              ? `<button type="button" class="tiny-btn" data-party-kick="${escapeHtml(m.posseId)}">KICK</button>`
+              : "";
+          return `<div class="party-row"><span class="pname">${escapeHtml(m.name)} ${lead}</span><span>${job}</span>${kick}</div>`;
+        })
+        .join("");
+    } else {
+      partyRoster.innerHTML = `<div class="party-empty">Solo. Invite someone online.</div>`;
+    }
+  }
+
+  if (partyLeaveBtn) {
+    if (party && party.members.length >= 2) {
+      partyLeaveBtn.classList.remove("hidden");
+    } else {
+      partyLeaveBtn.classList.add("hidden");
+    }
+  }
+
+  if (partyPresence) {
+    const others = presence.filter((p) => !p.isSelf);
+    if (!others.length) {
+      partyPresence.innerHTML = `<div class="party-empty">Only you in this realm.</div>`;
+    } else {
+      partyPresence.innerHTML = others
+        .map((p) => {
+          const inParty = p.inParty ? " · party" : "";
+          const canInvite = !party || (party.isLeader && !p.inParty);
+          const btn =
+            canInvite && !p.inParty
+              ? `<button type="button" class="tiny-btn" data-party-invite="${escapeHtml(p.name)}">INVITE</button>`
+              : p.inParty
+                ? `<span class="pmeta">busy${inParty}</span>`
+                : `<span class="pmeta">${escapeHtml(p.where)}</span>`;
+          return `<div class="party-row"><span class="pname" title="${escapeHtml(p.where)}">${escapeHtml(p.name)}</span><span class="pmeta">${escapeHtml(p.where)}</span>${btn}</div>`;
+        })
+        .join("");
+    }
+  }
 }
 
 function escapeHtml(s: string): string {
@@ -2098,6 +2215,7 @@ function onSnapshot(s: WorldSnapshot): void {
   renderJobBoard();
   renderMissionHud();
   renderTutorialHud();
+  renderPartyHud();
   updateActionBanner(s);
   updateInteriorPlaceHud(s);
   updateZoneObjective(s);
@@ -2796,10 +2914,39 @@ function bindInput(): void {
     e.preventDefault();
     const text = chatInput.value.trim();
     if (text) {
-      socket.send({ type: "chat", text });
+      const lower = text.toLowerCase();
+      const partyPrefixed = lower.startsWith("/p ") || lower.startsWith("/party ");
+      socket.send({
+        type: "chat",
+        text,
+        ...(partyPrefixed ? { channel: "party" as const } : {}),
+      });
       chatInput.value = "";
     }
     chatInput.blur();
+  });
+
+  partyHudToggle?.addEventListener("click", () => {
+    setPartyPanelOpen(!partyPanelOpen);
+  });
+  partyLeaveBtn?.addEventListener("click", () => {
+    socket.send({ type: "party.leave" });
+  });
+  partyInviteBanner?.addEventListener("click", (e) => {
+    const t = e.target as HTMLElement;
+    const act = t.closest("[data-party-act]")?.getAttribute("data-party-act");
+    if (act === "accept") socket.send({ type: "party.accept" });
+    if (act === "decline") socket.send({ type: "party.decline" });
+  });
+  partyRoster?.addEventListener("click", (e) => {
+    const t = e.target as HTMLElement;
+    const kickId = t.closest("[data-party-kick]")?.getAttribute("data-party-kick");
+    if (kickId) socket.send({ type: "party.kick", posseId: kickId });
+  });
+  partyPresence?.addEventListener("click", (e) => {
+    const t = e.target as HTMLElement;
+    const name = t.closest("[data-party-invite]")?.getAttribute("data-party-invite");
+    if (name) socket.send({ type: "party.invite", targetName: name });
   });
 
   dlgClose.addEventListener("click", () => socket.send({ type: "dialogue.close" }));

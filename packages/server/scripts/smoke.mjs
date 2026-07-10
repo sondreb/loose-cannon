@@ -47,6 +47,9 @@ if (last.tutorial?.step !== "go_bar") {
 if (!last.districts?.length) fail("expected districts on snapshot");
 if (!Array.isArray(last.memorials)) fail("expected memorials array");
 if (last.memorials.length !== 0) fail("expected empty memorial wall at start");
+if (!Array.isArray(last.presence)) fail("expected presence array");
+if (last.party != null) fail("expected solo party null at start");
+if (last.partyInvite != null) fail("expected no party invite at start");
 const lockedDeep = last.districts.find((d) => d.id === "war_deep");
 if (!lockedDeep || lockedDeep.unlocked) fail("war_deep should start locked at rep 0");
 const phases = new Set(["dawn", "day", "dusk", "night"]);
@@ -444,8 +447,78 @@ await wait(300);
 if (!badFail) fail("expected auth.fail for invalid realm");
 console.log("realm isolation ok", lastIso.you.realmId, "invalid realm rejected");
 
+// --- M4 parties: invite / accept / presence / leave (same realm) ---
+const partyRealm = "smoke-party";
+const hostName = "Host" + Math.floor(Math.random() * 999);
+const mateName = "Mate" + Math.floor(Math.random() * 999);
+const wsHost = new WebSocket("ws://127.0.0.1:3001");
+const wsMate = new WebSocket("ws://127.0.0.1:3001");
+let lastHost = null;
+let lastMate = null;
+wsHost.on("message", (d) => {
+  const msg = JSON.parse(String(d));
+  if (msg.type === "snapshot") lastHost = msg.data;
+});
+wsMate.on("message", (d) => {
+  const msg = JSON.parse(String(d));
+  if (msg.type === "snapshot") lastMate = msg.data;
+});
+await new Promise((res, rej) => {
+  wsHost.on("open", res);
+  wsHost.on("error", rej);
+});
+await new Promise((res, rej) => {
+  wsMate.on("open", res);
+  wsMate.on("error", rej);
+});
+wsHost.send(
+  JSON.stringify({ type: "auth", name: hostName, protocolVersion: 1, realm: partyRealm }),
+);
+wsMate.send(
+  JSON.stringify({ type: "auth", name: mateName, protocolVersion: 1, realm: partyRealm }),
+);
+await wait(600);
+if (!lastHost?.you || !lastMate?.you) fail("party clients no snapshot");
+if (!Array.isArray(lastHost.presence)) fail("expected presence array on snapshot");
+if (!lastHost.presence.some((p) => p.name === mateName)) {
+  fail("host presence should list mate");
+}
+if (lastHost.party) fail("host should start solo (party null)");
+if (lastMate.partyInvite) fail("mate should not have invite yet");
+
+wsHost.send(JSON.stringify({ type: "party.invite", targetName: mateName }));
+await wait(400);
+if (!lastMate?.partyInvite || lastMate.partyInvite.fromName !== hostName) {
+  fail(`expected party invite for mate from ${hostName}`);
+}
+wsMate.send(JSON.stringify({ type: "party.accept" }));
+await wait(500);
+if (!lastHost?.party || lastHost.party.members.length !== 2) {
+  fail(`host party size expected 2, got ${lastHost?.party?.members?.length}`);
+}
+if (!lastMate?.party || lastMate.party.members.length !== 2) {
+  fail(`mate party size expected 2, got ${lastMate?.party?.members?.length}`);
+}
+if (!lastHost.party.isLeader) fail("host should be party leader");
+if (lastMate.party.isLeader) fail("mate should not be leader");
+
+// Party chat
+wsHost.send(JSON.stringify({ type: "chat", text: "/p smoke party check", channel: "party" }));
+await wait(300);
+
+// Shared outdoor job attach
+// Skip job board UI: mate must not already be on mission (fresh spawn)
+// Host can't open Rita without walking — skip co-op mission in smoke; invite/leave is enough
+wsMate.send(JSON.stringify({ type: "party.leave" }));
+await wait(400);
+if (lastMate?.party) fail("mate should be solo after leave");
+if (lastHost?.party) fail("host party should dissolve after mate leaves");
+console.log("party invite/accept/leave ok", hostName, mateName);
+
 console.log("SMOKE_OK");
 ws2.close();
 wsIso.close();
 wsBad.close();
+wsHost.close();
+wsMate.close();
 process.exit(0);

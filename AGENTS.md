@@ -51,7 +51,7 @@ When acting as the **development overseer** (headless loop or `/goal`):
 
 1. Read `docs/STATUS.md` and `docs/MASTER_PLAN.md` (and latest `OVERSEER_LOG.md`).
 2. Pick the **next incomplete** milestone (highest priority unfinished item).  
-   Default order: **goon stats feel → combat/pathing → more missions → parties** (memorial + realms shipped).
+   Default order: **M7 content density** (third instance, hustles, rivals, music) → optional M4/M3 polish (parties + memorial + realms + solo combat loop shipped).
 3. If STATUS marks a **critical player-facing bug**, fix that before greenfield.
 4. Implement it (spawn subagents for parallel research/impl/test when useful).
 5. Run verification: prefer `npm run smoke` and `npm run build` after structural changes.

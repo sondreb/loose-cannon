@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-11 (M5 ammo clarity / balance pass)  
+Last updated: 2026-07-11 (M4 parties)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -39,7 +39,7 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | **Directional goons / walk bob** | **Done** | Iso screen flip; two-beat bob + lean; speed cadence; idle server facing |
 | **HUD / event-log readability** | **Done** | Kind-colored log lines; pin-to-read; stronger objective/toasts/mission HUD |
 | **Mobile touch polish** | **Done** | Long-press charge ring + fire on hold; drag cancel; larger slop; control hit targets |
-| Parties / co-op | Not started | M4 (within a realm) |
+| **Parties / co-op** | **Done** | Invite/leave/kick; presence; party chat; shared jobs |
 | Automated overseer scaffolding | Done | AGENTS + scripts/overseer |
 
 ## Starter jobs (live)
@@ -186,10 +186,20 @@ Server-authoritative; AI ignores ammo (always free fire). Players:
 - Touch: long-press charge ring → attack fires on hold complete; drag past slop cancels; TAP_SLOP 22px  
 - Mobile control buttons slightly larger hit targets; map foot copy no longer mentions soft-kick  
 
+### Parties (live)
+
+- **Within a realm only** — invite by display name; max **4** players (`PARTY_MAX`)  
+- Protocol: `party.invite` / `accept` / `decline` / `leave` / `kick`; snapshot `party`, `partyInvite`, `presence`  
+- Client **PARTY** panel: roster + LEAD/job tags, online presence + INVITE, accept/decline banner, leave/kick  
+- **Party chat:** `/p …` or `/party …` (or `channel: "party"`) — `[P]` lines to party only  
+- **Co-op jobs:** free mates (no active mission) auto-share when anyone accepts — outdoor same contract; instance uses shared `mi_<partyId>` layer + one enemy posse; each extracts/rewards separately  
+- Disconnect / leave dissolves party of &lt;2; shared hostiles only despawn when last party mate leaves the job  
+- Smoke: presence array; invite/accept/leave in realm `smoke-party`  
+
 ## Next for overseer (priority)
 
-1. **M4 parties** — invite / leave / shared objective within a realm (solo loop is solid)  
-2. **M7 content** — third instanced mission, rival variety, optional music  
+1. **M7 content** — third instanced mission, street hustles, rival variety, optional music  
+2. Optional **M4 polish** — loot split, shared hold progress, kick confirm  
 3. Optional **M3** crash-pad stash UX polish  
 4. **Never** Mode B (Postgres/auth/k8s) unless human asks  
 

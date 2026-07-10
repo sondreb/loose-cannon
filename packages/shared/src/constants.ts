@@ -55,6 +55,8 @@ export const COMBAT = {
 
 export const MAX_ACTIVE_GOONS = 4;
 export const MAX_CHAT_LEN = 160;
+/** Max player posses in one party (within a realm) */
+export const PARTY_MAX = 4;
 
 export const DEFAULT_CASH = 3000;
 export const DEFAULT_HEALTH = 100;

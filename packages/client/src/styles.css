@@ -3532,6 +3532,15 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
     max-width: 7.5rem;
   }
 
+  .party-hud {
+    top: calc(var(--mobile-hud-top, 5.5rem) + 6.6rem);
+    left: 8px;
+    right: auto;
+    max-width: min(70vw, 240px);
+    font-size: 0.62rem;
+    z-index: 8;
+  }
+
   .settings-fab.desktop-only {
     display: none !important;
   }
@@ -3703,6 +3712,163 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
   font-size: 0.62rem;
   letter-spacing: 0.08em;
   padding: 0.2rem 0.4rem;
+}
+
+/* Party HUD — under realm, top-left stack */
+.party-hud {
+  position: absolute;
+  top: 52px;
+  left: 14px;
+  z-index: 11;
+  min-width: 11rem;
+  max-width: min(18rem, 72vw);
+  background: rgba(10, 14, 22, 0.82);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(140, 190, 255, 0.35);
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.party-hud-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: #9ec8ff;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  font-size: 0.68rem;
+  padding: 0.45rem 0.65rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.party-hud-toggle:hover {
+  filter: brightness(1.12);
+}
+
+.party-hud-chev {
+  opacity: 0.7;
+  font-size: 0.7rem;
+}
+
+.party-hud.open .party-hud-chev {
+  transform: rotate(180deg);
+}
+
+.party-hud-body {
+  border-top: 1px solid rgba(140, 190, 255, 0.18);
+  padding: 0.45rem 0.55rem 0.55rem;
+  max-height: min(50vh, 22rem);
+  overflow-y: auto;
+}
+
+.party-section {
+  margin-bottom: 0.45rem;
+}
+
+.party-section-title {
+  font-size: 0.58rem;
+  letter-spacing: 0.14em;
+  font-weight: 800;
+  color: rgba(200, 220, 255, 0.55);
+  margin-bottom: 0.25rem;
+}
+
+.party-roster,
+.party-presence {
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+}
+
+.party-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  color: #e8eef8;
+  padding: 0.2rem 0.25rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.party-row .pname {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.party-row .pmeta {
+  font-size: 0.58rem;
+  color: rgba(180, 200, 230, 0.7);
+  letter-spacing: 0.04em;
+}
+
+.party-row .pleader {
+  color: #f0c040;
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.party-row .pjob {
+  color: #9ee6a8;
+  font-size: 0.55rem;
+}
+
+.party-invite-banner {
+  background: rgba(240, 192, 64, 0.12);
+  border: 1px solid rgba(240, 192, 64, 0.4);
+  border-radius: 8px;
+  padding: 0.4rem 0.45rem;
+  margin-bottom: 0.45rem;
+  font-size: 0.72rem;
+  color: #f5e6b0;
+}
+
+.party-invite-banner .party-invite-actions {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+.party-leave-btn {
+  width: 100%;
+  margin-top: 0.3rem;
+}
+
+.party-foot {
+  margin: 0.2rem 0 0;
+  line-height: 1.35;
+}
+
+.party-foot kbd {
+  font-size: 0.65rem;
+  padding: 0.05rem 0.25rem;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.party-empty {
+  font-size: 0.68rem;
+  color: rgba(180, 200, 230, 0.55);
+  padding: 0.15rem 0.2rem;
+}
+
+.chat-line.party-chat {
+  color: #9ec8ff;
+}
+
+.chat-line.party-chat .chat-from {
+  color: #b8d8ff;
 }
 
 /* MAP top-right (session/mission stack sits just below) */

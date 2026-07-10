@@ -21,6 +21,7 @@ import {
   MAX_ACTIVE_GOONS,
   MAX_CHAT_LEN,
   MAX_MEMORIALS,
+  PARTY_MAX,
   memorialCause,
   MISSIONS,
   realmLabel,
@@ -71,6 +72,9 @@ import {
   type MemorialEntry,
   type MissionId,
   type MissionRuntime,
+  type PartyInvitePublic,
+  type PartyState,
+  type PresenceEntry,
   type ShopState,
   type StashState,
   type TutorialState,
@@ -272,6 +276,21 @@ interface Posse {
   moveLabel: string | null;
   /** Per-viewer dancer reveal stage at The Titty Twister (npcId → 0..DANCER_MAX_STAGE) */
   dancerStages: Record<string, number>;
+  /** Player party id (null = solo) */
+  partyId: string | null;
+  /** Pending invite to join another player's party */
+  pendingInvite: PartyInvitePublic | null;
+}
+
+/** Ephemeral multiplayer party within one realm */
+interface PlayerParty {
+  id: string;
+  leaderPosseId: string;
+  memberPosseIds: string[];
+}
+
+function emptyPartyFields(): Pick<Posse, "partyId" | "pendingInvite"> {
+  return { partyId: null, pendingInvite: null };
 }
 
 function emptyStashFields(): Pick<Posse, "stashOpen" | "stashCash" | "stashWeapons" | "stashArmors"> {
@@ -358,6 +377,8 @@ export class GameWorld {
   posses = new Map<string, Posse>();
   sessions = new Map<string, CharacterSession>();
   tokenToChar = new Map<string, string>();
+  /** Player parties (invite groups) — scoped to this realm/world */
+  parties = new Map<string, PlayerParty>();
   chat: ChatLine[] = [];
   chatSeq = 0;
   private uid = 0;
@@ -422,6 +443,7 @@ export class GameWorld {
         attackTargetId: null,
         moveLabel: null,
         dancerStages: {},
+        ...emptyPartyFields(),
       });
       // Named NPC genders (bartenders, coaches, street meat, dancers)
       const femaleNpc = /rita|kate|may|sally|jazz|rosa|pepper|cookie|venus|lola|sable|cherry|roxy|nova|storm|ivy|jade|foxy|candy|maid|bomb|sin/i.test(
@@ -522,6 +544,7 @@ export class GameWorld {
       attackTargetId: null,
       moveLabel: null,
       dancerStages: {},
+      ...emptyPartyFields(),
     });
 
     const gearFor = (t: number): { weapon: WeaponId; armor: ArmorId; weapons: WeaponId[]; armors: ArmorId[]; stats: Partial<UnitStats> } => {
@@ -721,6 +744,7 @@ export class GameWorld {
       attackTargetId: null,
       moveLabel: null,
       dancerStages: {},
+      ...emptyPartyFields(),
     };
     this.posses.set(posseId, posse);
 
@@ -832,10 +856,17 @@ export class GameWorld {
     if (!s) return;
     const posse = this.posses.get(s.posseId);
     if (posse) {
+      this.leavePartyInternal(posse, false);
       // Despawn private mission hostiles so they don't leak after disconnect
-      if (posse.mission?.enemyPosseId) this.despawnMissionEnemies(posse.mission.enemyPosseId);
+      // (shared party instances only despawn when no other party mate still uses them)
+      this.cleanupMissionInstance(posse);
+      posse.mission = null;
       for (const id of posse.memberIds) this.units.delete(id);
       this.posses.delete(s.posseId);
+    }
+    // Drop any invites this player sent (pending on others)
+    for (const p of this.posses.values()) {
+      if (p.pendingInvite?.fromPosseId === s.posseId) p.pendingInvite = null;
     }
     this.tokenToChar.delete(s.token);
     this.sessions.delete(characterId);
@@ -948,8 +979,23 @@ export class GameWorld {
       case "posse.setArmor":
         this.cmdSetArmor(posse, msg.unitId, msg.armorId);
         break;
+      case "party.invite":
+        this.cmdPartyInvite(session, posse, msg.targetName);
+        break;
+      case "party.accept":
+        this.cmdPartyAccept(session, posse);
+        break;
+      case "party.decline":
+        this.cmdPartyDecline(session, posse);
+        break;
+      case "party.leave":
+        this.cmdPartyLeave(session, posse);
+        break;
+      case "party.kick":
+        this.cmdPartyKick(session, posse, msg.posseId);
+        break;
       case "chat":
-        this.cmdChat(session, posse, msg.text);
+        this.cmdChat(session, posse, msg.text, msg.channel);
         break;
       default:
         break;
@@ -3552,25 +3598,7 @@ export class GameWorld {
     posse.dialogue = null;
   }
 
-  private cmdJobBoardAccept(session: CharacterSession, posse: Posse, missionId: string): void {
-    if (!posse.jobBoard) {
-      this.log(session, "No job board open.");
-      return;
-    }
-    if (posse.mission) {
-      this.log(session, "Already on a job. Finish or abandon first.");
-      return;
-    }
-    const def = MISSIONS[missionId as MissionId];
-    if (!def) {
-      this.log(session, "That contract fell off the book. Pick another.");
-      return;
-    }
-    if (posse.completedMissions.includes(def.id)) {
-      this.log(session, "You already pulled that job. Rita scratched it off the pad.");
-      return;
-    }
-
+  private resolveKillTargetUnitId(def: (typeof MISSIONS)[MissionId]): string | null {
     let targetUnitId: string | null = null;
     for (const obj of def.objectives) {
       if (obj.kind === "kill_unit" && obj.targetPosseId) {
@@ -3599,30 +3627,100 @@ export class GameWorld {
         }
       }
     }
+    return targetUnitId;
+  }
+
+  /** Free party mates (same party, no active job) who can share a co-op start */
+  private freePartyMates(posse: Posse): Posse[] {
+    if (!posse.partyId) return [];
+    const party = this.parties.get(posse.partyId);
+    if (!party) return [];
+    const out: Posse[] = [];
+    for (const mid of party.memberPosseIds) {
+      if (mid === posse.id) continue;
+      const p = this.posses.get(mid);
+      if (!p?.isPlayer || p.mission) continue;
+      out.push(p);
+    }
+    return out;
+  }
+
+  private assignMissionToPosse(
+    posse: Posse,
+    def: (typeof MISSIONS)[MissionId],
+    opts: {
+      targetUnitId: string | null;
+      instanceLayerId: string | null;
+      templateBuildingId: string | null;
+      enemyPosseId: string | null;
+      phase?: PosseMission["phase"];
+    },
+  ): void {
+    posse.mission = {
+      defId: def.id,
+      holdAccum: 0,
+      rewardGranted: false,
+      targetUnitId: opts.targetUnitId,
+      instanceLayerId: opts.instanceLayerId,
+      templateBuildingId: opts.templateBuildingId,
+      enemyPosseId: opts.enemyPosseId,
+      phase: opts.phase ?? "active",
+      extracted: false,
+    };
+  }
+
+  private notifyMissionStart(session: CharacterSession, def: (typeof MISSIONS)[MissionId], coOpNote?: string): void {
+    const body = coOpNote ? `${def.blurb} ${coOpNote}` : def.blurb;
+    session.conn?.send({
+      type: "notify",
+      kind: "mission",
+      title: def.title,
+      body,
+      cash: def.rewardCash,
+      rep: def.rewardRep,
+    });
+  }
+
+  private cmdJobBoardAccept(session: CharacterSession, posse: Posse, missionId: string): void {
+    if (!posse.jobBoard) {
+      this.log(session, "No job board open.");
+      return;
+    }
+    if (posse.mission) {
+      this.log(session, "Already on a job. Finish or abandon first.");
+      return;
+    }
+    const def = MISSIONS[missionId as MissionId];
+    if (!def) {
+      this.log(session, "That contract fell off the book. Pick another.");
+      return;
+    }
+    if (posse.completedMissions.includes(def.id)) {
+      this.log(session, "You already pulled that job. Rita scratched it off the pad.");
+      return;
+    }
+
+    const targetUnitId = this.resolveKillTargetUnitId(def);
 
     posse.jobBoard = null;
     posse.dialogue = null;
     posse.shop = null;
 
-    const layerId = def.instance ? `mi_${posse.id}` : null;
+    const mates = this.freePartyMates(posse);
+    const partyKey = posse.partyId ?? posse.id;
+    const layerId = def.instance ? `mi_${partyKey}` : null;
     const templateId = def.instance?.templateBuildingId ?? null;
 
-    posse.mission = {
-      defId: def.id,
-      holdAccum: 0,
-      rewardGranted: false,
+    this.assignMissionToPosse(posse, def, {
       targetUnitId,
       instanceLayerId: layerId,
       templateBuildingId: templateId,
       enemyPosseId: null,
-      phase: "active",
-      extracted: false,
-    };
+    });
 
     if (def.instance && layerId && templateId) {
-      // Private instance: teleport into sealed bay + spawn hostiles
+      // Shared (or solo) instance: teleport into sealed bay + spawn hostiles once
       if (posse.insideBuildingId && !posse.insideBuildingId.startsWith("mi_")) {
-        // Clear hub interior without using mi_ exterior logic
         posse.insideBuildingId = null;
         for (const u of this.members(posse)) {
           u.buildingId = null;
@@ -3630,8 +3728,7 @@ export class GameWorld {
       }
       this.enterBuilding(posse, layerId);
       const enemyId = this.spawnMissionInstanceHostiles(posse, def);
-      posse.mission.enemyPosseId = enemyId;
-      // Instant aggro in the bay
+      posse.mission!.enemyPosseId = enemyId;
       const enemies = this.posses.get(enemyId);
       if (enemies) {
         enemies.hostile = true;
@@ -3639,27 +3736,83 @@ export class GameWorld {
         posse.hostile = true;
         posse.combatUntil = this.tick + TICK_HZ * 120;
       }
+      const coOp = mates.length > 0;
       this.log(
         session,
-        `JOB ACCEPTED: ${def.title} (INSTANCE). Clear hostiles, then extract. Pay $${def.rewardCash} + ${def.rewardRep} rep.`,
+        coOp
+          ? `JOB ACCEPTED: ${def.title} (PARTY INSTANCE). Crew pulled in. Clear hostiles, then extract. Pay $${def.rewardCash} + ${def.rewardRep} rep.`
+          : `JOB ACCEPTED: ${def.title} (INSTANCE). Clear hostiles, then extract. Pay $${def.rewardCash} + ${def.rewardRep} rep.`,
       );
+      this.notifyMissionStart(
+        session,
+        def,
+        coOp ? "Party co-op — same bay, same freeloaders." : undefined,
+      );
+
+      for (const mate of mates) {
+        const mateSess = [...this.sessions.values()].find((s) => s.posseId === mate.id);
+        if (mate.insideBuildingId && !mate.insideBuildingId.startsWith("mi_")) {
+          mate.insideBuildingId = null;
+          for (const u of this.members(mate)) u.buildingId = null;
+        }
+        this.assignMissionToPosse(mate, def, {
+          targetUnitId,
+          instanceLayerId: layerId,
+          templateBuildingId: templateId,
+          enemyPosseId: enemyId,
+        });
+        this.enterBuilding(mate, layerId);
+        mate.hostile = true;
+        mate.combatUntil = this.tick + TICK_HZ * 120;
+        mate.jobBoard = null;
+        mate.dialogue = null;
+        mate.shop = null;
+        if (mateSess) {
+          this.log(
+            mateSess,
+            `PARTY JOB: ${def.title} (INSTANCE) — ${session.name} pulled you in. Clear & extract. Pay $${def.rewardCash} + ${def.rewardRep} rep.`,
+          );
+          this.notifyMissionStart(mateSess, def, `Co-op with ${session.name}.`);
+        }
+      }
     } else {
-      // Outdoor hub objective
+      // Outdoor hub objective — free party mates get the same contract
       if (posse.insideBuildingId) this.enterBuilding(posse, null);
+      const coOp = mates.length > 0;
       this.log(
         session,
-        `JOB ACCEPTED: ${def.title}. $${def.rewardCash} + ${def.rewardRep} rep when done. ${def.blurb}`,
+        coOp
+          ? `JOB ACCEPTED: ${def.title} (PARTY). Crew got the same contract. $${def.rewardCash} + ${def.rewardRep} rep when done.`
+          : `JOB ACCEPTED: ${def.title}. $${def.rewardCash} + ${def.rewardRep} rep when done. ${def.blurb}`,
       );
+      this.notifyMissionStart(
+        session,
+        def,
+        coOp ? "Party shares this outdoor contract." : undefined,
+      );
+
+      for (const mate of mates) {
+        const mateSess = [...this.sessions.values()].find((s) => s.posseId === mate.id);
+        if (mate.insideBuildingId) this.enterBuilding(mate, null);
+        this.assignMissionToPosse(mate, def, {
+          targetUnitId,
+          instanceLayerId: null,
+          templateBuildingId: null,
+          enemyPosseId: null,
+        });
+        mate.jobBoard = null;
+        mate.dialogue = null;
+        mate.shop = null;
+        if (mateSess) {
+          this.log(
+            mateSess,
+            `PARTY JOB: ${def.title} — ${session.name} signed you up. $${def.rewardCash} + ${def.rewardRep} rep when done.`,
+          );
+          this.notifyMissionStart(mateSess, def, `Co-op with ${session.name}.`);
+        }
+      }
     }
 
-    session.conn?.send({
-      type: "notify",
-      kind: "mission",
-      title: def.title,
-      body: def.blurb,
-      cash: def.rewardCash,
-      rep: def.rewardRep,
-    });
     this.advanceTutorial(session, posse, "take_job");
     this.tryCompleteMission(session, posse);
   }
@@ -3669,7 +3822,8 @@ export class GameWorld {
     const m = playerPosse.mission!;
     const layer = m.instanceLayerId!;
     const tmpl = this.map.buildings.find((b) => b.id === m.templateBuildingId)!;
-    const enemyPosseId = `mi_enemy_${playerPosse.id}`;
+    // Layer-keyed so party co-op shares one enemy posse
+    const enemyPosseId = `mi_enemy_${layer}`;
     // Clean leftover if re-accept after bug
     this.despawnMissionEnemies(enemyPosseId);
 
@@ -3717,6 +3871,7 @@ export class GameWorld {
       attackTargetId: null,
       moveLabel: null,
       dancerStages: {},
+      ...emptyPartyFields(),
       respawnT: undefined,
     });
 
@@ -3830,7 +3985,18 @@ export class GameWorld {
   private cleanupMissionInstance(posse: Posse): void {
     const m = posse.mission;
     if (!m) return;
-    this.despawnMissionEnemies(m.enemyPosseId);
+    // Shared party instances: only despawn hostiles when no other posse still uses them
+    if (m.enemyPosseId) {
+      let shared = false;
+      for (const p of this.posses.values()) {
+        if (p.id === posse.id || !p.isPlayer) continue;
+        if (p.mission?.enemyPosseId === m.enemyPosseId) {
+          shared = true;
+          break;
+        }
+      }
+      if (!shared) this.despawnMissionEnemies(m.enemyPosseId);
+    }
     if (m.instanceLayerId && posse.insideBuildingId === m.instanceLayerId) {
       this.enterBuilding(posse, null);
     }
@@ -4505,12 +4671,330 @@ export class GameWorld {
     unit.armor = armorId;
   }
 
-  private cmdChat(session: CharacterSession, posse: Posse, text: string): void {
-    const clean = text.trim().slice(0, MAX_CHAT_LEN);
+  private sessionForPosse(posseId: string): CharacterSession | undefined {
+    for (const s of this.sessions.values()) {
+      if (s.posseId === posseId) return s;
+    }
+    return undefined;
+  }
+
+  private partyPublic(posse: Posse): PartyState | null {
+    if (!posse.partyId) return null;
+    const party = this.parties.get(posse.partyId);
+    if (!party) return null;
+    const members = party.memberPosseIds
+      .map((mid) => {
+        const p = this.posses.get(mid);
+        const sess = this.sessionForPosse(mid);
+        if (!p || !sess) return null;
+        const defTitle = p.mission ? MISSIONS[p.mission.defId]?.title : undefined;
+        return {
+          posseId: mid,
+          name: sess.name,
+          isLeader: mid === party.leaderPosseId,
+          ...(defTitle ? { missionTitle: defTitle } : {}),
+        };
+      })
+      .filter((m): m is NonNullable<typeof m> => !!m);
+    if (members.length === 0) return null;
+    return {
+      id: party.id,
+      leaderPosseId: party.leaderPosseId,
+      isLeader: party.leaderPosseId === posse.id,
+      members,
+    };
+  }
+
+  private presencePublic(selfPosse: Posse): PresenceEntry[] {
+    const out: PresenceEntry[] = [];
+    for (const s of this.sessions.values()) {
+      if (!s.conn) continue;
+      const p = this.posses.get(s.posseId);
+      if (!p?.isPlayer) continue;
+      const lead = this.leader(p);
+      let where = "Streets";
+      if (p.insideBuildingId) {
+        if (p.insideBuildingId.startsWith("mi_")) where = "On a job";
+        else {
+          const b = this.map.buildings.find((bb) => bb.id === p.insideBuildingId);
+          where = b?.name ?? "Inside";
+        }
+      } else if (lead) {
+        where = districtAt(lead.x, lead.y).short || districtAt(lead.x, lead.y).name;
+      }
+      out.push({
+        posseId: p.id,
+        name: s.name,
+        where,
+        inParty: !!p.partyId,
+        isSelf: p.id === selfPosse.id,
+      });
+    }
+    out.sort((a, b) => {
+      if (a.isSelf && !b.isSelf) return -1;
+      if (!a.isSelf && b.isSelf) return 1;
+      return a.name.localeCompare(b.name);
+    });
+    return out;
+  }
+
+  private ensureParty(posse: Posse): PlayerParty {
+    if (posse.partyId) {
+      const existing = this.parties.get(posse.partyId);
+      if (existing) return existing;
+    }
+    const id = this.nextId("party");
+    const party: PlayerParty = {
+      id,
+      leaderPosseId: posse.id,
+      memberPosseIds: [posse.id],
+    };
+    this.parties.set(id, party);
+    posse.partyId = id;
+    return party;
+  }
+
+  private leavePartyInternal(posse: Posse, announce: boolean): void {
+    const partyId = posse.partyId;
+    if (!partyId) {
+      posse.pendingInvite = null;
+      return;
+    }
+    const party = this.parties.get(partyId);
+    posse.partyId = null;
+    posse.pendingInvite = null;
+    if (!party) return;
+
+    party.memberPosseIds = party.memberPosseIds.filter((id) => id !== posse.id);
+    const sess = this.sessionForPosse(posse.id);
+
+    if (party.memberPosseIds.length === 0) {
+      this.parties.delete(partyId);
+      if (announce && sess) this.log(sess, "Party dissolved.");
+      return;
+    }
+
+    if (party.leaderPosseId === posse.id) {
+      party.leaderPosseId = party.memberPosseIds[0]!;
+      const newLead = this.sessionForPosse(party.leaderPosseId);
+      if (newLead) this.log(newLead, "You're the new party leader.");
+    }
+
+    if (announce && sess) {
+      this.log(sess, "Left the party.");
+    }
+    for (const mid of party.memberPosseIds) {
+      const ms = this.sessionForPosse(mid);
+      if (ms && sess) this.log(ms, `${sess.name} left the party.`);
+    }
+
+    // Solo leftover → dissolve (party of 1 is just solo)
+    if (party.memberPosseIds.length < 2) {
+      const lastId = party.memberPosseIds[0]!;
+      const last = this.posses.get(lastId);
+      if (last) last.partyId = null;
+      this.parties.delete(partyId);
+      const ls = this.sessionForPosse(lastId);
+      if (ls) this.log(ls, "Party dissolved — you're solo again.");
+    }
+  }
+
+  private cmdPartyInvite(session: CharacterSession, posse: Posse, targetName: string): void {
+    const name = targetName.trim().slice(0, 20);
+    if (!name) {
+      this.log(session, "Invite who? Use a display name.");
+      return;
+    }
+    if (name.toLowerCase() === session.name.toLowerCase()) {
+      this.log(session, "You can't invite yourself. Lonely isn't a party.");
+      return;
+    }
+
+    let targetSess: CharacterSession | null = null;
+    for (const s of this.sessions.values()) {
+      if (s.conn && s.name.toLowerCase() === name.toLowerCase()) {
+        targetSess = s;
+        break;
+      }
+    }
+    if (!targetSess) {
+      this.log(session, `Nobody online named "${name}" in this realm.`);
+      return;
+    }
+    const target = this.posses.get(targetSess.posseId);
+    if (!target?.isPlayer) {
+      this.log(session, "Can't invite that.");
+      return;
+    }
+    if (target.partyId && target.partyId === posse.partyId && posse.partyId) {
+      this.log(session, "They're already in your party.");
+      return;
+    }
+    if (target.partyId) {
+      this.log(session, `${targetSess.name} is already in another party.`);
+      return;
+    }
+    if (target.pendingInvite) {
+      this.log(session, `${targetSess.name} already has a pending invite.`);
+      return;
+    }
+
+    const party = this.ensureParty(posse);
+    if (party.memberPosseIds.length >= PARTY_MAX) {
+      this.log(session, `Party full (${PARTY_MAX}). Kick someone or get a bigger van.`);
+      // If we just created a solo party for invite, clean it up
+      if (party.memberPosseIds.length === 1 && party.memberPosseIds[0] === posse.id) {
+        this.parties.delete(party.id);
+        posse.partyId = null;
+      }
+      return;
+    }
+
+    target.pendingInvite = {
+      fromPosseId: posse.id,
+      fromName: session.name,
+      partyId: party.id,
+    };
+    this.log(session, `Invite sent to ${targetSess.name}.`);
+    this.log(targetSess, `${session.name} invited you to a party. Accept from the PARTY panel.`);
+    targetSess.conn?.send({
+      type: "notify",
+      kind: "mission",
+      title: "Party invite",
+      body: `${session.name} wants you in their crew. Open PARTY to accept or decline.`,
+    });
+  }
+
+  private cmdPartyAccept(session: CharacterSession, posse: Posse): void {
+    const inv = posse.pendingInvite;
+    if (!inv) {
+      this.log(session, "No pending party invite.");
+      return;
+    }
+    posse.pendingInvite = null;
+
+    if (posse.partyId) {
+      this.log(session, "Leave your current party first.");
+      return;
+    }
+
+    const party = this.parties.get(inv.partyId);
+    if (!party) {
+      this.log(session, "That invite expired.");
+      return;
+    }
+    // Inviter still online and leading / in party
+    const leader = this.posses.get(party.leaderPosseId);
+    if (!leader || leader.partyId !== party.id) {
+      this.log(session, "That party is gone.");
+      return;
+    }
+    if (party.memberPosseIds.length >= PARTY_MAX) {
+      this.log(session, "Party filled up while you were thinking.");
+      return;
+    }
+    if (party.memberPosseIds.includes(posse.id)) {
+      this.log(session, "Already in that party.");
+      return;
+    }
+
+    party.memberPosseIds.push(posse.id);
+    posse.partyId = party.id;
+    this.log(session, `Joined ${inv.fromName}'s party.`);
+    for (const mid of party.memberPosseIds) {
+      if (mid === posse.id) continue;
+      const ms = this.sessionForPosse(mid);
+      if (ms) this.log(ms, `${session.name} joined the party.`);
+    }
+    this.pushChat(null, `${session.name} joined ${inv.fromName}'s party.`, true);
+  }
+
+  private cmdPartyDecline(session: CharacterSession, posse: Posse): void {
+    const inv = posse.pendingInvite;
+    if (!inv) {
+      this.log(session, "No pending invite.");
+      return;
+    }
+    posse.pendingInvite = null;
+    this.log(session, `Declined ${inv.fromName}'s party invite.`);
+    const from = this.sessionForPosse(inv.fromPosseId);
+    if (from) this.log(from, `${session.name} declined your party invite.`);
+    // Dissolve solo stub party if inviter is alone
+    const party = this.parties.get(inv.partyId);
+    if (party && party.memberPosseIds.length === 1) {
+      const only = this.posses.get(party.memberPosseIds[0]!);
+      if (only) only.partyId = null;
+      this.parties.delete(party.id);
+    }
+  }
+
+  private cmdPartyLeave(session: CharacterSession, posse: Posse): void {
+    if (!posse.partyId) {
+      this.log(session, "You're not in a party.");
+      return;
+    }
+    this.leavePartyInternal(posse, true);
+  }
+
+  private cmdPartyKick(session: CharacterSession, posse: Posse, targetPosseId: string): void {
+    if (!posse.partyId) {
+      this.log(session, "Not in a party.");
+      return;
+    }
+    const party = this.parties.get(posse.partyId);
+    if (!party || party.leaderPosseId !== posse.id) {
+      this.log(session, "Only the party leader can kick.");
+      return;
+    }
+    if (targetPosseId === posse.id) {
+      this.log(session, "Use leave if you want out.");
+      return;
+    }
+    if (!party.memberPosseIds.includes(targetPosseId)) {
+      this.log(session, "They're not in your party.");
+      return;
+    }
+    const target = this.posses.get(targetPosseId);
+    if (!target) return;
+    const targetSess = this.sessionForPosse(targetPosseId);
+    this.leavePartyInternal(target, false);
+    if (targetSess) {
+      this.log(targetSess, `${session.name} kicked you from the party.`);
+    }
+    this.log(session, targetSess ? `Kicked ${targetSess.name}.` : "Kicked.");
+    for (const mid of party.memberPosseIds) {
+      const ms = this.sessionForPosse(mid);
+      if (ms && targetSess) this.log(ms, `${targetSess.name} was kicked from the party.`);
+    }
+  }
+
+  private cmdChat(
+    session: CharacterSession,
+    posse: Posse,
+    text: string,
+    channel?: "proximity" | "party",
+  ): void {
+    let clean = text.trim().slice(0, MAX_CHAT_LEN);
     if (!clean) return;
+    // `/p ` or `/party ` prefix forces party channel
+    let ch: "proximity" | "party" = channel === "party" ? "party" : "proximity";
+    const lower = clean.toLowerCase();
+    if (lower.startsWith("/p ") || lower.startsWith("/party ")) {
+      ch = "party";
+      clean = clean.replace(/^\/(p|party)\s+/i, "").trim().slice(0, MAX_CHAT_LEN);
+      if (!clean) return;
+    }
     const leader = this.leader(posse);
     if (!leader) return;
-    this.pushChat(session.name, clean, false, leader.x, leader.y);
+    if (ch === "party") {
+      if (!posse.partyId) {
+        this.log(session, "Not in a party. Invite someone first (or drop /p).");
+        return;
+      }
+      this.pushChat(session.name, clean, false, leader.x, leader.y, "party", posse.partyId);
+      return;
+    }
+    this.pushChat(session.name, clean, false, leader.x, leader.y, "proximity");
   }
 
   private pushChat(
@@ -4519,19 +5003,21 @@ export class GameWorld {
     system: boolean,
     x?: number,
     y?: number,
+    channel: "proximity" | "party" = "proximity",
+    partyId?: string | null,
   ): void {
     this.chatSeq += 1;
     const line: ChatLine = {
       id: `c${this.chatSeq}`,
       from: from ?? "City",
-      text,
+      text: channel === "party" && !system ? `[P] ${text}` : text,
       t: Date.now(),
       system,
+      ...(system ? {} : { channel }),
     };
     this.chat.push(line);
     if (this.chat.length > 100) this.chat.shift();
 
-    // Deliver proximity or system-wide
     for (const s of this.sessions.values()) {
       if (!s.conn) continue;
       const p = this.posses.get(s.posseId);
@@ -4539,6 +5025,12 @@ export class GameWorld {
       if (!leader) continue;
       if (system) {
         s.conn.send({ type: "chat", line });
+        continue;
+      }
+      if (channel === "party") {
+        if (partyId && p?.partyId === partyId) {
+          s.conn.send({ type: "chat", line });
+        }
         continue;
       }
       if (x === undefined || y === undefined) continue;
@@ -5022,6 +5514,7 @@ export class GameWorld {
         stashCash: posse.stashCash,
         realmId: this.realmId,
         realmLabel: realmLabel(this.realmId),
+        partyId: posse.partyId,
         respawnIn: (() => {
           const lead = this.leader(posse);
           if (!lead || lead.alive) return null;
@@ -5109,6 +5602,9 @@ export class GameWorld {
       tutorial: this.tutorialPublic(posse),
       memorials: posse.memorials.slice(0, MAX_MEMORIALS),
       memorialOpen: posse.memorialOpen,
+      party: this.partyPublic(posse),
+      partyInvite: posse.pendingInvite,
+      presence: this.presencePublic(posse),
       recentChat: this.chat.filter((c) => {
         if (c.system) return true;
         // approximate: last lines only for UI; proximity already filtered on send

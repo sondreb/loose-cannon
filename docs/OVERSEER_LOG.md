@@ -19,6 +19,18 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-11 — cycle 17 (M4 parties)
+- Focus: Party invite/leave + presence + party chat + co-op mission attach (within a realm)
+- Done:
+  - Shared: `PARTY_MAX`, `PartyState` / `PartyInvitePublic` / `PresenceEntry`; protocol party.* msgs + chat channel; snapshot party/partyInvite/presence
+  - Server: `parties` map; invite by name, accept/decline/leave/kick; dissolve &lt;2; presence online list
+  - Co-op: free party mates share outdoor contracts; shared instance layer `mi_<partyId>` + layer-keyed enemies; shared despawn rules
+  - Party chat `/p` / channel flag; client PARTY HUD panel (roster, invite, presence)
+  - Smoke: presence + invite/accept/leave in `smoke-party`
+- Verify: `npm run build` OK; `npm run smoke` → SMOKE_OK (clean server; first run hit known chop flake)
+- Next: **M7 content** (third instance / hustles / rivals / music) or optional M4 polish
+- Blocked: none
+
 ### 2026-07-11 — cycle 16 (M5 ammo clarity / balance pass)
 - Focus: Ammo economy + HUD clarity + balance numbers in STATUS
 - Done:

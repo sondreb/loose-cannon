@@ -1,6 +1,6 @@
 # Loose Cannon — Master Plan (Overseer Roadmap)
 
-Last updated: 2026-07-11 (M5 ammo clarity / balance)
+Last updated: 2026-07-11 (M4 parties)
 
 Track completion in `docs/STATUS.md`. This file is the **ordered backlog** for autonomous development. Prefer finishing higher milestones before lower ones unless a dependency forces otherwise.
 
@@ -61,10 +61,11 @@ Full design: [realms.md](./realms.md). Friend groups on one beta/in-memory serve
 
 ### M4 — Local multiplayer social (P4 light)
 
-- [ ] Parties: invite, leave, shared objective when in mission *(party is within a realm)*
-- [ ] Presence / who is online in hub *(realm-scoped)*
-- [ ] Chat channels: proximity (done) + party
-- [ ] Co-op mission start with party (same instance, same realm)
+- [x] Parties: invite, leave, shared objective when in mission *(party is within a realm)*
+- [x] Presence / who is online in hub *(realm-scoped)*
+- [x] Chat channels: proximity (done) + party (`/p` or channel flag)
+- [x] Co-op mission start with party (same instance layer / shared outdoor contract, same realm)
+- [ ] Optional polish: party kick UI confirm, shared hold progress, loot split
 
 ### M5 — Combat & AI depth
 
@@ -119,8 +120,8 @@ Each overseer cycle implements **one** primary milestone item (or a tightly rela
 
 ### Priority order for long unattended loops
 
-1. **M4 parties** only when solo loop is solid (parties live inside a realm)
-2. **M7 content density** (third instance, hustles, rival variety) when social not ready
+1. **M7 content density** (third instance, hustles, rival variety, optional music)
+2. Optional M4 polish (loot split, shared hold meters) if co-op feel is rough
 3. Optional M3 stash UX polish
 4. Never M8 / Mode B unless human asks
 
