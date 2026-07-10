@@ -116,24 +116,46 @@
         </div>
 
         <div id="shopModal" class="modal hidden">
-          <div class="modal-card wide">
-            <h2 id="shopTitle">Pawn-O-Matic</h2>
-            <p class="muted">Buying for: <span id="shopUnitName"></span> · Cash: <span id="shopCash"></span></p>
-            <div class="shop-cols">
-              <div>
-                <h3>Weapons</h3>
-                <div id="shopWeapons"></div>
+          <div class="modal-card shop-card">
+            <div class="shop-header">
+              <div class="shop-brand">
+                <div class="shop-logo">P</div>
+                <div>
+                  <h2 id="shopTitle">PAWN-O-MATIC</h2>
+                  <p class="shop-tagline">Cash only · No refunds · No questions</p>
+                </div>
               </div>
-              <div>
-                <h3>Armor</h3>
-                <div id="shopArmor"></div>
-              </div>
-              <div>
-                <h3>Upgrades</h3>
-                <div id="shopUpgrades"></div>
+              <div class="shop-cash-pill">
+                <span class="muted">WALLET</span>
+                <strong id="shopCash">$0</strong>
               </div>
             </div>
-            <button type="button" id="shopClose" class="ghost">Leave shop</button>
+
+            <div class="shop-buyer">
+              <span class="equip-label">BUYING FOR</span>
+              <div id="shopBuyerRow" class="shop-buyer-row"></div>
+              <p class="muted tiny">Selected: <span id="shopUnitName">—</span></p>
+            </div>
+
+            <div class="shop-cols">
+              <section class="shop-col">
+                <h3>⚔ Weapons</h3>
+                <div id="shopWeapons" class="shop-items"></div>
+              </section>
+              <section class="shop-col">
+                <h3>🛡 Armor</h3>
+                <div id="shopArmor" class="shop-items"></div>
+              </section>
+              <section class="shop-col">
+                <h3>⬆ Upgrades</h3>
+                <div id="shopUpgrades" class="shop-items"></div>
+              </section>
+            </div>
+
+            <div class="shop-footer">
+              <p class="muted tiny">Tip: stand at the exit door and press <b>E</b> to leave the shop floor. Esc closes this counter.</p>
+              <button type="button" id="shopClose" class="shop-leave-btn">CLOSE COUNTER</button>
+            </div>
           </div>
         </div>
       </div>

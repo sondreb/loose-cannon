@@ -927,44 +927,63 @@ export class GameWorld {
     // Always stop free/click movement when opening doors, talk, or shop
     this.cmdStop(posse);
 
-    // Prefer NPCs / shop while inside (before exit door)
-    for (const u of this.units.values()) {
-      if (u.kind !== "npc" || !u.alive) continue;
-      if ((u.buildingId ?? null) !== (posse.insideBuildingId ?? null)) continue;
-      if (dist(leader.x, leader.y, u.x, u.y) <= INTERACT_RANGE) {
-        const spawn = this.map.npcSpawns.find((n) => n.id === u.id);
-        // Dealers open the shop immediately for snappy shopping
-        if (spawn?.role === "dealer") {
-          posse.shop = { buildingId: "shop_pawn", shopName: "Pawn-O-Matic" };
-          posse.dialogue = null;
-          return;
-        }
-        posse.dialogue = this.buildDialogue(u);
-        posse.shop = null;
-        return;
-      }
-    }
-
-    if (posse.insideBuildingId === "shop_pawn") {
-      if (dist(leader.x, leader.y, 76, 3) < 2.5) {
-        posse.shop = { buildingId: "shop_pawn", shopName: "Pawn-O-Matic" };
-        posse.dialogue = null;
-        return;
-      }
-    }
-
-    // Doors: enter from street or exit via interior exit tile
+    // 1) Exit / enter doors FIRST so a counter NPC never traps you at the door
     for (const b of this.map.buildings) {
       if (posse.insideBuildingId === b.id) {
-        if (dist(leader.x, leader.y, b.exitX + 0.5, b.exitY + 0.5) < INTERACT_RANGE) {
+        if (dist(leader.x, leader.y, b.exitX + 0.5, b.exitY + 0.5) <= INTERACT_RANGE + 0.35) {
           this.enterBuilding(posse, null);
+          this.log(session, `Left ${b.name}.`);
           return;
         }
       } else if (!posse.insideBuildingId) {
-        if (dist(leader.x, leader.y, b.doorX + 0.5, b.doorY + 0.5) < INTERACT_RANGE) {
+        if (dist(leader.x, leader.y, b.doorX + 0.5, b.doorY + 0.5) <= INTERACT_RANGE) {
           this.enterBuilding(posse, b.id);
+          this.log(session, `Entered ${b.name}.`);
           return;
         }
+      }
+    }
+
+    // 2) If shop UI is already open, E closes it (don't re-open)
+    if (posse.shop) {
+      posse.shop = null;
+      this.log(session, "Closed the shop counter.");
+      return;
+    }
+
+    // 3) NPCs / shop counter (only when clearly away from exit)
+    for (const u of this.units.values()) {
+      if (u.kind !== "npc" || !u.alive) continue;
+      if ((u.buildingId ?? null) !== (posse.insideBuildingId ?? null)) continue;
+      if (dist(leader.x, leader.y, u.x, u.y) > INTERACT_RANGE) continue;
+
+      // Don't treat dealer as interactable if we're still basically at the exit tile
+      if (posse.insideBuildingId) {
+        const b = this.map.buildings.find((bb) => bb.id === posse.insideBuildingId);
+        if (b && dist(leader.x, leader.y, b.exitX + 0.5, b.exitY + 0.5) <= INTERACT_RANGE + 0.5) {
+          continue;
+        }
+      }
+
+      const spawn = this.map.npcSpawns.find((n) => n.id === u.id);
+      if (spawn?.role === "dealer") {
+        posse.shop = { buildingId: "shop_pawn", shopName: "Pawn-O-Matic" };
+        posse.dialogue = null;
+        this.log(session, "Pawnshop Phil: \"Cash only. No refunds on regrets.\"");
+        return;
+      }
+      posse.dialogue = this.buildDialogue(u);
+      posse.shop = null;
+      return;
+    }
+
+    // 4) Standing on shop counter tile
+    if (posse.insideBuildingId === "shop_pawn") {
+      const t = this.tileAt(leader.x, leader.y);
+      if (t === "shop") {
+        posse.shop = { buildingId: "shop_pawn", shopName: "Pawn-O-Matic" };
+        posse.dialogue = null;
+        return;
       }
     }
 

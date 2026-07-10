@@ -157,7 +157,9 @@ export function createSkidrowMap(): WorldMapDef {
   outline(tiles, 70, 1, 78, 6, "wall");
   rect(tiles, 71, 2, 77, 5, "floor");
   tiles[6][74] = "door";
-  tiles[3][76] = "shop";
+  // Counter deep in the shop — away from the exit door so E can leave cleanly
+  tiles[3][72] = "shop";
+  tiles[3][73] = "shop";
 
   // Safehouse interior (SW pocket)
   rect(tiles, 1, 63, 9, 68, "floor");
@@ -200,7 +202,7 @@ export function createSkidrowMap(): WorldMapDef {
       ix1: 77,
       iy1: 5,
       spawnX: 74,
-      spawnY: 5,
+      spawnY: 4,
       exitX: 74,
       exitY: 6,
       exteriorSpawnX: 53,
@@ -300,8 +302,8 @@ export function createSkidrowMap(): WorldMapDef {
       {
         id: "npc_dealer",
         name: "Pawnshop Phil",
-        x: 76,
-        y: 3,
+        x: 72.5,
+        y: 3.2,
         role: "dealer",
         buildingId: "shop_pawn",
       },

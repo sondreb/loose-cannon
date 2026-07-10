@@ -64,6 +64,7 @@ const shopCash = $("shopCash");
 const shopWeapons = $("shopWeapons");
 const shopArmor = $("shopArmor");
 const shopUpgrades = $("shopUpgrades");
+const shopBuyerRow = $("shopBuyerRow");
 const shopClose = $("shopClose");
 const respawnOverlay = $("respawnOverlay");
 const respawnCount = $("respawnCount");
@@ -506,28 +507,61 @@ function renderShop(): void {
     return;
   }
   shopModal.classList.remove("hidden");
-  shopTitle.textContent = snap.shop.shopName;
+  shopTitle.textContent = "PAWN-O-MATIC";
   shopCash.textContent = `$${snap.you.cash}`;
   const u = selectedUnit();
   shopUnitName.textContent = u?.name ?? "—";
 
   const ownedW = (u?.ownedWeapons ?? []).slice().sort().join(",");
   const ownedA = (u?.ownedArmors ?? []).slice().sort().join(",");
-  const key = `${snap.shop.shopName}|${u?.id ?? ""}|${ownedW}|${ownedA}|${snap.you.cash}`;
+  const rosterKey = myUnits()
+    .map((m) => m.id)
+    .join(",");
+  const key = `${snap.shop.shopName}|${u?.id ?? ""}|${ownedW}|${ownedA}|${snap.you.cash}|${rosterKey}|${u?.stats.aim},${u?.stats.guts}`;
   if (key === lastShopKey) return;
   lastShopKey = key;
+
+  // Buyer chips
+  shopBuyerRow.innerHTML = "";
+  for (const m of myUnits()) {
+    if (!m.alive && !(m.isPlayerLeader || m.kind === "player")) continue;
+    const t = upgradeTier(m.stats);
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "shop-buyer-chip" + (m.id === u?.id ? " active" : "");
+    chip.dataset.selectUnit = m.id;
+    const img = portraitDataUrl(m.id + m.name, {
+      leader: !!(m.isPlayerLeader || m.kind === "player"),
+      dead: !m.alive,
+      upgradeTier: t,
+    });
+    chip.innerHTML = `
+      <img src="${img}" alt="" width="32" height="32" draggable="false" />
+      <span>${escapeHtml(m.name.split(" ")[0] ?? m.name)}</span>
+    `;
+    shopBuyerRow.appendChild(chip);
+  }
 
   shopWeapons.innerHTML = "";
   for (const id of SHOP_WEAPON_ORDER) {
     const w = WEAPONS[id];
     const owned = u?.ownedWeapons?.includes(id);
+    const canAfford = snap.you.cash >= w.price;
     const b = document.createElement("button");
     b.type = "button";
+    b.className =
+      "shop-item" + (owned ? " owned" : "") + (!owned && !canAfford ? " broke" : "");
     b.dataset.shopAction = "weapon";
     b.dataset.itemId = id;
-    b.textContent = owned
-      ? `${w.name} (owned — equip)`
-      : `${w.name} — $${w.price} · ${w.description}`;
+    b.innerHTML = `
+      <img class="shop-item-icon" src="${weaponIconDataUrl(id, { active: u?.weapon === id, locked: false })}" alt="" width="40" height="40" draggable="false" />
+      <div class="shop-item-body">
+        <div class="shop-item-name">${escapeHtml(w.name)}</div>
+        <div class="shop-item-meta">DMG ${w.damage} · RNG ${w.range}</div>
+        <div class="shop-item-desc">${escapeHtml(w.description)}</div>
+      </div>
+      <div class="shop-item-price">${owned ? "EQUIP" : `$${w.price}`}</div>
+    `;
     shopWeapons.appendChild(b);
   }
 
@@ -535,29 +569,56 @@ function renderShop(): void {
   for (const id of SHOP_ARMOR_ORDER) {
     const a = ARMORS[id];
     const owned = u?.ownedArmors?.includes(id);
+    const canAfford = snap.you.cash >= a.price;
     const b = document.createElement("button");
     b.type = "button";
+    b.className =
+      "shop-item" + (owned ? " owned" : "") + (!owned && !canAfford ? " broke" : "");
     b.dataset.shopAction = "armor";
     b.dataset.itemId = id;
-    b.textContent = owned
-      ? `${a.name} (owned — equip)`
-      : `${a.name} — $${a.price} · ${a.description}`;
+    b.innerHTML = `
+      <img class="shop-item-icon" src="${armorIconDataUrl(id, { active: u?.armor === id, locked: false })}" alt="" width="40" height="40" draggable="false" />
+      <div class="shop-item-body">
+        <div class="shop-item-name">${escapeHtml(a.name)}</div>
+        <div class="shop-item-meta">−${Math.round(a.damageReduce * 100)}% dmg</div>
+        <div class="shop-item-desc">${escapeHtml(a.description)}</div>
+      </div>
+      <div class="shop-item-price">${owned ? "EQUIP" : a.price <= 0 ? "FREE" : `$${a.price}`}</div>
+    `;
     shopArmor.appendChild(b);
   }
 
   shopUpgrades.innerHTML = "";
   for (const id of SHOP_UPGRADE_ORDER) {
     const up = UPGRADES[id];
+    const canAfford = snap.you.cash >= up.price;
     const b = document.createElement("button");
     b.type = "button";
+    b.className = "shop-item upgrade" + (!canAfford ? " broke" : "");
     b.dataset.shopAction = "upgrade";
     b.dataset.itemId = id;
-    b.textContent = `${up.name} — $${up.price} · ${up.description}`;
+    b.innerHTML = `
+      <div class="shop-upgrade-glyph">${id === "medkit" ? "+" : "▲"}</div>
+      <div class="shop-item-body">
+        <div class="shop-item-name">${escapeHtml(up.name)}</div>
+        <div class="shop-item-desc">${escapeHtml(up.description)}</div>
+      </div>
+      <div class="shop-item-price">$${up.price}</div>
+    `;
     shopUpgrades.appendChild(b);
   }
 }
 
 function onShopClick(ev: MouseEvent): void {
+  const selectBtn = (ev.target as HTMLElement | null)?.closest?.(
+    "button[data-select-unit]",
+  ) as HTMLButtonElement | null;
+  if (selectBtn?.dataset.selectUnit && socket) {
+    ev.preventDefault();
+    socket.send({ type: "intent.select", unitId: selectBtn.dataset.selectUnit });
+    return;
+  }
+
   const btn = (ev.target as HTMLElement | null)?.closest?.("button[data-shop-action]") as
     | HTMLButtonElement
     | null;
@@ -853,6 +914,10 @@ function bindInput(): void {
   shopWeapons.addEventListener("click", onShopClick);
   shopArmor.addEventListener("click", onShopClick);
   shopUpgrades.addEventListener("click", onShopClick);
+  shopBuyerRow.addEventListener("click", onShopClick);
+  shopModal.addEventListener("click", (e) => {
+    if (e.target === shopModal) socket.send({ type: "shop.close" });
+  });
 
   weaponBar.addEventListener("click", onEquipBarClick);
   armorBar.addEventListener("click", onEquipBarClick);

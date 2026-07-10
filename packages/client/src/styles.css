@@ -994,25 +994,259 @@ body {
   margin-top: 0.5rem;
 }
 
+/* —— Pawn-O-Matic —— */
+.shop-card {
+  width: min(960px, 96vw) !important;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(165deg, #1a1820 0%, #121018 40%, #0e1210 100%);
+  border-color: #c9a227 !important;
+  box-shadow: 0 0 40px #c9a22733, inset 0 0 60px #0006;
+}
+
+.shop-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid #c9a22755;
+}
+
+.shop-brand {
+  display: flex;
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.shop-logo {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, #e0b030, #8a6010);
+  color: #1a1008;
+  font-weight: 900;
+  font-size: 1.4rem;
+  border: 2px solid #ffcc33;
+  box-shadow: 0 0 12px #f0a03055;
+}
+
+.shop-header h2 {
+  margin: 0;
+  letter-spacing: 0.14em;
+  color: #ffcc33 !important;
+  text-shadow: 0 0 12px #f0a03055;
+}
+
+.shop-tagline {
+  margin: 0.15rem 0 0;
+  font-size: 0.72rem;
+  color: #9a9080;
+  font-style: italic;
+}
+
+.shop-cash-pill {
+  text-align: right;
+  background: #0a120c;
+  border: 1px solid #2a6a40;
+  padding: 0.35rem 0.7rem;
+  border-radius: 2px;
+}
+
+.shop-cash-pill .muted {
+  display: block;
+  font-size: 0.58rem;
+  letter-spacing: 0.1em;
+}
+
+.shop-cash-pill strong {
+  color: var(--ok);
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.shop-buyer {
+  margin-bottom: 0.75rem;
+}
+
+.shop-buyer-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.35rem 0 0.25rem;
+}
+
+.shop-buyer-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: #0e0e14;
+  border: 1px solid #444;
+  color: var(--text);
+  padding: 0.25rem 0.5rem 0.25rem 0.25rem;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.shop-buyer-chip img {
+  image-rendering: pixelated;
+  width: 32px;
+  height: 32px;
+}
+
+.shop-buyer-chip.active {
+  border-color: var(--accent);
+  background: #1a1810;
+  box-shadow: 0 0 0 1px #f0a03044;
+}
+
 .shop-cols {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 0.75rem;
+  min-height: 0;
+  overflow: hidden;
+  flex: 1;
 }
 
-.shop-cols button {
-  margin: 0.25rem 0 0;
-  font-size: 0.78rem;
-  text-align: left;
+.shop-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #0a0a0ecc;
+  border: 1px solid #333;
   padding: 0.45rem;
+}
+
+.shop-col h3 {
+  margin: 0 0 0.45rem;
+  font-size: 0.82rem;
+  color: #e0c060;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid #333;
+  padding-bottom: 0.3rem;
+}
+
+.shop-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  overflow-y: auto;
+  max-height: min(48vh, 420px);
+  padding-right: 0.15rem;
+}
+
+.shop-item {
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  gap: 0.45rem;
+  align-items: center;
+  text-align: left;
+  background: #121218;
+  border: 1px solid #3a3a48;
+  color: var(--text);
+  padding: 0.4rem;
   cursor: pointer;
-  pointer-events: auto;
-  white-space: normal;
+  width: 100%;
+  margin: 0;
+  font-weight: 500;
+}
+
+.shop-item:hover {
+  border-color: var(--accent);
+  background: #1a1812;
+}
+
+.shop-item.owned {
+  border-color: #2a6a40;
+  background: #0e1812;
+}
+
+.shop-item.broke {
+  opacity: 0.55;
+}
+
+.shop-item.broke:hover {
+  border-color: #844;
+}
+
+.shop-item-icon {
+  image-rendering: pixelated;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+}
+
+.shop-upgrade-glyph {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  background: #1a2430;
+  border: 1px solid #456;
+  color: #8cf;
+  font-weight: 900;
+  font-size: 1.1rem;
+}
+
+.shop-item-name {
+  font-weight: 800;
+  font-size: 0.82rem;
+  color: #f0e8d8;
+}
+
+.shop-item-meta {
+  font-size: 0.65rem;
+  color: #8a9;
+  margin-top: 0.05rem;
+}
+
+.shop-item-desc {
+  font-size: 0.65rem;
+  color: #777;
+  margin-top: 0.1rem;
   line-height: 1.25;
 }
 
-.shop-cols button:hover {
-  border-color: var(--accent);
+.shop-item-price {
+  font-weight: 900;
+  color: var(--ok);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.shop-item.owned .shop-item-price {
+  color: #8fdf9f;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+}
+
+.shop-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.75rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid #333;
+}
+
+.shop-leave-btn {
+  background: linear-gradient(180deg, #e09020, #a05010);
+  border: 1px solid #ffcc66;
+  color: #1a1008;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 0.55rem 1rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.shop-leave-btn:hover {
   filter: brightness(1.08);
 }
 
@@ -1037,5 +1271,12 @@ body {
   }
   .shop-cols {
     grid-template-columns: 1fr;
+  }
+  .shop-items {
+    max-height: 28vh;
+  }
+  .shop-footer {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
