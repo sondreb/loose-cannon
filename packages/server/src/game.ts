@@ -169,8 +169,9 @@ interface Posse {
    * Only pocket cash (posse.cash) and gear on units is at risk on the street.
    */
   stashCash: number;
-  stashWeapons: Set<WeaponId>;
-  stashArmors: Set<ArmorId>;
+  /** Stack counts of stashed gear (safe from wipe) */
+  stashWeapons: Map<WeaponId, number>;
+  stashArmors: Map<ArmorId, number>;
   /** Right-click attack-move: chase & fire until target dies or orders change */
   attackTargetId: string | null;
   /** last click-move destination label */
@@ -181,9 +182,35 @@ function emptyStashFields(): Pick<Posse, "stashOpen" | "stashCash" | "stashWeapo
   return {
     stashOpen: false,
     stashCash: 0,
-    stashWeapons: new Set(),
-    stashArmors: new Set(),
+    stashWeapons: new Map(),
+    stashArmors: new Map(),
   };
+}
+
+function stashAddWeapon(posse: Posse, id: WeaponId): void {
+  if (id === "pipe") return;
+  posse.stashWeapons.set(id, (posse.stashWeapons.get(id) ?? 0) + 1);
+}
+
+function stashTakeWeapon(posse: Posse, id: WeaponId): boolean {
+  const n = posse.stashWeapons.get(id) ?? 0;
+  if (n <= 0) return false;
+  if (n <= 1) posse.stashWeapons.delete(id);
+  else posse.stashWeapons.set(id, n - 1);
+  return true;
+}
+
+function stashAddArmor(posse: Posse, id: ArmorId): void {
+  if (id === "none") return;
+  posse.stashArmors.set(id, (posse.stashArmors.get(id) ?? 0) + 1);
+}
+
+function stashTakeArmor(posse: Posse, id: ArmorId): boolean {
+  const n = posse.stashArmors.get(id) ?? 0;
+  if (n <= 0) return false;
+  if (n <= 1) posse.stashArmors.delete(id);
+  else posse.stashArmors.set(id, n - 1);
+  return true;
 }
 
 interface CharacterSession {
@@ -973,7 +1000,7 @@ export class GameWorld {
   }
 
   private cmdMove(posse: Posse, x: number, y: number, _unitIds?: string[]): void {
-    if (posse.dialogue || posse.shop || posse.jobBoard) return;
+    if (posse.dialogue || posse.shop || posse.stashOpen || posse.jobBoard) return;
     const leader = this.leader(posse);
     if (!leader || !leader.alive) return;
     posse.attackTargetId = null;
@@ -1092,7 +1119,7 @@ export class GameWorld {
 
   /** Continuous free movement in world axes (client sends screen-aligned vectors). */
   private cmdDir(posse: Posse, dx: number, dy: number): void {
-    if (posse.dialogue || posse.shop) return;
+    if (posse.dialogue || posse.shop || posse.stashOpen) return;
     const leader = this.leader(posse);
     if (!leader || !leader.alive) return;
 
@@ -1257,7 +1284,7 @@ export class GameWorld {
     x?: number,
     y?: number,
   ): void {
-    if (posse.dialogue || posse.shop) return;
+    if (posse.dialogue || posse.shop || posse.stashOpen) return;
     const shooter =
       this.units.get(posse.selectedUnitId) ??
       this.leader(posse);
@@ -1546,7 +1573,7 @@ export class GameWorld {
   private updateEscortFormations(): void {
     for (const posse of this.posses.values()) {
       if (posse.attackTargetId) continue;
-      if (posse.dialogue || posse.shop) continue;
+      if (posse.dialogue || posse.shop || posse.stashOpen) continue;
       const leader = this.leader(posse);
       if (!leader?.alive) continue;
       const goons = this.goons(posse);
@@ -1587,6 +1614,7 @@ export class GameWorld {
     if (!leader.alive) return { action: "DOWN", actionDetail: "Awaiting respawn" };
     if (leader.incapacitated) return { action: "DOWNED", actionDetail: "Bodyguards covering boss" };
     if (posse.shop) return { action: "SHOPPING", actionDetail: posse.shop.shopName };
+    if (posse.stashOpen) return { action: "STASH", actionDetail: "Crash Pad" };
     if (posse.jobBoard) return { action: "CONTRACTS", actionDetail: posse.jobBoard.npcName };
     if (posse.dialogue) return { action: "PERSUADE", actionDetail: posse.dialogue.npcName };
     if (posse.mission) {
@@ -1670,14 +1698,18 @@ export class GameWorld {
       unit.tx = unit.x;
       unit.ty = unit.y;
       unit.incapacitated = false;
+      posse.stashOpen = false;
+      posse.dialogue = null;
+      posse.shop = null;
+      posse.jobBoard = null;
       const session = [...this.sessions.values()].find((s) => s.posseId === posse.id);
       if (session) {
-        this.log(session, `You're dead. Respawning in ${RESPAWN_DELAY_SEC}s…`);
+        this.log(session, `You're dead. Waking up at the Crash Pad in ${RESPAWN_DELAY_SEC}s…`);
         session.conn?.send({
           type: "notify",
           kind: "killed",
           title: "YOU'RE DEAD",
-          body: `The crew is wiped. Respawning in ${RESPAWN_DELAY_SEC}s…`,
+          body: `Crew wiped. Street gear & pocket cash go to the killers. Crash Pad stash is safe. Respawn ${RESPAWN_DELAY_SEC}s…`,
         });
       }
       this.purgeDeadGoons(posse);
@@ -1726,30 +1758,17 @@ export class GameWorld {
   }
 
   /**
-   * If the whole crew is down, the killer posse steals all weapons, armor, and cash.
-   * Better gear than the killer already owned gets a fancy upgrade toast.
+   * Full crew wipe: killers take pocket cash + gear currently on units (and banked fallen gear).
+   * Crash Pad stash (stashCash / stashWeapons / stashArmors) is never touched.
+   * Always strips carried gear even if no killer is attributed.
    */
   private tryWipeLoot(victim: Posse): void {
     if (victim.lootedThisWipe) return;
     if (this.hasLivingMembers(victim)) return;
 
-    const killerId = victim.lastKillerPosseId;
-    if (!killerId || killerId === victim.id) return;
-    const killer = this.posses.get(killerId);
-    if (!killer) return;
-
     victim.lootedThisWipe = true;
 
-    // Snapshot killer's best gear before loot (for upgrade detection)
-    let prevBestWeaponScore = 0;
-    let prevBestArmorScore = 0;
-    for (const m of this.members(killer)) {
-      for (const w of m.ownedWeapons) prevBestWeaponScore = Math.max(prevBestWeaponScore, weaponScore(w));
-      for (const a of m.ownedArmors) prevBestArmorScore = Math.max(prevBestArmorScore, armorScore(a));
-      prevBestWeaponScore = Math.max(prevBestWeaponScore, weaponScore(m.weapon));
-      prevBestArmorScore = Math.max(prevBestArmorScore, armorScore(m.armor));
-    }
-
+    // Carried gear only — not house stash
     const weapons = new Set<WeaponId>(victim.fallenWeapons);
     const armors = new Set<ArmorId>(victim.fallenArmors);
     for (const id of victim.memberIds) {
@@ -1763,9 +1782,8 @@ export class GameWorld {
 
     const cashTaken = victim.cash;
     victim.cash = 0;
-    killer.cash += cashTaken;
 
-    // Strip victims to basics
+    // Strip street loadout to pipe / none (stash stays)
     for (const id of victim.memberIds) {
       const u = this.units.get(id);
       if (!u) continue;
@@ -1777,7 +1795,39 @@ export class GameWorld {
     victim.fallenWeapons.clear();
     victim.fallenArmors.clear();
 
-    // Give everything to all living killer members; equip best on leader
+    const killerId = victim.lastKillerPosseId;
+    const killer =
+      killerId && killerId !== victim.id ? this.posses.get(killerId) : undefined;
+
+    const victimSession = [...this.sessions.values()].find((s) => s.posseId === victim.id);
+    const stashNote =
+      victim.stashCash > 0 || victim.stashWeapons.size > 0 || victim.stashArmors.size > 0
+        ? ` Crash Pad stash intact ($${victim.stashCash} + gear in the house).`
+        : "";
+
+    if (!killer) {
+      if (victimSession) {
+        this.log(
+          victimSession,
+          `Wiped. Lost pocket cash $${cashTaken} and street gear.${stashNote}`,
+        );
+      }
+      return;
+    }
+
+    // Snapshot killer's best gear before loot (for upgrade detection)
+    let prevBestWeaponScore = 0;
+    let prevBestArmorScore = 0;
+    for (const m of this.members(killer)) {
+      for (const w of m.ownedWeapons) prevBestWeaponScore = Math.max(prevBestWeaponScore, weaponScore(w));
+      for (const a of m.ownedArmors) prevBestArmorScore = Math.max(prevBestArmorScore, armorScore(a));
+      prevBestWeaponScore = Math.max(prevBestWeaponScore, weaponScore(m.weapon));
+      prevBestArmorScore = Math.max(prevBestArmorScore, armorScore(m.armor));
+    }
+
+    killer.cash += cashTaken;
+
+    // Give carried loot to killer members; equip best on leader
     const living = this.members(killer);
     for (const m of living) {
       for (const w of weapons) m.ownedWeapons.add(w);
@@ -1807,7 +1857,6 @@ export class GameWorld {
       leader.armor = bestA;
     }
 
-    // Classify loot vs upgrades
     const upgrades: Array<{
       kind: "weapon" | "armor";
       id: string;
@@ -1841,11 +1890,10 @@ export class GameWorld {
     const gearTxt = [...upgrades.map((u) => u.name), ...otherItems].join(", ") || "nothing special";
 
     const killerSession = [...this.sessions.values()].find((s) => s.posseId === killer.id);
-    const victimSession = [...this.sessions.values()].find((s) => s.posseId === victim.id);
     if (killerSession) {
       this.log(
         killerSession,
-        `Wiped ${victim.name}! Looted $${cashTaken} and gear: ${gearTxt}.`,
+        `Wiped ${victim.name}! Looted $${cashTaken} and street gear: ${gearTxt}.`,
       );
       killerSession.conn?.send({
         type: "notify",
@@ -1863,12 +1911,12 @@ export class GameWorld {
     if (victimSession) {
       this.log(
         victimSession,
-        `${killer.name} wiped your crew and stole your gear${cashTaken ? ` and $${cashTaken}` : ""}.`,
+        `${killer.name} wiped your crew and took street gear${cashTaken ? ` and $${cashTaken}` : ""}.${stashNote}`,
       );
     }
     this.pushChat(
       null,
-      `${killer.name} wiped ${victim.name} and took their gear.`,
+      `${killer.name} wiped ${victim.name} and took their street gear.`,
       true,
     );
   }
@@ -2009,6 +2057,29 @@ export class GameWorld {
       posse.shop = null;
       this.log(session, "Closed the shop counter.");
       return;
+    }
+    if (posse.stashOpen) {
+      posse.stashOpen = false;
+      this.log(session, "Closed the Crash Pad stash.");
+      return;
+    }
+
+    // 2b) Inside Crash Pad — open stash (away from exit)
+    if (posse.insideBuildingId) {
+      const bHere = this.map.buildings.find((bb) => bb.id === posse.insideBuildingId);
+      const atExit =
+        !!bHere &&
+        dist(leader.x, leader.y, bHere.exitX + 0.5, bHere.exitY + 0.5) <= INTERACT_RANGE + 0.5;
+      if (!atExit && (bHere?.kind === "safehouse" || bHere?.id === "safehouse")) {
+        posse.stashOpen = true;
+        posse.dialogue = null;
+        posse.shop = null;
+        this.log(
+          session,
+          "Crash Pad stash. Deposit cash & gear so a wipe only costs what you're packing.",
+        );
+        return;
+      }
     }
 
     // 3) NPCs / shop counter (only when clearly away from exit)
@@ -2233,6 +2304,7 @@ export class GameWorld {
       posse.insideBuildingId = null;
       posse.dialogue = null;
       posse.shop = null;
+      posse.stashOpen = false;
       posse.jobBoard = null;
       const sx = prev?.exteriorSpawnX ?? this.map.playerSpawn.x;
       const sy = prev?.exteriorSpawnY ?? this.map.playerSpawn.y;
@@ -2258,6 +2330,7 @@ export class GameWorld {
     posse.insideBuildingId = buildingId;
     posse.dialogue = null;
     posse.shop = null;
+    posse.stashOpen = false;
     posse.jobBoard = null;
     let i = 0;
     for (const u of members) {
@@ -2289,6 +2362,189 @@ export class GameWorld {
       return;
     }
     this.enterBuilding(posse, null);
+  }
+
+  private assertStashAccess(session: CharacterSession, posse: Posse): boolean {
+    if (!posse.isPlayer) return false;
+    const b = this.map.buildings.find((bb) => bb.id === posse.insideBuildingId);
+    if (!b || (b.kind !== "safehouse" && b.id !== "safehouse")) {
+      this.log(session, "Stash is only at the Crash Pad.");
+      posse.stashOpen = false;
+      return false;
+    }
+    return true;
+  }
+
+  private buildStashState(posse: Posse): StashState {
+    // Expand stacks so the client can show multiple of the same id
+    const weapons: WeaponId[] = [];
+    for (const [id, n] of posse.stashWeapons) {
+      if (id === "pipe") continue;
+      for (let i = 0; i < n; i++) weapons.push(id);
+    }
+    const armors: ArmorId[] = [];
+    for (const [id, n] of posse.stashArmors) {
+      if (id === "none") continue;
+      for (let i = 0; i < n; i++) armors.push(id);
+    }
+    return {
+      cash: posse.stashCash,
+      weapons,
+      armors,
+      pocketCash: posse.cash,
+    };
+  }
+
+  private cmdStashDepositCash(session: CharacterSession, posse: Posse, amount: number): void {
+    if (!this.assertStashAccess(session, posse)) return;
+    posse.stashOpen = true;
+    const n = amount <= 0 ? posse.cash : Math.min(posse.cash, Math.floor(amount));
+    if (n <= 0) {
+      this.log(session, "Nothing in your pockets to stash.");
+      return;
+    }
+    posse.cash -= n;
+    posse.stashCash += n;
+    this.log(session, `Stashed $${n}. Pocket $${posse.cash} · Stash $${posse.stashCash}.`);
+  }
+
+  private cmdStashWithdrawCash(session: CharacterSession, posse: Posse, amount: number): void {
+    if (!this.assertStashAccess(session, posse)) return;
+    posse.stashOpen = true;
+    const n = amount <= 0 ? posse.stashCash : Math.min(posse.stashCash, Math.floor(amount));
+    if (n <= 0) {
+      this.log(session, "Stash is empty of cash.");
+      return;
+    }
+    posse.stashCash -= n;
+    posse.cash += n;
+    this.log(session, `Withdrew $${n}. Pocket $${posse.cash} · Stash $${posse.stashCash}.`);
+  }
+
+  private cmdStashDepositWeapon(
+    session: CharacterSession,
+    posse: Posse,
+    weaponId: WeaponId,
+    unitId: string,
+  ): void {
+    if (!this.assertStashAccess(session, posse)) return;
+    if (weaponId === "pipe") {
+      this.log(session, "Even the rats won't take that pipe.");
+      return;
+    }
+    if (!posse.memberIds.includes(unitId)) return;
+    const u = this.units.get(unitId);
+    if (!u || !u.ownedWeapons.has(weaponId)) {
+      this.log(session, "They aren't carrying that.");
+      return;
+    }
+    posse.stashOpen = true;
+    u.ownedWeapons.delete(weaponId);
+    if (u.weapon === weaponId) u.weapon = "pipe";
+    stashAddWeapon(posse, weaponId);
+    this.log(session, `Stashed ${WEAPONS[weaponId].name} from ${u.name}.`);
+  }
+
+  private cmdStashWithdrawWeapon(
+    session: CharacterSession,
+    posse: Posse,
+    weaponId: WeaponId,
+    unitId: string,
+  ): void {
+    if (!this.assertStashAccess(session, posse)) return;
+    if (!posse.memberIds.includes(unitId)) return;
+    const u = this.units.get(unitId);
+    if (!u || !u.alive) return;
+    if (u.ownedWeapons.has(weaponId)) {
+      this.log(session, `${u.name} already packs a ${WEAPONS[weaponId].name}.`);
+      return;
+    }
+    if (!stashTakeWeapon(posse, weaponId)) {
+      this.log(session, "Not in the stash.");
+      return;
+    }
+    posse.stashOpen = true;
+    u.ownedWeapons.add(weaponId);
+    if (u.weapon === "pipe" || weaponScore(weaponId) > weaponScore(u.weapon)) {
+      u.weapon = weaponId;
+    }
+    this.log(session, `${u.name} pulled ${WEAPONS[weaponId].name} from the stash.`);
+  }
+
+  private cmdStashDepositArmor(
+    session: CharacterSession,
+    posse: Posse,
+    armorId: ArmorId,
+    unitId: string,
+  ): void {
+    if (!this.assertStashAccess(session, posse)) return;
+    if (armorId === "none") return;
+    if (!posse.memberIds.includes(unitId)) return;
+    const u = this.units.get(unitId);
+    if (!u || !u.ownedArmors.has(armorId)) {
+      this.log(session, "They aren't wearing/storing that.");
+      return;
+    }
+    posse.stashOpen = true;
+    u.ownedArmors.delete(armorId);
+    if (u.armor === armorId) u.armor = "none";
+    stashAddArmor(posse, armorId);
+    this.log(session, `Stashed ${ARMORS[armorId].name} from ${u.name}.`);
+  }
+
+  private cmdStashWithdrawArmor(
+    session: CharacterSession,
+    posse: Posse,
+    armorId: ArmorId,
+    unitId: string,
+  ): void {
+    if (!this.assertStashAccess(session, posse)) return;
+    if (!posse.memberIds.includes(unitId)) return;
+    const u = this.units.get(unitId);
+    if (!u || !u.alive) return;
+    if (u.ownedArmors.has(armorId)) {
+      this.log(session, `${u.name} already has ${ARMORS[armorId].name}.`);
+      return;
+    }
+    if (!stashTakeArmor(posse, armorId)) {
+      this.log(session, "Not in the stash.");
+      return;
+    }
+    posse.stashOpen = true;
+    u.ownedArmors.add(armorId);
+    if (u.armor === "none" || armorScore(armorId) > armorScore(u.armor)) {
+      u.armor = armorId;
+    }
+    this.log(session, `${u.name} suited up with ${ARMORS[armorId].name} from the stash.`);
+  }
+
+  private cmdStashDepositAll(session: CharacterSession, posse: Posse, unitId: string): void {
+    if (!this.assertStashAccess(session, posse)) return;
+    posse.stashOpen = true;
+    if (posse.cash > 0) {
+      this.cmdStashDepositCash(session, posse, 0);
+    }
+    if (!posse.memberIds.includes(unitId)) return;
+    const u = this.units.get(unitId);
+    if (!u) return;
+    const weapons = [...u.ownedWeapons].filter((w) => w !== "pipe");
+    for (const w of weapons) {
+      u.ownedWeapons.delete(w);
+      if (u.weapon === w) u.weapon = "pipe";
+      stashAddWeapon(posse, w);
+    }
+    const armors = [...u.ownedArmors].filter((a) => a !== "none");
+    for (const a of armors) {
+      u.ownedArmors.delete(a);
+      if (u.armor === a) u.armor = "none";
+      stashAddArmor(posse, a);
+    }
+    if (weapons.length || armors.length) {
+      this.log(
+        session,
+        `Dumped ${u.name}'s loadout into the stash (${weapons.length} weapons, ${armors.length} armor).`,
+      );
+    }
   }
 
   private buildDialogue(npc: Unit, playerPosse?: Posse): DialogueState {
@@ -3660,51 +3916,72 @@ export class GameWorld {
       }
     }
 
-    // Player leader respawn (fixed delay, quiet random spot)
+    // Player leader respawn → Crash Pad (safehouse interior)
     for (const u of this.units.values()) {
       if (u.kind !== "player" || u.alive) continue;
       if (u.respawnT === undefined) u.respawnT = RESPAWN_DELAY_SEC;
       u.respawnT -= dt;
       if (u.respawnT > 0) continue;
 
-      const spawn = this.pickQuietRespawn(u.posseId);
       u.alive = true;
       u.health = u.stats.maxHealth * 0.6;
       u.incapacitated = false;
-      u.x = spawn.x;
-      u.y = spawn.y;
-      u.tx = u.x;
-      u.ty = u.y;
-      u.buildingId = null;
       u.fireCd = 0.5;
       u.lastHitByPosseId = null;
+      u.moveMode = "idle";
+      u.dirX = 0;
+      u.dirY = 0;
       delete u.respawnT;
 
       const posse = this.posses.get(u.posseId);
       if (posse) {
-        posse.insideBuildingId = null;
         posse.hostile = false;
         posse.dialogue = null;
         posse.shop = null;
+        posse.stashOpen = false;
+        posse.jobBoard = null;
         posse.lastKillerPosseId = null;
         posse.lootedThisWipe = false;
         this.purgeDeadGoons(posse);
-        let i = 0;
-        for (const mid of posse.memberIds) {
-          const m = this.units.get(mid);
-          if (!m || m.id === u.id) continue;
-          m.buildingId = null;
-          if (!m.alive) continue;
-          m.x = spawn.x + (i % 2 === 0 ? -0.6 : 0.6);
-          m.y = spawn.y + (i >= 2 ? 0.5 : -0.3);
-          m.tx = m.x;
-          m.ty = m.y;
-          m.moveMode = "idle";
-          i++;
-        }
         posse.selectedUnitId = u.id;
-        const session = [...this.sessions.values()].find((s) => s.posseId === posse.id);
-        if (session) this.log(session, "Back on the street. Try a quieter block this time.");
+
+        const crash =
+          this.map.buildings.find((b) => b.id === "safehouse") ??
+          this.map.buildings.find((b) => b.kind === "safehouse");
+        if (crash) {
+          // Place leader + remaining goons inside Crash Pad
+          this.enterBuilding(posse, crash.id);
+          posse.stashOpen = true; // open stash so they can re-gear
+          const session = [...this.sessions.values()].find((s) => s.posseId === posse.id);
+          if (session) {
+            this.log(
+              session,
+              `Back at the Crash Pad. Pocket was cleaned — stash still has $${posse.stashCash}. Press E to close/open the stash.`,
+            );
+          }
+        } else {
+          const spawn = this.pickQuietRespawn(u.posseId);
+          u.x = spawn.x;
+          u.y = spawn.y;
+          u.tx = u.x;
+          u.ty = u.y;
+          u.buildingId = null;
+          posse.insideBuildingId = null;
+          let i = 0;
+          for (const mid of posse.memberIds) {
+            const m = this.units.get(mid);
+            if (!m || m.id === u.id || !m.alive) continue;
+            m.buildingId = null;
+            m.x = spawn.x + (i % 2 === 0 ? -0.6 : 0.6);
+            m.y = spawn.y + (i >= 2 ? 0.5 : -0.3);
+            m.tx = m.x;
+            m.ty = m.y;
+            m.moveMode = "idle";
+            i++;
+          }
+          const session = [...this.sessions.values()].find((s) => s.posseId === posse.id);
+          if (session) this.log(session, "Back on the street. Try a quieter block this time.");
+        }
       }
     }
 
@@ -3792,6 +4069,7 @@ export class GameWorld {
         heat: Math.round(posse.heat),
         selectedUnitId: posse.selectedUnitId,
         insideBuildingId: posse.insideBuildingId,
+        stashCash: posse.stashCash,
         respawnIn: (() => {
           const lead = this.leader(posse);
           if (!lead || lead.alive) return null;
@@ -3873,6 +4151,7 @@ export class GameWorld {
       ...(needMap ? { blocked, floors } : {}),
       dialogue: posse.dialogue,
       shop: posse.shop,
+      stash: posse.stashOpen ? this.buildStashState(posse) : null,
       jobBoard: posse.jobBoard,
       mission: this.missionRuntime(posse),
       tutorial: this.tutorialPublic(posse),

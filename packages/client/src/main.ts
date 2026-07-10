@@ -69,10 +69,12 @@ const dlgClose = $("dlgClose");
 const dlgPortraitWrap = $("dlgPortraitWrap");
 const dlgPortrait = $("dlgPortrait") as HTMLImageElement;
 
-/** Static NPC art for dialogue (public/art). */
+/** Static NPC art for dialogue (public/art) — -2 variants for alt characters. */
 const DIALOGUE_PORTRAITS: Record<string, string> = {
   npc_bartender: "/art/bartender-male.jpg",
   npc_club: "/art/bartender-female.jpg",
+  npc_fixer: "/art/club-female-2.jpg",
+  npc_gun: "/art/bartender-female-2.jpg",
 };
 
 function dialoguePortraitUrl(npcId: string, npcName: string): string | null {
@@ -80,6 +82,8 @@ function dialoguePortraitUrl(npcId: string, npcName: string): string | null {
   const n = npcName.toLowerCase();
   if (n.includes("vince") || n.includes("barman")) return "/art/bartender-male.jpg";
   if (n.includes("venus") || n.includes("static")) return "/art/bartender-female.jpg";
+  if (n.includes("rita")) return "/art/club-female-2.jpg";
+  if (n.includes("kate") || n.includes("caliber")) return "/art/bartender-female-2.jpg";
   return null;
 }
 const shopModal = $("shopModal");
@@ -91,6 +95,16 @@ const shopArmor = $("shopArmor");
 const shopUpgrades = $("shopUpgrades");
 const shopBuyerRow = $("shopBuyerRow");
 const shopClose = $("shopClose");
+const stashModal = $("stashModal");
+const stashPocketCash = $("stashPocketCash");
+const stashCashAmt = $("stashCashAmt");
+const stashUnitName = $("stashUnitName");
+const stashCarried = $("stashCarried");
+const stashStored = $("stashStored");
+const stashClose = $("stashClose");
+const stashDepositAllCash = $("stashDepositAllCash");
+const stashWithdrawAllCash = $("stashWithdrawAllCash");
+const stashDepositLoadout = $("stashDepositLoadout");
 const jobBoardModal = $("jobBoardModal");
 const jobBoardTitle = $("jobBoardTitle");
 const jobBoardOffers = $("jobBoardOffers");
@@ -203,7 +217,7 @@ function setMobileAttackMode(on: boolean): void {
 function fireAttackAtClient(clientX: number, clientY: number): void {
   if (!snap || !socket || !view) return;
   if (snap.you.respawnIn != null && snap.you.respawnIn > 0) return;
-  if (snap.dialogue || snap.shop || snap.jobBoard) return;
+  if (snap.dialogue || snap.shop || snap.stash || snap.jobBoard) return;
   pendingInteract = null;
   const w = view.screenToWorld(clientX, clientY);
   let best: { id: string; d: number } | null = null;
@@ -477,7 +491,12 @@ function renderPosse(): void {
   if (!snap) return;
   const h = snap.you.heat ?? 0;
   const band = heatBand(h);
-  cashRep.innerHTML = `<span class="cash">$${snap.you.cash}</span> <span class="rep">Rep ${snap.you.rep}</span> <span class="heat heat-${band}" title="Street heat — cool off at the bar">Heat ${h}</span>`;
+  const stash = snap.you.stashCash ?? 0;
+  cashRep.innerHTML = `<span class="cash" title="Pocket cash — lost on wipe">$${snap.you.cash}</span>${
+    stash > 0
+      ? ` <span class="stash-cash" title="Crash Pad stash — safe on wipe">⌂$${stash}</span>`
+      : ""
+  } <span class="rep">Rep ${snap.you.rep}</span> <span class="heat heat-${band}" title="Street heat — cool off at the bar">Heat ${h}</span>`;
   const units = myUnits();
   const key = units
     .map(
@@ -1058,6 +1077,134 @@ function renderDistrictMap(): void {
   }
 }
 
+let lastStashKey = "";
+
+function renderStash(): void {
+  if (!snap?.stash) {
+    stashModal.classList.add("hidden");
+    lastStashKey = "";
+    return;
+  }
+  stashModal.classList.remove("hidden");
+  const st = snap.stash;
+  const u = selectedUnit();
+  stashPocketCash.textContent = `$${st.pocketCash}`;
+  stashCashAmt.textContent = `$${st.cash}`;
+  stashUnitName.textContent = u?.name ?? "—";
+
+  const ownedW = (u?.ownedWeapons ?? []).slice().sort().join(",");
+  const ownedA = (u?.ownedArmors ?? []).slice().sort().join(",");
+  const key = `${st.cash}|${st.pocketCash}|${st.weapons.join(",")}|${st.armors.join(",")}|${u?.id}|${ownedW}|${ownedA}`;
+  if (key === lastStashKey) return;
+  lastStashKey = key;
+
+  stashCarried.innerHTML = "";
+  if (u) {
+    for (const id of u.ownedWeapons ?? []) {
+      if (id === "pipe") continue;
+      const w = WEAPONS[id];
+      if (!w) continue;
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "shop-item";
+      b.dataset.stashAction = "depositWeapon";
+      b.dataset.itemId = id;
+      b.innerHTML = `
+        <img class="shop-item-icon" src="${weaponIconDataUrl(id)}" alt="" width="40" height="40" draggable="false" />
+        <div class="shop-item-body">
+          <div class="shop-item-name">${escapeHtml(w.name)}</div>
+          <div class="shop-item-meta">On ${escapeHtml(u.name)}</div>
+        </div>
+        <div class="shop-item-price">STASH →</div>`;
+      stashCarried.appendChild(b);
+    }
+    for (const id of u.ownedArmors ?? []) {
+      if (id === "none") continue;
+      const a = ARMORS[id];
+      if (!a) continue;
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "shop-item";
+      b.dataset.stashAction = "depositArmor";
+      b.dataset.itemId = id;
+      b.innerHTML = `
+        <img class="shop-item-icon" src="${armorIconDataUrl(id)}" alt="" width="40" height="40" draggable="false" />
+        <div class="shop-item-body">
+          <div class="shop-item-name">${escapeHtml(a.name)}</div>
+          <div class="shop-item-meta">On ${escapeHtml(u.name)}</div>
+        </div>
+        <div class="shop-item-price">STASH →</div>`;
+      stashCarried.appendChild(b);
+    }
+  }
+  if (!stashCarried.children.length) {
+    stashCarried.innerHTML = `<p class="muted tiny">Nothing worth stashing on this goon (pipe only).</p>`;
+  }
+
+  stashStored.innerHTML = "";
+  // Collapse stacks for display
+  const wCount = new Map<string, number>();
+  for (const id of st.weapons) wCount.set(id, (wCount.get(id) ?? 0) + 1);
+  const aCount = new Map<string, number>();
+  for (const id of st.armors) aCount.set(id, (aCount.get(id) ?? 0) + 1);
+  for (const [id, n] of wCount) {
+    const w = WEAPONS[id as WeaponId];
+    if (!w) continue;
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "shop-item";
+    b.dataset.stashAction = "withdrawWeapon";
+    b.dataset.itemId = id;
+    b.innerHTML = `
+      <img class="shop-item-icon" src="${weaponIconDataUrl(id as WeaponId)}" alt="" width="40" height="40" draggable="false" />
+      <div class="shop-item-body">
+        <div class="shop-item-name">${escapeHtml(w.name)}${n > 1 ? ` ×${n}` : ""}</div>
+        <div class="shop-item-meta">In the house</div>
+      </div>
+      <div class="shop-item-price">← TAKE</div>`;
+    stashStored.appendChild(b);
+  }
+  for (const [id, n] of aCount) {
+    const a = ARMORS[id as ArmorId];
+    if (!a) continue;
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "shop-item";
+    b.dataset.stashAction = "withdrawArmor";
+    b.dataset.itemId = id;
+    b.innerHTML = `
+      <img class="shop-item-icon" src="${armorIconDataUrl(id as ArmorId)}" alt="" width="40" height="40" draggable="false" />
+      <div class="shop-item-body">
+        <div class="shop-item-name">${escapeHtml(a.name)}${n > 1 ? ` ×${n}` : ""}</div>
+        <div class="shop-item-meta">In the house</div>
+      </div>
+      <div class="shop-item-price">← TAKE</div>`;
+    stashStored.appendChild(b);
+  }
+  if (!stashStored.children.length) {
+    stashStored.innerHTML = `<p class="muted tiny">Empty shelves. Dump gear before a war zone run.</p>`;
+  }
+}
+
+function onStashClick(e: MouseEvent): void {
+  const t = (e.target as HTMLElement).closest("button[data-stash-action]") as HTMLButtonElement | null;
+  if (!t || !snap) return;
+  const action = t.dataset.stashAction;
+  const itemId = t.dataset.itemId;
+  const unitId = selectedUnit()?.id ?? snap.you.selectedUnitId;
+  if (!unitId || !action) return;
+  e.preventDefault();
+  if (action === "depositWeapon" && itemId) {
+    socket.send({ type: "stash.depositWeapon", weaponId: itemId as WeaponId, unitId });
+  } else if (action === "withdrawWeapon" && itemId) {
+    socket.send({ type: "stash.withdrawWeapon", weaponId: itemId as WeaponId, unitId });
+  } else if (action === "depositArmor" && itemId) {
+    socket.send({ type: "stash.depositArmor", armorId: itemId as ArmorId, unitId });
+  } else if (action === "withdrawArmor" && itemId) {
+    socket.send({ type: "stash.withdrawArmor", armorId: itemId as ArmorId, unitId });
+  }
+}
+
 function renderShop(): void {
   if (!snap?.shop) {
     shopModal.classList.add("hidden");
@@ -1340,6 +1487,7 @@ function onSnapshot(s: WorldSnapshot): void {
   renderPosse();
   renderDialogue();
   renderShop();
+  renderStash();
   renderJobBoard();
   renderMissionHud();
   renderTutorialHud();
@@ -1463,7 +1611,7 @@ function worldDirFromKeys(): { wx: number; wy: number } {
 
 function canKeyboardMove(): boolean {
   if (!snap || !socket || chatFocused) return false;
-  if (snap.dialogue || snap.shop || snap.jobBoard) return false;
+  if (snap.dialogue || snap.shop || snap.stash || snap.jobBoard) return false;
   if (snap.you.respawnIn != null && snap.you.respawnIn > 0) return false;
   return true;
 }
@@ -1766,26 +1914,27 @@ function bindInput(): void {
       }
       if (snap?.dialogue) socket.send({ type: "dialogue.close" });
       if (snap?.shop) socket.send({ type: "shop.close" });
+      if (snap?.stash) socket.send({ type: "stash.close" });
       if (snap?.jobBoard) socket.send({ type: "jobBoard.close" });
       if (!districtMapModal.classList.contains("hidden")) closeDistrictMap();
       if (!memorialModal.classList.contains("hidden")) closeMemorialWall();
     }
     if (e.key === "m" || e.key === "M") {
-      if (!chatFocused && !snap?.dialogue && !snap?.shop && !snap?.jobBoard) {
+      if (!chatFocused && !snap?.dialogue && !snap?.shop && !snap?.stash && !snap?.jobBoard) {
         e.preventDefault();
         if (districtMapModal.classList.contains("hidden")) openDistrictMap();
         else closeDistrictMap();
       }
     }
     if (e.key === "v" || e.key === "V") {
-      if (!chatFocused && !snap?.dialogue && !snap?.shop && !snap?.jobBoard) {
+      if (!chatFocused && !snap?.dialogue && !snap?.shop && !snap?.stash && !snap?.jobBoard) {
         e.preventDefault();
         if (memorialModal.classList.contains("hidden")) openMemorialWall();
         else closeMemorialWall();
       }
     }
     // Syndicate-style: number row 5–0 / - for weapon slots when unit selected
-    if (!crewEditorOpen && !snap?.dialogue && !snap?.shop && !snap?.jobBoard) {
+    if (!crewEditorOpen && !snap?.dialogue && !snap?.shop && !snap?.stash && !snap?.jobBoard) {
       const wepKeys: Record<string, number> = {
         Digit5: 0,
         Digit6: 1,
@@ -1849,6 +1998,22 @@ function bindInput(): void {
 
   dlgClose.addEventListener("click", () => socket.send({ type: "dialogue.close" }));
   shopClose.addEventListener("click", () => socket.send({ type: "shop.close" }));
+  stashClose.addEventListener("click", () => socket.send({ type: "stash.close" }));
+  stashDepositAllCash.addEventListener("click", () =>
+    socket.send({ type: "stash.depositCash", amount: 0 }),
+  );
+  stashWithdrawAllCash.addEventListener("click", () =>
+    socket.send({ type: "stash.withdrawCash", amount: 0 }),
+  );
+  stashDepositLoadout.addEventListener("click", () => {
+    const unitId = selectedUnit()?.id ?? snap?.you.selectedUnitId;
+    if (unitId) socket.send({ type: "stash.depositAll", unitId });
+  });
+  stashCarried.addEventListener("click", onStashClick);
+  stashStored.addEventListener("click", onStashClick);
+  stashModal.addEventListener("click", (e) => {
+    if (e.target === stashModal) socket.send({ type: "stash.close" });
+  });
   jobBoardClose.addEventListener("click", () => socket.send({ type: "jobBoard.close" }));
   missionAbandon.addEventListener("click", () => {
     if (confirm("Abandon this job? No pay, no glory.")) {
@@ -1925,7 +2090,7 @@ const ONBOARD_STEPS: OnboardStep[] = [
       "War Zone (PvP) — south of the red line. Rival posses shoot back.",
       "Deep war, docks, and neon edge unlock with street rep.",
     ],
-    art: "/art/splash.jpg",
+    art: "/art/splash.jpg?v=3",
   },
   {
     title: "Build your posse",
@@ -1943,7 +2108,7 @@ const ONBOARD_STEPS: OnboardStep[] = [
     bullets: [
       "Desktop: WASD move · click to move · RMB attack-move.",
       "Mobile: tap to move · long-press or Attack button to fire.",
-      "Better weapons from wipe loot show a gold GEAR UPGRADE toast.",
+      "Street gear and pocket cash go to the killers on wipe — stash the rest at the Crash Pad.",
     ],
     art: "/art/combat-scene.jpg",
   },
@@ -1962,10 +2127,10 @@ const ONBOARD_STEPS: OnboardStep[] = [
     text: "After you join, a short first-session guide walks you through the bar, a hire, Rita's job book, and your first contract. Skip anytime.",
     bullets: [
       "Name → The Rusty Nail → hire Vince's meat → Rita Fix → take a job → get paid.",
-      "Open FULL loadout for weapons and armor.",
+      "Crash Pad stash (north-west green roof) keeps gear safe when you die.",
       "Proximity chat for nearby players. Good luck, boss.",
     ],
-    art: "/art/gangster-male.jpg",
+    art: "/art/splash.jpg",
   },
 ];
 

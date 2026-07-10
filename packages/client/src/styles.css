@@ -1583,6 +1583,40 @@ body {
   color: #ccc;
 }
 
+.stash-cash {
+  color: #7dcea0;
+  font-weight: 700;
+}
+
+.stash-cash-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.shop-cash-pill.stash strong {
+  color: #7dcea0;
+}
+
+.stash-logo {
+  background: linear-gradient(145deg, #2a5040, #1a3028) !important;
+}
+
+.stash-cash-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.6rem 0 0.4rem;
+}
+
+.modal-card.stash-card {
+  width: min(720px, 96vw);
+}
+
+.stash-cols {
+  margin-top: 0.5rem;
+}
+
 /* Dialogue with NPC portrait (bartenders, etc.) */
 .modal-card.dialogue-card {
   width: min(560px, 94vw);

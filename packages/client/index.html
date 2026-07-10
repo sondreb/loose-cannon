@@ -16,7 +16,7 @@
     <div id="app">
       <div id="login">
         <div class="login-bg" aria-hidden="true">
-          <img class="login-splash" src="/art/splash.jpg?v=2" alt="" />
+          <img class="login-splash" src="/art/splash.jpg?v=3" alt="" />
           <div class="login-splash-shade"></div>
           <div class="login-orb o1"></div>
           <div class="login-orb o2"></div>
@@ -265,6 +265,51 @@
             <div class="shop-footer">
               <p class="muted tiny">Tip: stand at the exit door and press <b>E</b> to leave the shop floor. Esc closes this counter.</p>
               <button type="button" id="shopClose" class="shop-leave-btn">CLOSE COUNTER</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Crash Pad stash (safehouse) -->
+        <div id="stashModal" class="modal hidden">
+          <div class="modal-card stash-card">
+            <div class="shop-header">
+              <div class="shop-brand">
+                <div class="shop-logo stash-logo">S</div>
+                <div>
+                  <h2>CRASH PAD STASH</h2>
+                  <p class="shop-tagline">Safe from wipe · only street gear &amp; pocket cash drop on death</p>
+                </div>
+              </div>
+              <div class="stash-cash-row">
+                <div class="shop-cash-pill">
+                  <span class="muted">POCKET</span>
+                  <strong id="stashPocketCash">$0</strong>
+                </div>
+                <div class="shop-cash-pill stash">
+                  <span class="muted">STASH</span>
+                  <strong id="stashCashAmt">$0</strong>
+                </div>
+              </div>
+            </div>
+            <div class="stash-cash-actions">
+              <button type="button" id="stashDepositAllCash" class="tiny-btn">Stash all cash</button>
+              <button type="button" id="stashWithdrawAllCash" class="tiny-btn">Take all cash</button>
+              <button type="button" id="stashDepositLoadout" class="tiny-btn">Dump selected loadout</button>
+            </div>
+            <p class="muted tiny">Acting for: <span id="stashUnitName">—</span> (select crew in POSSE panel)</p>
+            <div class="shop-cols stash-cols">
+              <section class="shop-col">
+                <h3>On selected</h3>
+                <div id="stashCarried" class="shop-items"></div>
+              </section>
+              <section class="shop-col">
+                <h3>In the house</h3>
+                <div id="stashStored" class="shop-items"></div>
+              </section>
+            </div>
+            <div class="shop-footer">
+              <p class="muted tiny">Press <b>E</b> or Esc to close. Die on the street and killers take only what you carried.</p>
+              <button type="button" id="stashClose" class="shop-leave-btn">CLOSE STASH</button>
             </div>
           </div>
         </div>
