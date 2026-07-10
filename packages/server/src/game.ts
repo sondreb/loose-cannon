@@ -30,7 +30,15 @@ import {
   AI_FLEE_HEALTH_FRAC,
   armorPierce,
   assignAiPosseRoles,
+  assignGangRoles,
   castLineOfSight,
+  gangBaseStats,
+  gangBossName,
+  gangGoonName,
+  gangOwnedWeapons,
+  gangProfile,
+  instanceGangFlavor,
+  pickGangWeapon,
   critChance,
   damagePower,
   fireCooldownFactor,
@@ -237,6 +245,12 @@ interface Posse {
   aggression: number;
   /** AI threat tier (gear/cash scaling); used on wipe respawn */
   threat: number;
+  /** Per-gang aggro start range (tiles); defaults to POSSE_AGGRO_RANGE */
+  aggroRange: number;
+  /** Per-gang detect / size-up range (tiles); defaults to POSSE_DETECT_RANGE */
+  detectRange: number;
+  /** Street intel line for combat logs */
+  gangBlurb: string | null;
   lastAggroCheck: number;
   combatUntil: number;
   selectedUnitId: string;
@@ -424,6 +438,9 @@ export class GameWorld {
         color: 0x888888,
         aggression: 0,
         threat: 0,
+        aggroRange: POSSE_AGGRO_RANGE,
+        detectRange: POSSE_DETECT_RANGE,
+        gangBlurb: null,
         lastAggroCheck: 0,
         combatUntil: 0,
         selectedUnitId: unitId,
@@ -510,12 +527,19 @@ export class GameWorld {
     aggression: number,
     threat = 1,
   ): void {
+    const profile = gangProfile(id);
+    const displayName = profile?.name ?? name;
+    const agg = profile?.aggression ?? aggression;
+    const aggroRange = profile?.aggroRange ?? POSSE_AGGRO_RANGE;
+    const detectRange = profile?.detectRange ?? POSSE_DETECT_RANGE;
+    const gangBlurb = profile?.blurb ?? null;
+    const cashMult = profile?.cashMult ?? 1;
     const leaderId = `${id}_boss`;
     const memberIds = [leaderId];
-    const cash = 120 + threat * 80 + Math.floor(Math.random() * 100);
+    const cash = Math.round((120 + threat * 80 + Math.floor(Math.random() * 100)) * cashMult);
     this.posses.set(id, {
       id,
-      name,
+      name: displayName,
       leaderId,
       isPlayer: false,
       hostile: false,
@@ -523,8 +547,11 @@ export class GameWorld {
       rep: 0,
       heat: 0,
       color,
-      aggression,
+      aggression: agg,
       threat,
+      aggroRange,
+      detectRange,
+      gangBlurb,
       lastAggroCheck: 0,
       combatUntil: 0,
       selectedUnitId: leaderId,
@@ -549,41 +576,23 @@ export class GameWorld {
       ...emptyPartyFields(),
     });
 
-    const gearFor = (t: number): { weapon: WeaponId; armor: ArmorId; weapons: WeaponId[]; armors: ArmorId[]; stats: Partial<UnitStats> } => {
-      if (t >= 4) {
-        return {
-          weapon: "minigun",
-          armor: "plate",
-          weapons: ["pipe", "pistol", "uzi", "tommy", "shotgun", "minigun"],
-          armors: ["none", "leather", "kevlar", "plate"],
-          stats: { aim: 9, guts: 8, muscle: 8, speed: 7, maxHealth: 130 },
-        };
-      }
-      if (t >= 3) {
-        return {
-          weapon: "shotgun",
-          armor: "kevlar",
-          weapons: ["pipe", "pistol", "uzi", "shotgun"],
-          armors: ["none", "leather", "kevlar"],
-          stats: { aim: 7, guts: 7, muscle: 7, speed: 6, maxHealth: 115 },
-        };
-      }
-      if (t >= 2) {
-        return {
-          weapon: "uzi",
-          armor: "leather",
-          weapons: ["pipe", "pistol", "uzi"],
-          armors: ["none", "leather"],
-          stats: { aim: 6, guts: 6, muscle: 5, speed: 6, maxHealth: 105 },
-        };
-      }
-      return {
-        weapon: "pistol",
-        armor: "none",
-        weapons: ["pipe", "pistol"],
-        armors: ["none"],
-        stats: { aim: 4, guts: 5, muscle: 5, speed: 5, maxHealth: 100 },
-      };
+    const preferred =
+      profile?.preferredWeapons ??
+      ({
+        shooter: ["pistol", "uzi"] as WeaponId[],
+        rusher: ["pipe", "switchblade", "shotgun"] as WeaponId[],
+        coward: ["pistol"] as WeaponId[],
+      });
+    const armorPref = profile?.preferredArmor ?? { boss: "leather" as ArmorId, goon: "none" as ArmorId };
+    const statBias = profile?.statBias ?? {};
+
+    const armorsFor = (isBoss: boolean, t: number): ArmorId[] => {
+      const base: ArmorId[] = ["none"];
+      const pref = isBoss ? armorPref.boss : armorPref.goon;
+      if (pref !== "none") base.push(pref);
+      if (t >= 3) base.push("kevlar");
+      if (t >= 4) base.push("plate");
+      return [...new Set(base)];
     };
 
     const make = (
@@ -595,37 +604,20 @@ export class GameWorld {
       t: number,
       gender: Gender = "male",
       role: AiCombatRole = "shooter",
+      isBoss = false,
     ) => {
-      const g = gearFor(t);
-      // Role-flavored gear so rushers feel different from hold-out shooters
-      let weapon = g.weapon;
-      let ownedWeapons = new Set(g.weapons);
-      let stats = {
-        aim: (g.stats.aim ?? 5) + Math.floor(Math.random() * 2),
-        guts: (g.stats.guts ?? 5) + Math.floor(Math.random() * 2),
-        muscle: (g.stats.muscle ?? 5) + Math.floor(Math.random() * 2),
-        speed: (g.stats.speed ?? 5) + Math.floor(Math.random() * 2),
-        maxHealth: g.stats.maxHealth ?? 100,
+      const weapon = pickGangWeapon(preferred[role] ?? preferred.shooter, role, t);
+      const ownedWeapons = gangOwnedWeapons(weapon, preferred);
+      const base = gangBaseStats(t, statBias, role);
+      const stats = {
+        aim: Math.min(12, base.aim + Math.floor(Math.random() * 2)),
+        guts: Math.min(12, base.guts + Math.floor(Math.random() * 2)),
+        muscle: Math.min(12, base.muscle + Math.floor(Math.random() * 2)),
+        brains: base.brains,
+        speed: Math.min(12, base.speed + Math.floor(Math.random() * 2)),
+        maxHealth: base.maxHealth,
       };
-      if (role === "rusher") {
-        if (t >= 3) weapon = "shotgun";
-        else if (t >= 2) weapon = Math.random() < 0.5 ? "shotgun" : "switchblade";
-        else weapon = Math.random() < 0.55 ? "switchblade" : "pipe";
-        ownedWeapons.add(weapon);
-        stats.muscle = Math.min(12, stats.muscle + 2);
-        stats.speed = Math.min(12, stats.speed + 1);
-        stats.aim = Math.max(2, stats.aim - 1);
-      } else if (role === "coward") {
-        if (weapon === "pipe" || weapon === "switchblade") weapon = "pistol";
-        ownedWeapons.add("pistol");
-        stats.speed = Math.min(12, stats.speed + 2);
-        stats.guts = Math.max(2, stats.guts - 1);
-        stats.aim = Math.min(12, stats.aim + 1);
-      } else {
-        // shooter — prefer ranged if they somehow only have melee
-        if (weapon === "pipe" || weapon === "switchblade") weapon = "pistol";
-        stats.aim = Math.min(12, stats.aim + 1);
-      }
+      const armor = isBoss ? armorPref.boss : armorPref.goon;
       this.units.set(uid, {
         id: uid,
         name: uname,
@@ -644,7 +636,7 @@ export class GameWorld {
         health: stats.maxHealth ?? DEFAULT_HEALTH,
         stats: defaultStats(stats),
         weapon,
-        armor: g.armor,
+        armor,
         facing: Math.floor(Math.random() * 8),
         alive: true,
         fireCd: 0,
@@ -652,7 +644,7 @@ export class GameWorld {
         incapacitated: false,
         gender,
         ownedWeapons,
-        ownedArmors: new Set(g.armors),
+        ownedArmors: new Set(armorsFor(isBoss, t)),
         weaponAmmo: new Map(), // AI ignores ammo economy
         aiWanderT: Math.random() * 3,
         buildingId: null,
@@ -661,17 +653,22 @@ export class GameWorld {
       });
     };
 
-    // Boss dead-center; goons on a protective circle (~40% female street meat)
-    const roles = assignAiPosseRoles(3, { aggression });
-    make(leaderId, `${name} Boss`, "ai_boss", x, y, threat, "male", roles[0] ?? "shooter");
+    // Boss dead-center; goons on a protective circle with gang-themed names/roles
+    const roles = profile
+      ? assignGangRoles(3, profile.roleBias, { aggression: agg })
+      : assignAiPosseRoles(3, { aggression: agg });
+    const bossName = profile ? gangBossName(profile) : `${displayName} Boss`;
+    make(leaderId, bossName, "ai_boss", x, y, threat, "male", roles[0] ?? "shooter", true);
     const g1 = `${id}_g1`;
     const g2 = `${id}_g2`;
     const s0 = this.circleSlot(x, y, 0, 2, 1.05);
     const s1 = this.circleSlot(x, y, 1, 2, 1.05);
     const r1 = randomRecruitProfile();
     const r2 = randomRecruitProfile();
-    make(g1, r1.name, "ai_goon", s0.x, s0.y, Math.max(1, threat - 1), r1.gender, roles[1] ?? "rusher");
-    make(g2, r2.name, "ai_goon", s1.x, s1.y, Math.max(1, threat - 1), r2.gender, roles[2] ?? "shooter");
+    const n1 = profile ? gangGoonName(profile, r1.gender) : r1.name;
+    const n2 = profile ? gangGoonName(profile, r2.gender) : r2.name;
+    make(g1, n1, "ai_goon", s0.x, s0.y, Math.max(1, threat - 1), r1.gender, roles[1] ?? "rusher");
+    make(g2, n2, "ai_goon", s1.x, s1.y, Math.max(1, threat - 1), r2.gender, roles[2] ?? "shooter");
     memberIds.push(g1, g2);
     this.posses.get(id)!.memberIds = memberIds;
   }
@@ -725,6 +722,9 @@ export class GameWorld {
       color: 0xf0c040,
       aggression: 0.3,
       threat: 0,
+      aggroRange: POSSE_AGGRO_RANGE,
+      detectRange: POSSE_DETECT_RANGE,
+      gangBlurb: null,
       lastAggroCheck: 0,
       combatUntil: 0,
       selectedUnitId: leaderId,
@@ -4129,11 +4129,12 @@ export class GameWorld {
     const threat = def.instance?.enemyThreat ?? 1;
     const goonN = Math.max(1, def.instance?.enemyCount ?? 2);
     const label = def.instance?.enemyLabel ?? "Bay";
+    const flavor = instanceGangFlavor(label);
     const cx = (tmpl.ix0 + tmpl.ix1) / 2;
     const cy = (tmpl.iy0 + tmpl.iy1) / 2;
     // Higher threat = slightly tankier instance crew
-    const bossHp = 50 + threat * 8;
-    const goonHp = 36 + threat * 4;
+    const bossHp = 50 + threat * 8 + (flavor.statBias.maxHealth ?? 0);
+    const goonHp = 36 + threat * 4 + Math.floor((flavor.statBias.maxHealth ?? 0) * 0.5);
 
     const bossId = `${enemyPosseId}_boss`;
     const memberIds = [bossId];
@@ -4147,8 +4148,11 @@ export class GameWorld {
       rep: 0,
       heat: 0,
       color: 0xa44,
-      aggression: 0.85,
+      aggression: flavor.aggression,
       threat,
+      aggroRange: POSSE_AGGRO_RANGE + 1,
+      detectRange: POSSE_DETECT_RANGE + 2,
+      gangBlurb: flavor.blurb,
       lastAggroCheck: 0,
       combatUntil: this.tick + TICK_HZ * 120,
       selectedUnitId: bossId,
@@ -4174,7 +4178,7 @@ export class GameWorld {
       respawnT: undefined,
     });
 
-    const roles = assignAiPosseRoles(1 + goonN, { aggression: 0.85 });
+    const roles = assignGangRoles(1 + goonN, flavor.roleBias, { aggression: flavor.aggression });
     const mk = (
       uid: string,
       uname: string,
@@ -4183,38 +4187,27 @@ export class GameWorld {
       y: number,
       hp: number,
       role: AiCombatRole,
+      isBoss: boolean,
+      gender: Gender,
     ) => {
-      let weapon: WeaponId = "pistol";
-      let stats = defaultStats({ aim: 4, guts: 4, muscle: 4, speed: 5, maxHealth: hp });
-      if (role === "rusher") {
-        weapon = threat >= 2 ? "pipe" : "switchblade";
-        stats = defaultStats({
-          aim: 3,
-          guts: 5,
-          muscle: 7 + Math.min(2, threat - 1),
-          speed: 7,
-          maxHealth: hp,
-        });
-      } else if (role === "coward") {
-        weapon = "pistol";
-        stats = defaultStats({
-          aim: 5,
-          guts: 3,
-          muscle: 3,
-          speed: 7,
-          maxHealth: Math.max(28, Math.round(hp * 0.85)),
-        });
-      } else {
-        // Threat 2+: slightly better aim; keep pistols so bay fights stay readable
-        weapon = "pistol";
-        stats = defaultStats({
-          aim: 5 + Math.min(2, threat - 1),
-          guts: 4,
-          muscle: 4,
-          speed: 5,
-          maxHealth: hp,
-        });
-      }
+      const weapon = pickGangWeapon(flavor.preferredWeapons[role] ?? flavor.preferredWeapons.shooter, role, threat);
+      const base = gangBaseStats(threat, flavor.statBias, role);
+      // Instance fights stay readable — clamp HP to instance budgets, keep themed stats
+      const stats = defaultStats({
+        aim: base.aim,
+        guts: base.guts,
+        muscle: base.muscle,
+        brains: base.brains,
+        speed: base.speed,
+        maxHealth: hp,
+      });
+      const armor = isBoss
+        ? flavor.preferredArmor.boss
+        : threat >= 2
+          ? flavor.preferredArmor.goon === "none"
+            ? "leather"
+            : flavor.preferredArmor.goon
+          : flavor.preferredArmor.goon;
       this.units.set(uid, {
         id: uid,
         name: uname,
@@ -4233,14 +4226,14 @@ export class GameWorld {
         health: stats.maxHealth,
         stats,
         weapon,
-        armor: threat >= 2 ? "leather" : "none",
+        armor,
         facing: 4,
         alive: true,
         fireCd: 0,
         isPlayerLeader: false,
         incapacitated: false,
-        gender: "male",
-        ownedWeapons: new Set(["pipe", "pistol", "switchblade", "shotgun"]),
+        gender,
+        ownedWeapons: gangOwnedWeapons(weapon, flavor.preferredWeapons),
         ownedArmors: new Set(["none", "leather"]),
         weaponAmmo: new Map(), // AI ignores ammo economy
         aiWanderT: 0.5,
@@ -4250,19 +4243,34 @@ export class GameWorld {
       });
     };
 
-    mk(bossId, `${label} Boss`, "ai_boss", cx + 1.2, cy, bossHp, roles[0] ?? "shooter");
+    const bossGender: Gender = Math.random() < 0.25 ? "female" : "male";
+    mk(
+      bossId,
+      flavor.bossTitle,
+      "ai_boss",
+      cx + 1.2,
+      cy,
+      bossHp,
+      roles[0] ?? "shooter",
+      true,
+      bossGender,
+    );
     for (let i = 0; i < goonN; i++) {
       const gid = `${enemyPosseId}_g${i}`;
       memberIds.push(gid);
       const ang = (i / goonN) * Math.PI * 2;
+      const g = randomRecruitProfile();
+      const gName = gangGoonName(flavor, g.gender);
       mk(
         gid,
-        `${label} Goon ${i + 1}`,
+        gName,
         "ai_goon",
         cx + Math.cos(ang) * 1.4,
         cy + Math.sin(ang) * 1.1,
         goonHp,
         roles[i + 1] ?? (i === 0 ? "rusher" : "shooter"),
+        false,
+        g.gender,
       );
     }
     const ep = this.posses.get(enemyPosseId)!;
@@ -5572,10 +5580,12 @@ export class GameWorld {
 
       if (posse.combatUntil < now) posse.hostile = false;
 
-      if (nearestPlayer && nearestD < POSSE_DETECT_RANGE) {
+      const detectR = posse.detectRange || POSSE_DETECT_RANGE;
+      const aggroR = posse.aggroRange || POSSE_AGGRO_RANGE;
+      if (nearestPlayer && nearestD < detectR) {
         if (now - posse.lastAggroCheck > TICK_HZ * 2) {
           posse.lastAggroCheck = now;
-          if (!posse.hostile && nearestD < POSSE_AGGRO_RANGE) {
+          if (!posse.hostile && nearestD < aggroR) {
             if (Math.random() < FIGHT_CHANCE * posse.aggression + 0.15) {
               posse.hostile = true;
               posse.combatUntil = now + TICK_HZ * 15;
@@ -5589,12 +5599,14 @@ export class GameWorld {
                 const mix = roles.length
                   ? ` (${[...new Set(roles)].join(" / ")})`
                   : "";
-                this.log(s, `${posse.name} wants a piece of you!${mix}`);
+                const flavor = posse.gangBlurb ? ` — ${posse.gangBlurb}` : "";
+                this.log(s, `${posse.name}${flavor} wants a piece of you!${mix}`);
               }
             } else {
               const s = [...this.sessions.values()].find((ss) => ss.posseId === nearestPlayer!.id);
               if (s && Math.random() < 0.4) {
-                this.log(s, `${posse.name} sizes you up... and keeps walking.`);
+                const flavor = posse.gangBlurb ? ` (${posse.gangBlurb})` : "";
+                this.log(s, `${posse.name} sizes you up${flavor}... and keeps walking.`);
               }
             }
           }

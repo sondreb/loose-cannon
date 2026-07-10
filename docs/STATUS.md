@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-11 (M7 street hustles / POI interactions)  
+Last updated: 2026-07-11 (M7 rival gang variety)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -37,6 +37,7 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | **More missions (M6)** | **Done** | +4 jobs: still_not_guns, parking_tax, chop_shop_raid, rail_rats |
 | **Third instance (M7)** | **Done** | Cold Storage template + `cold_storage` Ice Box Eviction |
 | **Street hustles / POI (M7)** | **Done** | Phone/mail/hydrant/neon/cone hustles; fence NPC; prop `readyIn` |
+| **Rival gang variety (M7)** | **Done** | Per-gang names, gear, role bias, aggro/detect ranges; instance flavors |
 | **Day/night + district light** | **Done** | ~6 min cycle; sky/overlay/neon/rain; district tints; HUD phase |
 | **Directional goons / walk bob** | **Done** | Iso screen flip; two-beat bob + lean; speed cadence; idle server facing |
 | **HUD / event-log readability** | **Done** | Kind-colored log lines; pin-to-read; stronger objective/toasts/mission HUD |
@@ -231,9 +232,27 @@ All outdoor props are interactable (E / click). Realm-wide cooldowns; snapshot `
 
 Smoke: prop catalog + phone `readyIn` + fence street_tip; heal-before-instance to cut wipe flakes.
 
+### Rival gangs (live)
+
+Shared `gangs.ts` profiles keyed by map spawn id — server applies on spawn/respawn.
+
+| Id | Crew | Style | Aggro | Signature |
+|----|------|-------|-------|-----------|
+| `ai_dogs` | The Dumpster Dogs | rush / brawlers | high, short range | Top Dog + Mutts; pipe/blade; muscle bias |
+| `ai_rats` | Rail Rats | flee / scurry | mid | Nest King; uzi/pistol; speed bias |
+| `ai_south` | Southside Slicks | hold / shooters | mid | Silk Capo; tommy/uzi; aim + kevlar |
+| `ai_west` | West End Wreckers | rush / demo | mid-high | Foreman; shotgun/pipe |
+| `ai_lot` | Lot Lizards MC | mixed / MC | mid | Road Captain; shotgun/tommy + leather |
+| `ai_church` | Choir of Pain | flee / quiet | low, long detect | Choirmaster; pistols; sizes up more than fights |
+| `ai_docks` | Pier Punchers | rush / dock | mid | Wharf Boss; pipe/shotgun; guts/HP |
+| `ai_neon` | Neon Vipers | hold / elite | high, long | Queen Fang; minigun/tommy + plate |
+| `ai_chrome` | Chrome Fists | rush / knuckles | high, short | Iron Hands; melee muscle |
+
+**Also:** per-posse `aggroRange` / `detectRange`; combat logs include gang blurb; instance flavors **Bay** (readable pistols), **Chop** (tools/shotguns), **Frost** (uzi/hold). Smoke asserts Dogs vs Vipers names/gear.
+
 ## Next for overseer (priority)
 
-1. **M7 content** — rival gang variety (names, gear, aggression), optional music bed  
+1. **M7 content** — optional music bed (procedural or low-volume loop)  
 2. Optional **M4 polish** — loot split, shared hold progress, kick confirm  
 3. Optional **M3** crash-pad stash UX polish  
 4. **Never** Mode B (Postgres/auth/k8s) unless human asks  

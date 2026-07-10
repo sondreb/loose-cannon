@@ -68,7 +68,7 @@ export const VOICE_LINES: VoiceLineDef[] = [
   {
     id: "vince_rumor",
     speak:
-      "Dumpster Dogs prowl the west road. Silk Street plays nice until they don't. Watch the fucking warehouse — and the docks freezer if Rita's in a mood.",
+      "Dumpster Dogs west — teeth and pipes. Rail Rats scurry the fringe. Neon Vipers east are loud money. Warehouse, Chop Shop, docks freezer if you like sealed rooms.",
     voice: "rex",
     role: "bartender_m",
   },
@@ -156,7 +156,7 @@ export const VOICE_LINES: VoiceLineDef[] = [
   {
     id: "rita_tip",
     speak:
-      "Dumpster Dogs west. Slicks south. Warehouse smells like free money and broken ribs. You're welcome.",
+      "Dogs west, Rats on the tracks, Slicks south with real jackets. Vipers if you want to die expensive. Warehouse still smells like free money and broken ribs.",
     voice: "ara",
     role: "fixer",
   },

@@ -99,6 +99,67 @@ console.log(
   console.log("hustle catalog ok props", props0.length, "streetThugs", streetThugs.length);
 }
 
+// --- M7 rival gangs: distinct names, gear, aggression profiles ---
+{
+  const posses = last.posses || [];
+  const units = last.units || [];
+  const dogs = posses.find((p) => p.id === "ai_dogs");
+  const vipers = posses.find((p) => p.id === "ai_neon");
+  const rats = posses.find((p) => p.id === "ai_rats");
+  if (!dogs || !/dumpster dogs/i.test(dogs.name ?? "")) {
+    fail(`expected Dumpster Dogs posse, got ${dogs?.name}`);
+  }
+  if (!vipers || !/neon vipers/i.test(vipers.name ?? "")) {
+    fail(`expected Neon Vipers posse, got ${vipers?.name}`);
+  }
+  if (!rats || !/rail rats/i.test(rats.name ?? "")) {
+    fail(`expected Rail Rats posse, got ${rats?.name}`);
+  }
+  const dogUnits = units.filter((u) => u.posseId === "ai_dogs" && u.alive);
+  const viperUnits = units.filter((u) => u.posseId === "ai_neon" && u.alive);
+  if (dogUnits.length < 2) fail(`expected Dumpster Dogs crew, got ${dogUnits.length}`);
+  if (viperUnits.length < 2) fail(`expected Neon Vipers crew, got ${viperUnits.length}`);
+  // Dogs: trash brawlers — expect melee / shotgun bias on at least one member
+  const dogMeleeish = dogUnits.some((u) =>
+    ["pipe", "switchblade", "shotgun"].includes(u.weapon),
+  );
+  if (!dogMeleeish) {
+    fail(`Dumpster Dogs should favor melee/shotgun, got ${dogUnits.map((u) => u.weapon).join(",")}`);
+  }
+  // Vipers: elite — heavier guns and better armor somewhere in the crew
+  const viperHeavy = viperUnits.some((u) =>
+    ["minigun", "tommy", "uzi", "flamethrower", "shotgun"].includes(u.weapon),
+  );
+  if (!viperHeavy) {
+    fail(`Neon Vipers should pack serious guns, got ${viperUnits.map((u) => u.weapon).join(",")}`);
+  }
+  const viperArmored = viperUnits.some((u) => u.armor === "plate" || u.armor === "kevlar");
+  if (!viperArmored) {
+    fail(`Neon Vipers should wear real armor, got ${viperUnits.map((u) => u.armor).join(",")}`);
+  }
+  // Themed boss titles (not generic "X Boss")
+  const dogBoss = dogUnits.find((u) => u.kind === "ai_boss");
+  if (!dogBoss || !/top dog/i.test(dogBoss.name ?? "")) {
+    fail(`expected Dumpster Dogs Top Dog boss, got ${dogBoss?.name}`);
+  }
+  const viperBoss = viperUnits.find((u) => u.kind === "ai_boss");
+  if (!viperBoss || !/fang|queen/i.test(viperBoss.name ?? "")) {
+    fail(`expected Neon Vipers Queen Fang boss, got ${viperBoss?.name}`);
+  }
+  // Goon epithets differ from plain random street names
+  const dogGoons = dogUnits.filter((u) => u.kind === "ai_goon");
+  if (!dogGoons.some((u) => /\b(Mutt|Scrap|Bin-Lid|Wet Nose|Alley Bite|Raccoon)\b/i.test(u.name ?? ""))) {
+    fail(`expected themed Dumpster Dogs goon names, got ${dogGoons.map((u) => u.name).join(",")}`);
+  }
+  console.log(
+    "rival gangs ok",
+    "dogs",
+    dogUnits.map((u) => `${u.name}/${u.weapon}`).join(", "),
+    "vipers",
+    viperUnits.map((u) => `${u.name}/${u.weapon}`).join(", "),
+  );
+}
+
 /** @returns {Promise<object|undefined>} */
 async function goTo(x, y, seconds = 16) {
   // Re-issue move occasionally (server A* + stuck repath should mostly own routing)

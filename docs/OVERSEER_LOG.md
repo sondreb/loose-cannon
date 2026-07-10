@@ -19,6 +19,18 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-11 — cycle 20 (M7 rival gang variety)
+- Focus: Rival gang variety — names, gear, aggression (per-crew identity)
+- Done:
+  - Shared `gangs.ts`: 9 street profiles + Bay/Chop/Frost instance flavors; role bias, weapon pools, armor, stat bias, aggro/detect ranges, themed boss/goon names
+  - Server `spawnAiPosse` + instance hostiles use profiles; posse stores `aggroRange` / `detectRange` / `gangBlurb`
+  - Aggro loop uses per-gang ranges; fight/size-up logs include blurb
+  - Vince/Rita intel lines mention Dogs / Rats / Vipers / Slicks
+  - Smoke: Dogs melee bias + Top Dog epithets vs Vipers minigun/armor + Queen Fang
+- Verify: `npm run build` OK; `npm run smoke` → SMOKE_OK (clean server)
+- Next: **M7** optional music bed, or optional M4/M3 polish
+- Blocked: none
+
 ### 2026-07-11 — cycle 19 (M7 street hustles / POI)
 - Focus: More street hustles / outdoor POI interactions (phone, mail, hydrant, neon, cone + fence NPC)
 - Done:
