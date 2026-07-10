@@ -148,7 +148,9 @@ export class GameWorld {
   chat: ChatLine[] = [];
   chatSeq = 0;
   private uid = 0;
-  mapRevision = 1;
+  mapRevision = 3;
+  /** Prop interaction cooldowns: propId -> tick available */
+  propReadyAt = new Map<string, number>();
 
   constructor() {
     this.seedWorld();
@@ -217,7 +219,7 @@ export class GameWorld {
     }
 
     for (const a of this.map.aiPosseSpawns) {
-      this.spawnAiPosse(a.id, a.name, a.x, a.y, a.color, a.aggression);
+      this.spawnAiPosse(a.id, a.name, a.x, a.y, a.color, a.aggression, a.threat ?? 1);
     }
   }
 
@@ -228,16 +230,18 @@ export class GameWorld {
     y: number,
     color: number,
     aggression: number,
+    threat = 1,
   ): void {
     const leaderId = `${id}_boss`;
     const memberIds = [leaderId];
+    const cash = 120 + threat * 80 + Math.floor(Math.random() * 100);
     this.posses.set(id, {
       id,
       name,
       leaderId,
       isPlayer: false,
       hostile: false,
-      cash: 200,
+      cash,
       rep: 0,
       color,
       aggression,
@@ -256,14 +260,52 @@ export class GameWorld {
       moveLabel: null,
     });
 
+    const gearFor = (t: number): { weapon: WeaponId; armor: ArmorId; weapons: WeaponId[]; armors: ArmorId[]; stats: Partial<UnitStats> } => {
+      if (t >= 4) {
+        return {
+          weapon: "tommy",
+          armor: "plate",
+          weapons: ["pipe", "pistol", "uzi", "tommy", "shotgun"],
+          armors: ["none", "leather", "kevlar", "plate"],
+          stats: { aim: 9, guts: 8, muscle: 8, speed: 7, maxHealth: 130 },
+        };
+      }
+      if (t >= 3) {
+        return {
+          weapon: "shotgun",
+          armor: "kevlar",
+          weapons: ["pipe", "pistol", "uzi", "shotgun"],
+          armors: ["none", "leather", "kevlar"],
+          stats: { aim: 7, guts: 7, muscle: 7, speed: 6, maxHealth: 115 },
+        };
+      }
+      if (t >= 2) {
+        return {
+          weapon: "uzi",
+          armor: "leather",
+          weapons: ["pipe", "pistol", "uzi"],
+          armors: ["none", "leather"],
+          stats: { aim: 6, guts: 6, muscle: 5, speed: 6, maxHealth: 105 },
+        };
+      }
+      return {
+        weapon: "pistol",
+        armor: "none",
+        weapons: ["pipe", "pistol"],
+        armors: ["none"],
+        stats: { aim: 4, guts: 5, muscle: 5, speed: 5, maxHealth: 100 },
+      };
+    };
+
     const make = (
       uid: string,
       uname: string,
       kind: Unit["kind"],
       ox: number,
       oy: number,
-      weapon: WeaponId,
+      t: number,
     ) => {
+      const g = gearFor(t);
       this.units.set(uid, {
         id: uid,
         name: uname,
@@ -277,31 +319,33 @@ export class GameWorld {
         dirX: 0,
         dirY: 0,
         moveMode: "idle",
-        health: DEFAULT_HEALTH,
+        health: g.stats.maxHealth ?? DEFAULT_HEALTH,
         stats: defaultStats({
-          aim: 4 + Math.floor(Math.random() * 4),
-          guts: 4 + Math.floor(Math.random() * 4),
-          speed: 4 + Math.floor(Math.random() * 3),
+          aim: (g.stats.aim ?? 5) + Math.floor(Math.random() * 2),
+          guts: (g.stats.guts ?? 5) + Math.floor(Math.random() * 2),
+          muscle: (g.stats.muscle ?? 5) + Math.floor(Math.random() * 2),
+          speed: (g.stats.speed ?? 5) + Math.floor(Math.random() * 2),
+          maxHealth: g.stats.maxHealth ?? 100,
         }),
-        weapon,
-        armor: Math.random() > 0.6 ? "leather" : "none",
+        weapon: g.weapon,
+        armor: g.armor,
         facing: Math.floor(Math.random() * 8),
         alive: true,
         fireCd: 0,
         isPlayerLeader: false,
-        ownedWeapons: new Set([weapon, "pipe", "pistol"]),
-        ownedArmors: new Set(["none", "leather"]),
+        ownedWeapons: new Set(g.weapons),
+        ownedArmors: new Set(g.armors),
         aiWanderT: Math.random() * 3,
         buildingId: null,
         lastHitByPosseId: null,
       });
     };
 
-    make(leaderId, `${name} Boss`, "ai_boss", x, y, "pistol");
+    make(leaderId, `${name} Boss`, "ai_boss", x, y, threat);
     const g1 = `${id}_g1`;
     const g2 = `${id}_g2`;
-    make(g1, randomGoonName(), "ai_goon", x + 0.8, y + 0.4, "pistol");
-    make(g2, randomGoonName(), "ai_goon", x - 0.6, y + 0.5, "uzi");
+    make(g1, randomGoonName(), "ai_goon", x + 0.8, y + 0.4, Math.max(1, threat - 1));
+    make(g2, randomGoonName(), "ai_goon", x - 0.6, y + 0.5, Math.max(1, threat - 1));
     memberIds.push(g1, g2);
     this.posses.get(id)!.memberIds = memberIds;
   }
@@ -530,17 +574,25 @@ export class GameWorld {
   private canWalk(x: number, y: number, buildingId: string | null): boolean {
     const t = this.tileAt(x, y);
     if (t === "void" || t === "wall") return false;
-    const indoor = t === "floor" || t === "bar" || t === "shop";
+    const indoor =
+      t === "floor" || t === "bar" || t === "shop" || t === "hospital" || t === "gym";
     if (buildingId) {
       const b = this.map.buildings.find((bb) => bb.id === buildingId);
       if (!b) return false;
       const tx = Math.floor(x);
       const ty = Math.floor(y);
       if (tx < b.ix0 - 1 || ty < b.iy0 - 1 || tx > b.ix1 + 1 || ty > b.iy1 + 1) return false;
-      return t === "floor" || t === "bar" || t === "shop" || t === "door";
+      return (
+        t === "floor" ||
+        t === "bar" ||
+        t === "shop" ||
+        t === "hospital" ||
+        t === "gym" ||
+        t === "door"
+      );
     }
     if (indoor) return false;
-    return t === "grass" || t === "road" || t === "sidewalk" || t === "door";
+    return t === "grass" || t === "road" || t === "sidewalk" || t === "parking" || t === "door";
   }
 
   private cmdMove(posse: Posse, x: number, y: number, unitIds?: string[]): void {
@@ -1133,9 +1185,21 @@ export class GameWorld {
 
       const spawn = this.map.npcSpawns.find((n) => n.id === u.id);
       if (spawn?.role === "dealer") {
-        posse.shop = { buildingId: "shop_pawn", shopName: "Pawn-O-Matic" };
+        const b = this.map.buildings.find((bb) => bb.id === (u.buildingId ?? posse.insideBuildingId));
+        posse.shop = {
+          buildingId: b?.id ?? "shop_pawn",
+          shopName: b?.name ?? "Pawn-O-Matic",
+        };
         posse.dialogue = null;
-        this.log(session, "Pawnshop Phil: \"Cash only. No refunds on regrets.\"");
+        this.log(session, `${u.name}: "Cash only. No refunds on regrets."`);
+        return;
+      }
+      if (spawn?.role === "doc") {
+        this.serviceHeal(session, posse);
+        return;
+      }
+      if (spawn?.role === "coach") {
+        this.serviceGym(session, posse);
         return;
       }
       posse.dialogue = this.buildDialogue(u);
@@ -1143,17 +1207,166 @@ export class GameWorld {
       return;
     }
 
-    // 4) Standing on shop counter tile
-    if (posse.insideBuildingId === "shop_pawn") {
+    // 4) Standing on special indoor tiles
+    if (posse.insideBuildingId) {
       const t = this.tileAt(leader.x, leader.y);
       if (t === "shop") {
-        posse.shop = { buildingId: "shop_pawn", shopName: "Pawn-O-Matic" };
+        const b = this.map.buildings.find((bb) => bb.id === posse.insideBuildingId);
+        posse.shop = { buildingId: b?.id ?? "shop_pawn", shopName: b?.name ?? "Shop" };
         posse.dialogue = null;
+        return;
+      }
+      if (t === "hospital") {
+        this.serviceHeal(session, posse);
+        return;
+      }
+      if (t === "gym") {
+        this.serviceGym(session, posse);
         return;
       }
     }
 
-    this.log(session, "Nothing to interact with. Get closer to a door, NPC, or counter.");
+    // 5) Outdoor props / street hustles
+    if (!posse.insideBuildingId) {
+      for (const p of this.map.props) {
+        if (dist(leader.x, leader.y, p.x, p.y) <= INTERACT_RANGE + 0.3) {
+          this.interactProp(session, posse, p.id);
+          return;
+        }
+      }
+    }
+
+    this.log(session, "Nothing to interact with. Try a door, NPC, dumpster, or corner.");
+  }
+
+  private serviceHeal(session: CharacterSession, posse: Posse): void {
+    const cost = 80;
+    if (posse.cash < cost) {
+      this.log(session, "Doc Bandage: \"Come back when your wallet's breathing.\"");
+      return;
+    }
+    posse.cash -= cost;
+    let healed = 0;
+    for (const u of this.members(posse)) {
+      const before = u.health;
+      u.health = u.stats.maxHealth;
+      if (!u.alive) {
+        u.alive = true;
+      }
+      healed += u.health - before;
+    }
+    this.log(
+      session,
+      `Doc Bandage stitches the crew for $${cost}. (+${Math.round(healed)} HP total) "Try not to leak on the floor."`,
+    );
+  }
+
+  private serviceGym(session: CharacterSession, posse: Posse): void {
+    const cost = 150;
+    const unit =
+      this.units.get(posse.selectedUnitId) &&
+      this.units.get(posse.selectedUnitId)!.posseId === posse.id
+        ? this.units.get(posse.selectedUnitId)!
+        : this.leader(posse);
+    if (!unit || !unit.alive) return;
+    if (posse.cash < cost) {
+      this.log(session, "Coach Brick: \"Guts ain't free, champ.\"");
+      return;
+    }
+    posse.cash -= cost;
+    const picks: (keyof UnitStats)[] = ["aim", "guts", "muscle", "speed"];
+    const pick = picks[Math.floor(Math.random() * picks.length)]!;
+    unit.stats[pick] = (unit.stats[pick] as number) + 1;
+    if (Math.random() < 0.35) {
+      unit.stats.maxHealth += 5;
+      unit.health = Math.min(unit.stats.maxHealth, unit.health + 5);
+    }
+    this.log(
+      session,
+      `Coach Brick screams at ${unit.name} until +1 ${pick.toUpperCase()} appears. (−$${cost}) "Pain is just weakness leaving the bullet holes."`,
+    );
+  }
+
+  private interactProp(
+    session: CharacterSession,
+    posse: Posse,
+    propId: string,
+  ): void {
+    const prop = this.map.props.find((p) => p.id === propId);
+    if (!prop) return;
+    const ready = this.propReadyAt.get(propId) ?? 0;
+    if (this.tick < ready) {
+      const sec = Math.ceil((ready - this.tick) / TICK_HZ);
+      this.log(session, `Nothing left… try again in ~${sec}s.`);
+      return;
+    }
+
+    if (prop.kind === "dumpster") {
+      this.propReadyAt.set(propId, this.tick + TICK_HZ * 45);
+      const roll = Math.random();
+      if (roll < 0.35) {
+        const cash = 20 + Math.floor(Math.random() * 60);
+        posse.cash += cash;
+        this.log(session, `Dumpster dive: $${cash} and a smell that will never leave. (${prop.label ?? "dumpster"})`);
+      } else if (roll < 0.55) {
+        const unit = this.leader(posse);
+        if (unit) {
+          unit.health = Math.max(1, unit.health - 8);
+          this.log(session, "You found a raccoon. The raccoon found your face. (−8 HP)");
+        }
+      } else if (roll < 0.7) {
+        const unit = this.leader(posse);
+        if (unit && !unit.ownedWeapons.has("switchblade")) {
+          unit.ownedWeapons.add("switchblade");
+          this.log(session, "A sticky switchblade. Free is free.");
+        } else {
+          posse.cash += 15;
+          this.log(session, "Bottle deposit money. $15. Living the dream.");
+        }
+      } else {
+        this.log(session, "Just trash. Philosophical trash, but still trash.");
+      }
+      return;
+    }
+
+    if (prop.kind === "protection") {
+      this.propReadyAt.set(propId, this.tick + TICK_HZ * 60);
+      const cash = 40 + Math.floor(Math.random() * 80) + Math.floor(posse.rep * 2);
+      posse.cash += cash;
+      posse.rep += 1;
+      this.log(
+        session,
+        `Shook down ${prop.label ?? "the corner"} for $${cash}. Rep +1. "Nice block you got here…"`,
+      );
+      return;
+    }
+
+    if (prop.kind === "car") {
+      this.propReadyAt.set(propId, this.tick + TICK_HZ * 90);
+      const cash = 30 + Math.floor(Math.random() * 100);
+      posse.cash += cash;
+      this.log(session, `Liberated $${cash} from ${prop.label ?? "a car"}. The radio only plays static now.`);
+      return;
+    }
+
+    if (prop.kind === "crate") {
+      this.propReadyAt.set(propId, this.tick + TICK_HZ * 70);
+      const unit = this.leader(posse);
+      if (unit && Math.random() < 0.4 && !unit.ownedWeapons.has("uzi")) {
+        unit.ownedWeapons.add("uzi");
+        this.log(session, "Crate says 'farm equipment'. Contains an Uzi. Farming is evolving.");
+      } else {
+        const cash = 25 + Math.floor(Math.random() * 50);
+        posse.cash += cash;
+        this.log(session, `Crate cash: $${cash}. Definitely not guns. (It was guns-adjacent.)`);
+      }
+      return;
+    }
+
+    if (prop.kind === "neon" || prop.kind === "hydrant") {
+      this.log(session, prop.label ? `"${prop.label}" flickers judgmentally.` : "You stare. It stares back.");
+      return;
+    }
   }
 
   private enterBuilding(posse: Posse, buildingId: string | null): void {
@@ -1230,7 +1443,7 @@ export class GameWorld {
       return {
         npcId: npc.id,
         npcName: npc.name,
-        text: "Phil grins. \"Guns, jackets, miracles. Cash only. Browse the counter when you're ready.\"",
+        text: `${npc.name} grins. "Guns, jackets, miracles. Cash only. Browse the counter when you're ready."`,
         choices: [
           { id: "open_shop", label: "Show me the goods.", tone: "business" },
           { id: "haggle", label: "Prices are criminal.", tone: "insult" },
@@ -1238,10 +1451,48 @@ export class GameWorld {
         ],
       };
     }
+    if (role === "priest") {
+      return {
+        npcId: npc.id,
+        npcName: npc.name,
+        text: "Father Trouble lights a cigarette on a candle. \"Confession is $50. Absolution is extra.\"",
+        choices: [
+          { id: "bless", label: "Bless the crew. ($50)", tone: "business" },
+          { id: "rumor", label: "Any holy intel?", tone: "smooth" },
+          { id: "insult", label: "Nice smoke for a holy man.", tone: "insult" },
+          { id: "bye", label: "Amen.", tone: "smooth" },
+        ],
+      };
+    }
+    if (role === "mechanic") {
+      return {
+        npcId: npc.id,
+        npcName: npc.name,
+        text: "Grease Tony wipes his hands on something that used to be a shirt. \"You need wheels or just moral support?\"",
+        choices: [
+          { id: "tip", label: "What's hot on the lot?", tone: "smooth" },
+          { id: "insult", label: "Your cars look terminal.", tone: "insult" },
+          { id: "bye", label: "Later, greaseball.", tone: "smooth" },
+        ],
+      };
+    }
+    if (role === "doc" || role === "coach") {
+      return {
+        npcId: npc.id,
+        npcName: npc.name,
+        text:
+          role === "doc"
+            ? "Doc Bandage snaps on gloves that have seen things. \"Bleed on the mat, not the furniture.\""
+            : "Coach Brick flexes a vein the size of a garden hose. \"Pain builds character. Or corpses.\"",
+        choices: [
+          { id: "bye", label: "I'll… use the equipment.", tone: "business" },
+        ],
+      };
+    }
     return {
       npcId: npc.id,
       npcName: npc.name,
-      text: "Carl spits on the sidewalk. \"You hiring or wasting oxygen?\"",
+      text: `${npc.name} spits on the sidewalk. "You hiring or wasting oxygen?"`,
       choices: [
         { id: "hire_street", label: "Join the crew. ($100)", tone: "business" },
         { id: "insult", label: "You're the waste.", tone: "insult" },
@@ -1262,7 +1513,24 @@ export class GameWorld {
 
     if (choiceId === "open_shop") {
       posse.dialogue = null;
-      posse.shop = { buildingId: "shop_pawn", shopName: "Pawn-O-Matic" };
+      const b = this.map.buildings.find((bb) => bb.id === (npc?.buildingId ?? posse.insideBuildingId));
+      posse.shop = { buildingId: b?.id ?? "shop_pawn", shopName: b?.name ?? "Shop" };
+      return;
+    }
+
+    if (choiceId === "bless") {
+      if (posse.cash < 50) {
+        d.text = "\"Faith without funds is just hope.\"";
+        d.choices = [{ id: "bye", label: "I'll pass the plate later.", tone: "smooth" }];
+        return;
+      }
+      posse.cash -= 50;
+      for (const u of this.members(posse)) {
+        u.health = Math.min(u.stats.maxHealth, u.health + 15);
+      }
+      d.text = "\"You're blessed. Marginally. Don't test it in traffic.\"";
+      d.choices = [{ id: "bye", label: "Thanks, Padre.", tone: "smooth" }];
+      this.log(session, "Crew blessed (+15 HP). Probably placebo. (−$50)");
       return;
     }
 
@@ -1663,7 +1931,15 @@ export class GameWorld {
               color: posse.color,
               aggression: posse.aggression,
             };
-            this.spawnAiPosse(spawn.id, spawn.name, spawn.x, spawn.y, spawn.color, spawn.aggression);
+            this.spawnAiPosse(
+              spawn.id,
+              spawn.name,
+              spawn.x,
+              spawn.y,
+              spawn.color,
+              spawn.aggression,
+              spawn.threat ?? 1,
+            );
           }
         }
         continue;
@@ -1938,7 +2214,17 @@ export class GameWorld {
         doorX: b.doorX,
         doorY: b.doorY,
         interiorId: b.id,
+        blurb: b.blurb,
       })),
+      props: posse.insideBuildingId
+        ? []
+        : this.map.props.map((p) => ({
+            id: p.id,
+            kind: p.kind,
+            x: p.x,
+            y: p.y,
+            label: p.label,
+          })),
       mapWidth: this.map.width,
       mapHeight: this.map.height,
       mapRevision: this.mapRevision,

@@ -11,6 +11,7 @@ import {
   type WeaponId,
   type WorldSnapshot,
 } from "@loose-cannon/shared";
+import { sfx } from "./audio.js";
 import { portraitDataUrl, statBonus, upgradeTier } from "./avatar.js";
 import {
   ARMOR_BAR_ORDER,
@@ -93,6 +94,16 @@ function pushEvent(text: string): void {
   d.textContent = text;
   eventLog.appendChild(d);
   while (eventLog.children.length > 8) eventLog.removeChild(eventLog.firstChild!);
+  // Heuristic SFX from combat log lines
+  const t = text.toLowerCase();
+  if (t.includes("bought") || t.includes("equip")) sfx.play("buy");
+  else if (t.includes("crit") || t.includes("hit ")) sfx.play("hit");
+  else if (t.includes("miss")) sfx.play("miss");
+  else if (t.includes("down") || t.includes("gone") || t.includes("wiped")) sfx.play("death");
+  else if (t.includes("dumpster") || t.includes("crate")) sfx.play("dumpster");
+  else if (t.includes("shook") || t.includes("liberated") || t.includes("$")) sfx.play("cash");
+  else if (t.includes("entered") || t.includes("left ")) sfx.play("door");
+  else if (t.includes("stitch") || t.includes("coach") || t.includes("blessed")) sfx.play("ui");
 }
 
 function pushChat(from: string, text: string, system?: boolean): void {
@@ -783,12 +794,14 @@ function keyboardMoveLoop(): void {
 async function startGame(): Promise<void> {
   loginEl.classList.add("hidden");
   gameEl.classList.remove("hidden");
+  sfx.unlock();
   view = new WorldView(canvas);
   await view.init();
 
   socket = new GameSocket({
     onAuthOk: () => {
-      pushEvent("You're on the street. Try not to die.");
+      sfx.play("ui");
+      pushEvent("You're on the street. Dumpsters, corners, gyms — crime is a lifestyle.");
       window.dispatchEvent(new Event("resize"));
     },
     onAuthFail: (reason) => {
@@ -835,12 +848,17 @@ function bindInput(): void {
         if (d < 2.8 && (!best || d < best.d)) best = { id: u.id, d };
       }
       if (best) {
+        sfx.play("gun");
         socket.send({ type: "intent.fire", targetId: best.id });
       } else {
+        sfx.play("gun");
         socket.send({ type: "intent.fire", x: w.x, y: w.y });
       }
     }
   });
+
+  // Unlock audio on first gesture
+  window.addEventListener("pointerdown", () => sfx.unlock(), { once: true });
 
   window.addEventListener("keydown", (e) => {
     if (chatFocused) {

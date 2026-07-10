@@ -32,4 +32,6 @@ Production-scale infrastructure is documented as a later migration (architecture
 
 **Documentation only.** No game code in this phase.
 
-Suggested next step after review: Milestone A/B vertical slice as defined in `prd.md` §8 and §14.
+See [STATUS.md](./STATUS.md) for what’s implemented vs deferred.
+
+Suggested next: more missions/turf, TTS pipeline, and art polish via Imagine → pixel atlases.

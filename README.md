@@ -30,12 +30,16 @@ Death: **3 second** respawn delay, then a random outdoor spot with few other pla
 
 ### What works
 
-- Walk Skidrow (isometric map)
-- Enter bar, shop, safehouse, warehouse
-- Talk to NPCs, hire goons, open shop
-- Buy weapons, armor, upgrades; equip gear; view stats
-- AI rival posses patrol; often turn hostile when close
-- Proximity chat (players near each other hear messages)
+- Large isometric city (multi-avenue Skidrow)
+- Free WASD + click move; RMB **attack-move** (chase + fire)
+- Bars, pawn shop, gun shop, liquor, hospital, gym, club, church, garage, warehouse
+- Dumpsters, protection corners, cars, crates (street hustles)
+- Hire / recruit, shop with icons, crew loadout editor
+- Combat scales with Aim / Muscle / weapons; wipe loot
+- Enemy **gear visible** on the street (armor bulk, weapon shape, threat pips)
+- Action banner (GOING / ASSASSINATE / ENGAGING…)
+- Basic Web Audio SFX
+- Proximity chat
 
 ## Docs
 

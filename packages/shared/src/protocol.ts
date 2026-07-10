@@ -4,11 +4,14 @@ export type TileType =
   | "grass"
   | "road"
   | "sidewalk"
+  | "parking"
   | "wall"
   | "floor"
   | "door"
   | "bar"
   | "shop"
+  | "hospital"
+  | "gym"
   | "void";
 
 export interface Vec2 {
@@ -59,10 +62,19 @@ export interface PossePublic {
 export interface BuildingPublic {
   id: string;
   name: string;
-  kind: "bar" | "shop" | "safehouse" | "warehouse";
+  kind: string;
   doorX: number;
   doorY: number;
   interiorId: string;
+  blurb?: string;
+}
+
+export interface PropPublic {
+  id: string;
+  kind: string;
+  x: number;
+  y: number;
+  label?: string;
 }
 
 export interface ChatLine {
@@ -109,6 +121,7 @@ export interface WorldSnapshot {
   units: UnitPublic[];
   posses: PossePublic[];
   buildings: BuildingPublic[];
+  props: PropPublic[];
   mapWidth: number;
   mapHeight: number;
   /** Included when map layer changes (enter/exit building) or first snapshot */
