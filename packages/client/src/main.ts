@@ -2120,7 +2120,9 @@ function closeSettings(): void {
 function applyAudioFromForm(): void {
   if (settingsMusic) {
     music.setMuted(!settingsMusic.checked);
-    if (settingsMusic.checked) music.unlock();
+    if (settingsMusic.checked) {
+      music.unlock();
+    }
   }
   if (settingsSfx) sfx.setMuted(!settingsSfx.checked);
   if (settingsVoice) voice.setMuted(!settingsVoice.checked);
@@ -2178,6 +2180,8 @@ async function startGame(): Promise<void> {
   loginEl.classList.add("hidden");
   gameEl.classList.remove("hidden");
   sfx.unlock();
+  // Fade out title track, then start the long in-game bed
+  music.enterGame();
   view = new WorldView(canvas);
   await view.init();
 
@@ -2363,7 +2367,7 @@ function bindInput(): void {
     else setChatCollapsed(false);
   });
 
-  // Browsers block audio until a gesture — unlock SFX + start low music bed
+  // Browsers block audio until a gesture — unlock SFX; resume game bed if needed
   const unlockAudio = () => {
     sfx.unlock();
     music.unlock();
@@ -2802,6 +2806,15 @@ realmInviteBtn?.addEventListener("click", () => {
 
 // Audio prefs before first play
 loadAudioPrefs();
+
+// Title music on splash: start as soon as the browser allows (first click/key/tap on login)
+const unlockTitleMusic = () => {
+  sfx.unlock();
+  music.unlock(); // idle → rain-city-ledger
+};
+window.addEventListener("pointerdown", unlockTitleMusic, { passive: true });
+window.addEventListener("keydown", unlockTitleMusic);
+window.addEventListener("touchstart", unlockTitleMusic, { passive: true });
 
 // Prefill login from ?realm= / ?name= (shareable invite links)
 try {

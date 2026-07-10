@@ -4,13 +4,15 @@
  * Plus HTMLAudio music beds under /music/ (kept quieter than SFX).
  */
 
-/** Background tracks served from packages/client/public/music/ */
-const MUSIC_TRACKS: readonly string[] = [
-  "/music/neon-heist-run.mp3",
-];
+/** Title / splash (login) */
+const TITLE_TRACK = "/music/rain-city-ledger.mp3";
+/** In-game long bed (exploration / streets) */
+const GAME_TRACK = "/music/neon-blackout.mp3";
 
 /** Music bed level — must stay under SFX master (~0.55) and voice (~0.85). */
 const MUSIC_VOLUME = 0.12;
+/** Fade title out before starting the in-game track */
+const TITLE_FADE_MS = 2800;
 
 export type Sfx =
   | "gun"
@@ -280,25 +282,42 @@ export class SfxBus {
 
 export const sfx = new SfxBus();
 
+type MusicPhase = "idle" | "title" | "game";
+
 /**
- * Looping (or sequential) background music from /public/music.
- * Starts on first user gesture (autoplay policy) — call unlock() with SFX.
+ * Background music from /public/music.
+ * - Title: rain-city-ledger (login / splash)
+ * - Game: neon-blackout (long street bed after fade-out from title)
+ * Starts on first user gesture (autoplay policy).
  */
 export class MusicBus {
   private audio: HTMLAudioElement | null = null;
   private muted = false;
   private volume = MUSIC_VOLUME;
-  private started = false;
-  private index = 0;
-  private tracks: readonly string[] = MUSIC_TRACKS;
+  /** Browser allowed playback after a user gesture */
+  private gestureOk = false;
+  private phase: MusicPhase = "idle";
+  private fading = false;
+  private fadeRaf = 0;
 
   setMuted(m: boolean): void {
     this.muted = m;
-    if (!this.audio) return;
     if (m) {
-      this.audio.pause();
-    } else if (this.started) {
+      this.audio?.pause();
+      return;
+    }
+    if (!this.gestureOk) return;
+    if (this.phase === "idle") {
+      this.playTitle();
+      return;
+    }
+    if (this.audio) {
+      this.audio.volume = this.volume;
       void this.audio.play().catch(() => undefined);
+    } else if (this.phase === "title") {
+      this.playTitle();
+    } else if (this.phase === "game") {
+      this.playGame(false);
     }
   }
 
@@ -308,50 +327,154 @@ export class MusicBus {
 
   setVolume(v: number): void {
     this.volume = Math.max(0, Math.min(1, v));
-    if (this.audio) this.audio.volume = this.volume;
+    if (this.audio && !this.fading) this.audio.volume = this.volume;
   }
 
-  /** Call from a user gesture so autoplay is allowed. */
+  /**
+   * Call from any user gesture. On the login screen this starts the title track.
+   * In-game it resumes the current bed if paused.
+   */
   unlock(): void {
+    this.gestureOk = true;
     if (this.muted) return;
-    if (this.started && this.audio) {
-      if (this.audio.paused) void this.audio.play().catch(() => undefined);
+    if (this.fading) return;
+    if (this.phase === "idle" || this.phase === "title") {
+      this.playTitle();
       return;
     }
-    this.started = true;
-    this.playCurrent();
+    if (this.phase === "game") {
+      if (this.audio) {
+        if (this.audio.paused) void this.audio.play().catch(() => undefined);
+      } else {
+        this.playGame(false);
+      }
+    }
+  }
+
+  /** Login / splash bed (loops). Safe to call repeatedly. */
+  playTitle(): void {
+    if (this.muted || !this.gestureOk) return;
+    if (this.phase === "game" || this.fading) return;
+    if (this.phase === "title" && this.audio && !this.audio.paused) return;
+    this.cancelFade();
+    this.startTrack(TITLE_TRACK, true);
+    this.phase = "title";
+  }
+
+  /**
+   * After "Hit the Streets": fade out title, then start the long in-game track.
+   * If title never played, starts game music immediately.
+   */
+  enterGame(fadeMs = TITLE_FADE_MS): void {
+    this.gestureOk = true;
+    if (this.muted) {
+      this.phase = "game";
+      this.cancelFade();
+      this.disposeAudio();
+      return;
+    }
+    if (this.phase === "game" && this.audio && !this.audio.paused && !this.fading) {
+      return;
+    }
+    if (this.phase === "title" && this.audio && !this.audio.paused) {
+      this.fadeOutThen(() => this.playGame(true), fadeMs);
+      return;
+    }
+    this.cancelFade();
+    this.playGame(true);
   }
 
   stop(): void {
-    if (this.audio) {
+    this.cancelFade();
+    this.disposeAudio();
+    this.phase = "idle";
+  }
+
+  private playGame(forceRestart: boolean): void {
+    if (this.muted) {
+      this.phase = "game";
+      return;
+    }
+    if (
+      !forceRestart &&
+      this.phase === "game" &&
+      this.audio &&
+      this.audio.src.includes("neon-blackout")
+    ) {
+      this.audio.volume = this.volume;
+      void this.audio.play().catch(() => undefined);
+      return;
+    }
+    this.startTrack(GAME_TRACK, true);
+    this.phase = "game";
+  }
+
+  private startTrack(src: string, loop: boolean): void {
+    this.disposeAudio();
+    const el = new Audio(src);
+    el.volume = this.volume;
+    el.loop = loop;
+    el.preload = "auto";
+    this.audio = el;
+    void el.play().catch(() => {
+      // Autoplay blocked or missing file — wait for another unlock
+      if (this.audio === el) {
+        this.disposeAudio();
+        if (this.phase !== "game") this.phase = "idle";
+      }
+    });
+  }
+
+  private fadeOutThen(done: () => void, ms: number): void {
+    const el = this.audio;
+    if (!el) {
+      done();
+      return;
+    }
+    this.cancelFade();
+    this.fading = true;
+    const startVol = el.volume;
+    const t0 = performance.now();
+    const step = (now: number) => {
+      if (this.audio !== el) {
+        this.fading = false;
+        done();
+        return;
+      }
+      const t = Math.min(1, (now - t0) / Math.max(1, ms));
+      // Smooth ease-out curve
+      const k = 1 - (1 - t) * (1 - t);
+      el.volume = Math.max(0, startVol * (1 - k));
+      if (t < 1) {
+        this.fadeRaf = requestAnimationFrame(step);
+      } else {
+        this.fading = false;
+        el.pause();
+        this.disposeAudio();
+        done();
+      }
+    };
+    this.fadeRaf = requestAnimationFrame(step);
+  }
+
+  private cancelFade(): void {
+    if (this.fadeRaf) {
+      cancelAnimationFrame(this.fadeRaf);
+      this.fadeRaf = 0;
+    }
+    this.fading = false;
+  }
+
+  private disposeAudio(): void {
+    if (!this.audio) return;
+    try {
       this.audio.pause();
       this.audio.removeAttribute("src");
       this.audio.load();
-      this.audio = null;
+    } catch {
+      /* ignore */
     }
-    this.started = false;
-  }
-
-  private playCurrent(): void {
-    if (this.muted || this.tracks.length === 0) return;
-    const src = this.tracks[this.index % this.tracks.length]!;
-    const el = new Audio(src);
-    el.volume = this.volume;
-    el.loop = this.tracks.length === 1;
-    el.preload = "auto";
-    this.audio = el;
-
-    el.addEventListener("ended", () => {
-      if (this.audio !== el || this.tracks.length <= 1) return;
-      this.index = (this.index + 1) % this.tracks.length;
-      this.playCurrent();
-    });
-
-    void el.play().catch(() => {
-      // Autoplay blocked or missing file — allow another unlock attempt
-      this.started = false;
-      this.audio = null;
-    });
+    this.audio = null;
   }
 }
 
