@@ -19,6 +19,16 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-10 — realms specification
+- Focus: Spec segregated multiplayer “realms” for friend groups without auth
+- Done:
+  - New `docs/realms.md` (login field, `?realm=` / `?name=`, isolation rules, protocol, Mode A + beta in-memory multi-world)
+  - architecture.md Mode A diagram updated for `Map<realmId, RealmWorld>`
+  - MASTER_PLAN M3.5 checklist + priority; STATUS/AGENTS/overseer prompts/skill aligned
+- Verify: docs only (implementation not started)
+- Next: implement realms per acceptance criteria in realms.md (or memorial wall if still first)
+- Blocked: none
+
 ### 2026-07-10 — overseer refresh (manual / pre-long-loop)
 - Focus: Align overseer roadmap with post-manual product; feel fixes for long unattended run
 - Done:

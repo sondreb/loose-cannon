@@ -15,6 +15,17 @@
 **Current phase priority:** frontend + gameplay + a simple authoritative local server.  
 **Explicitly deferred:** multi-service mesh, managed databases, CDN edge, multi-region, production anti-cheat pipelines.
 
+### Realms (specified)
+
+**Realms** are segregated in-memory world instances on the **same** Mode A / beta process. No auth: players pick a realm string at login or join via `?realm=` URL. Empty realm = public default. Full design: [realms.md](./realms.md).
+
+| Property | Behavior |
+|----------|----------|
+| Isolation | Units, combat, chat, AI, mission instances scoped per `realmId` |
+| Default | `public` when field left blank |
+| Security | Obscurity only (shared code/link) — not passwords |
+| Persistence | None in Mode A/beta — restart wipes all realms |
+
 ---
 
 ## 2. Two Architecture Modes
@@ -59,20 +70,23 @@ Optional: `npm run dev` runs both via concurrently. No Docker, no database insta
 │  HTTP: health, static optional, simple login/dev identity   │
 │  WS:   all realtime game traffic                            │
 │                                                             │
-│  ┌─────────────┐  ┌──────────────┐  ┌───────────────────┐  │
-│  │ Connection  │  │ Hub room(s)  │  │ Instance rooms    │  │
-│  │ manager     │  │ (presence,   │  │ (tick sim, combat)│  │
-│  │ (ws library)│  │  dialogue)   │  │                   │  │
-│  └──────┬──────┘  └──────┬───────┘  └─────────┬─────────┘  │
-│         │                │                    │             │
-│  ┌──────▼────────────────▼────────────────────▼─────────┐  │
-│  │           InMemoryStore  (Maps / plain objects)        │  │
-│  │  accounts · characters · goons · inventory · cash      │  │
-│  │  dialogue flags · instances · parties                  │  │
-│  │  RESETS on process restart                             │  │
-│  └────────────────────────────────────────────────────────┘  │
+│  ┌─────────────┐                                            │
+│  │ Connection  │   auth: { name, realm? }                   │
+│  │ manager     │─────────────────────────────────────┐      │
+│  │ (ws library)│                                     │      │
+│  └─────────────┘                                     ▼      │
+│         realms: Map<realmId, RealmWorld>  (default "public")│
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │ RealmWorld (per realm — fully segregated)            │   │
+│  │  units · posses · AI · dialogue · shops · missions   │   │
+│  │  mi_* instances · dancer tips · heat/cash            │   │
+│  │  Shared static map def; dynamic state per realm      │   │
+│  │  RESETS on process restart                           │   │
+│  └──────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+See [realms.md](./realms.md) for join rules, URL params, and acceptance criteria.
 
 ### 3.3 Why Node.js
 

@@ -24,7 +24,7 @@ description: >
 
 2. **Select**
    - Pick the highest-priority **incomplete** item in `MASTER_PLAN.md`.
-   - Default order (post 2026-07-10): memorial wall → goon stats feel → combat/pathing → more missions → parties.
+   - Default order (post 2026-07-10): memorial wall → realms (docs/realms.md) → goon stats feel → combat/pathing → more missions → parties.
    - If STATUS lists a critical player-facing bug, fix that first.
 
 3. **Implement**

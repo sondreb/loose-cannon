@@ -1,7 +1,7 @@
 # Implementation Status
 
-Last updated: 2026-07-10 (overseer refresh — free roam, club, toasts, mobile UI)  
-Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
+Last updated: 2026-07-10 (realms specified)  
+Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
 
@@ -25,8 +25,9 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Overseer: [OVERSEER.md](./OVERSEE
 | Job board / missions / tutorial | Done | |
 | Heat + rep shop gates | Done | |
 | District map (M) | Done | Free roam; hot zones advisory |
-| Memorial wall | **Not started** | **Next overseer primary** |
-| Parties / co-op | Not started | M4 |
+| Memorial wall | **Not started** | M3 next content |
+| **Realms** (segregated instances) | **Specified** | [realms.md](./realms.md) — login + `?realm=`; multi-world in-memory |
+| Parties / co-op | Not started | M4 (within a realm) |
 | Automated overseer scaffolding | Done | AGENTS + scripts/overseer |
 
 ## Starter jobs (live)
@@ -65,11 +66,12 @@ Rep still gates **shop stock** and some content; map shows HOT / recommended rep
 ## Next for overseer (priority)
 
 1. **Memorial wall** (M3) — dead named goons, church/Father Trouble or Crash Pad wall  
-2. **Goon stats feel** — combat + UI so Aim/Muscle/Guts/Speed clearly matter  
-3. **Pathing / combat feel** — better routes around shells; hit feedback  
-4. **More missions** — 2+ new jobs  
-5. **M4 parties** after solo loop feels solid  
-6. **Never** Mode B (Postgres/auth/k8s) unless human asks  
+2. **Realms** (M3.5) — implement [realms.md](./realms.md): multi-`RealmWorld`, login field, `?realm=` invite links, beta in-memory  
+3. **Goon stats feel** — combat + UI so Aim/Muscle/Guts/Speed clearly matter  
+4. **Pathing / combat feel** — better routes around shells; hit feedback  
+5. **More missions** — 2+ new jobs  
+6. **M4 parties** after solo loop feels solid (scoped per realm)  
+7. **Never** Mode B (Postgres/auth/k8s) unless human asks  
 
 ## Known bugs / polish debt
 
@@ -84,7 +86,8 @@ Rep still gates **shop stock** and some content; map shows HOT / recommended rep
 
 ## Still deferred (Mode B)
 
-- Persistence, real auth, multi-region, seasons, production anti-cheat
+- Persistence, real auth, multi-region, seasons, production anti-cheat  
+- Realm passwords / ACL / paid private servers (realms stay share-code only)
 
 ## How to run
 

@@ -7,7 +7,7 @@
 | Product | Loose Cannon |
 | Type | Browser MMO (desktop + mobile web) |
 | Status | Planning / pre-implementation |
-| Related | [game-design.md](./game-design.md), [architecture.md](./architecture.md) |
+| Related | [game-design.md](./game-design.md), [architecture.md](./architecture.md), [realms.md](./realms.md) |
 | Out of scope for this doc | Production code, final balance numbers |
 
 ---
@@ -87,6 +87,27 @@ Requirements use IDs for tracking. Priority: **P0–P3** must-ship for first pla
 | LOC-019 | Protocol version field; mismatch shows clear client error | P1 |
 | LOC-020 | JSON WebSocket messages first (MessagePack optional later) | P0 |
 | LOC-021 | Tick combat only for active instances (idle hubs cheap) | P1 |
+
+### 4.0b Realms (segregated in-memory worlds — Mode A + beta)
+
+Full design: [realms.md](./realms.md). No authentication; segregation by shared code/link.
+
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| RLM-001 | Player may join a **realm** by optional string at login (no password/auth) | P1 |
+| RLM-002 | Empty/blank realm joins canonical default realm id `public` | P1 |
+| RLM-003 | Client supports URL query `?realm=` and optional `?name=` to prefill/join | P1 |
+| RLM-004 | Realm id normalized: lowercase, trim, charset `[a-z0-9_-]`, length 1–32 | P1 |
+| RLM-005 | Server holds multiple in-memory worlds keyed by `realmId` on **one** process | P1 |
+| RLM-006 | Units, combat, proximity chat, AI, mission instances isolated per realm | P0 |
+| RLM-007 | Display name uniqueness enforced **per realm**, not globally | P1 |
+| RLM-008 | Snapshot exposes `you.realmId` (and optional label) for HUD / invite | P1 |
+| RLM-009 | Auth protocol accepts optional `realm`; `auth.ok` returns `realmId` | P1 |
+| RLM-010 | Works on local Mode A and Azure beta without durable storage | P1 |
+| RLM-011 | Optional idle-TTL destroy of empty named realms to free RAM | P2 |
+| RLM-012 | Client can copy invite link including `?realm=` | P2 |
+| RLM-013 | Health endpoint may report player counts by realm | P2 |
+| RLM-014 | No cross-realm visibility in snapshots or combat resolution | P0 |
 | LOC-022 | Handle many concurrent WS connections without per-client tight loops | P1 |
 | LOC-023 | Graceful handling of client disconnect (remove from room) | P1 |
 | LOC-024 | Shared package for protocol types between client and server | P0 |

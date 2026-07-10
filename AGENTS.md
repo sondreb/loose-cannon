@@ -8,6 +8,7 @@ You are working on **Loose Cannon**: a browser crime MMO (isometric Syndicate ta
 |-----|------|
 | `docs/STATUS.md` | Live implementation status — **update after every meaningful cycle** |
 | `docs/MASTER_PLAN.md` | Ordered milestones and definition of done |
+| `docs/realms.md` | **Realms** — segregated in-memory worlds, login/`?realm=` (spec) |
 | `docs/prd.md` | Requirements (IDs); prefer P0–P3 until alpha is solid |
 | `docs/game-design.md` | Fantasy, pillars, tone |
 | `docs/architecture.md` | Mode A local server vs deferred Mode B |
@@ -50,7 +51,7 @@ When acting as the **development overseer** (headless loop or `/goal`):
 
 1. Read `docs/STATUS.md` and `docs/MASTER_PLAN.md` (and latest `OVERSEER_LOG.md`).
 2. Pick the **next incomplete** milestone (highest priority unfinished item).  
-   Default order: **memorial wall → goon stats feel → combat/pathing → more missions → parties**.
+   Default order: **memorial wall → realms (M3.5 / docs/realms.md) → goon stats feel → combat/pathing → more missions → parties**.
 3. If STATUS marks a **critical player-facing bug**, fix that before greenfield.
 4. Implement it (spawn subagents for parallel research/impl/test when useful).
 5. Run verification: prefer `npm run smoke` and `npm run build` after structural changes.

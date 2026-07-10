@@ -104,6 +104,7 @@ More portraits and club art live under [`packages/client/public/art/`](./package
 
 - [Game design](./docs/game-design.md)
 - [Architecture](./docs/architecture.md)
+- [Realms](./docs/realms.md) — segregated instances via login / `?realm=` (specified)
 - [PRD](./docs/prd.md)
 - [Status](./docs/STATUS.md) · [Master plan](./docs/MASTER_PLAN.md)
 - [Automated overseer](./docs/OVERSEER.md) (Grok Build continuous development)

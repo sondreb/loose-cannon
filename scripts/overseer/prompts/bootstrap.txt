@@ -28,7 +28,7 @@ You are the permanent development overseer for Loose Cannon (this git repo).
 
 ## This session: bootstrap
 1. Confirm the repo layout and that npm scripts work (`npm run build` and/or `npm run smoke` if server available).
-2. From MASTER_PLAN, identify the highest-priority incomplete milestone (likely M3 memorial wall).
+2. From MASTER_PLAN, identify the highest-priority incomplete milestone (memorial wall, then realms per docs/realms.md).
 3. Implement a substantial first slice of that milestone.
 4. Update docs/STATUS.md and append to docs/OVERSEER_LOG.md.
 5. Summarize what you did and the exact next cycle's target.

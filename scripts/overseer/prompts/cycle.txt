@@ -6,10 +6,11 @@ Continue as the Loose Cannon development overseer in this repository.
 3. Choose the single next incomplete milestone item from MASTER_PLAN (highest priority unfinished).
    Current expected order after 2026-07-10 refresh:
    - M3 memorial wall (if incomplete)
+   - M3.5 realms (docs/realms.md) — multi-world join via login/`?realm=` on Mode A + beta
    - M3 goon stats feel
    - M5 combat/AI or pathing around shells
    - M6 more missions / presentation polish
-   - M4 parties only when solo loop is solid
+   - M4 parties only when solo loop is solid (within a realm)
 4. If STATUS lists a critical player-facing bug (movement, crashes, unreadable UI), fix that first.
 
 ## Product context (do not regress)
@@ -17,6 +18,7 @@ Continue as the Loose Cannon development overseer in this repository.
 - Mode A: in-memory server only — NO Postgres, Redis, k8s, real auth.
 - Free outdoor roam is intentional (district rep is advisory; do not re-add soft-kicks that block walking).
 - The Titty Twister club, combat-scene graphics, longer kill toasts, mobile full-screen dialogue are live — preserve them.
+- Realms spec (docs/realms.md): no auth; realm string segregates full world state; default `public`; URL `?realm=`.
 
 ## Execute
 - Implement that milestone (or a coherent vertical slice if the full item is too large for one cycle).

@@ -157,7 +157,7 @@ Doctrine: Mode A only (no Postgres/Redis/k8s/real auth). Server-authoritative co
 
 Already live (do not regress): job board, mission instances, tutorial, heat/rep shops, combat-scene graphics, The Titty Twister club, longer kill toasts, mobile full-screen dialogue, free roam.
 
-Priority backlog: M3 memorial wall → goon stats feel → combat/pathing → more missions → M4 parties. Fix critical player-facing bugs before greenfield.
+Priority backlog: M3 memorial wall → M3.5 realms (docs/realms.md) → goon stats feel → combat/pathing → more missions → M4 parties. Fix critical player-facing bugs before greenfield.
 
 Each cycle: read STATUS + MASTER_PLAN → implement next incomplete milestone → verify (build/smoke) → update STATUS + OVERSEER_LOG → stop only if blocked on a human decision.
 ```
