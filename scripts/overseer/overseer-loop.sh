@@ -3,7 +3,8 @@
 #
 # Ctrl+C behavior:
 # - During idle sleep: stop immediately.
-# - During an active cycle: request stop after the cycle finishes (do not kill the run).
+# - During an active cycle (1st): request stop after the cycle finishes (do not kill the run).
+# - During an active cycle (2nd): force-kill the active grok process and exit.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -44,10 +45,33 @@ if ! command -v grok >/dev/null 2>&1; then
   exit 1
 fi
 
+force_stop_child() {
+  local pid="${CHILD_PID:-}"
+  [[ -z "$pid" ]] && return 0
+  # With setsid, pid is session/process-group leader — kill the group first.
+  kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  # Brief grace period, then hard kill.
+  local i
+  for i in 1 2 3 4 5; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+}
+
 on_int() {
   if [[ "$CYCLE_RUNNING" -eq 1 ]]; then
+    if [[ "$STOP_REQUESTED" -eq 1 ]]; then
+      echo ""
+      echo "Second Ctrl+C — force-stopping the active cycle..."
+      force_stop_child
+      exit 130
+    fi
     echo ""
     echo "Ctrl+C noted — finishing this cycle (not killing the active run). Loop will stop afterward."
+    echo "Press Ctrl+C again to force-stop now."
     STOP_REQUESTED=1
   else
     echo ""
@@ -68,6 +92,7 @@ echo "  MaxCycles:    $(if [[ $MAX_CYCLES -eq 0 ]]; then echo unlimited; else ec
 echo "  MaxTurns:     $MAX_TURNS"
 echo "  Ctrl+C idle:  stop immediately"
 echo "  Ctrl+C busy:  finish current cycle, then stop"
+echo "  Ctrl+C x2:    force-kill active cycle and exit"
 echo ""
 
 n=0

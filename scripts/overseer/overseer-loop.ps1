@@ -6,7 +6,8 @@
 .NOTES
   Ctrl+C behavior:
   - During idle sleep: stop immediately.
-  - During an active cycle: request stop after the cycle finishes (do not kill the run).
+  - During an active cycle (1st): request stop after the cycle finishes (do not kill the run).
+  - During an active cycle (2nd): force-kill the active grok process and exit.
 
 .EXAMPLE
   .\scripts\overseer\overseer-loop.ps1
@@ -105,6 +106,7 @@ Write-Host "  MaxCycles:    $(if ($MaxCycles -eq 0) { 'unlimited' } else { $MaxC
 Write-Host "  MaxTurns:     $MaxTurns"
 Write-Host "  Ctrl+C idle:  stop immediately"
 Write-Host "  Ctrl+C busy:  finish current cycle, then stop"
+Write-Host "  Ctrl+C x2:    force-kill active cycle and exit"
 Write-Host ""
 
 $n = 0

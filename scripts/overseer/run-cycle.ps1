@@ -97,10 +97,31 @@ $psi = @{
 
 $proc = Start-Process @psi
 
+function Stop-GrokProcessTree {
+  param([System.Diagnostics.Process]$Process)
+  if ($null -eq $Process -or $Process.HasExited) { return }
+  $procId = $Process.Id
+  try {
+    # Kill the whole tree so nested tool children do not linger.
+    $null = & taskkill.exe /PID $procId /T /F 2>&1
+  } catch {
+    # fall through
+  }
+  try {
+    if (-not $Process.HasExited) {
+      Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+    }
+  } catch {
+    # best-effort
+  }
+}
+
 # Poll so parent overseer-loop (with TreatControlCAsInput) can observe Ctrl+C
 # without killing this process. Standalone runs still get normal Ctrl+C behavior
 # from the OS when TreatControlCAsInput is off.
+# First Ctrl+C: graceful (finish cycle). Second: force-kill grok and exit.
 $notifiedStop = $false
+$forceStopped = $false
 while (-not $proc.HasExited) {
   try {
     while ([Console]::KeyAvailable) {
@@ -108,18 +129,41 @@ while (-not $proc.HasExited) {
       $isCtrlC =
         ($key.Key -eq [ConsoleKey]::C -and ($key.Modifiers -band [ConsoleModifiers]::Control)) -or
         ($key.KeyChar -eq [char]3)
-      if ($isCtrlC -and -not $notifiedStop) {
+      if (-not $isCtrlC) { continue }
+
+      if (-not $notifiedStop) {
         $notifiedStop = $true
         $global:OverseerStopRequested = $true
         Write-Host ""
         Write-Host "Ctrl+C noted — finishing this cycle (not killing the active run). Loop will stop afterward."
+        Write-Host "Press Ctrl+C again to force-stop now."
+      } else {
+        Write-Host ""
+        Write-Host "Second Ctrl+C — force-stopping the active cycle..."
+        $global:OverseerStopRequested = $true
+        $global:OverseerForceStop = $true
+        $forceStopped = $true
+        Stop-GrokProcessTree -Process $proc
+        $null = $proc.WaitForExit(5000)
+        break
       }
     }
   } catch {
     # Non-console host
   }
+  if ($forceStopped) { break }
   $null = $proc.WaitForExit(250)
 }
+
+if ($forceStopped) {
+  if (-not $proc.HasExited) {
+    Stop-GrokProcessTree -Process $proc
+    $null = $proc.WaitForExit(2000)
+  }
+  Write-Host "Force-stopped. Exit code: 130"
+  exit 130
+}
+
 $exit = $proc.ExitCode
 
 # Also tee a short preview

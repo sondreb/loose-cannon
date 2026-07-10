@@ -91,7 +91,8 @@ The loop:
 | When | Effect |
 |------|--------|
 | Idle sleep between cycles | Stops **immediately** |
-| Cycle currently running | Notes the request, **lets the cycle finish**, then exits (does not kill the active `grok` run) |
+| Cycle currently running (1st Ctrl+C) | Notes the request, **lets the cycle finish**, then exits (does not kill the active `grok` run) |
+| Cycle currently running (2nd Ctrl+C) | **Force-kills** the active `grok` process tree and exits immediately |
 
 Bash equivalent: `scripts/overseer/overseer-loop.sh` (Git Bash / WSL / Linux / macOS).
 
