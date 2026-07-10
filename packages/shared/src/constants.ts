@@ -1,16 +1,24 @@
 export const PROTOCOL_VERSION = 1;
-export const TICK_HZ = 20;
+/** Higher tick = snappier movement (still lightweight) */
+export const TICK_HZ = 30;
 export const TICK_MS = 1000 / TICK_HZ;
 
 export const TILE_W = 64;
 export const TILE_H = 32;
 
-export const MOVE_SPEED = 5.0; // tiles per second (free continuous movement)
+export const MOVE_SPEED = 5.5; // tiles per second
 export const INTERACT_RANGE = 2.2;
 export const CHAT_RANGE = 8;
 export const POSSE_DETECT_RANGE = 6;
 export const POSSE_AGGRO_RANGE = 4;
 export const FIGHT_CHANCE = 0.45;
+
+/**
+ * Safe / war zoning (world tiles).
+ * y < SAFE_Y_MAX = PvE downtown (recruit, shop, no murders).
+ * y >= SAFE_Y_MAX outdoor = PvP war zone (rival gangs).
+ */
+export const SAFE_Y_MAX = 38;
 
 /** Combat tuning — upgrades & weapons should clearly matter */
 export const COMBAT = {
@@ -26,7 +34,6 @@ export const COMBAT = {
   critBase: 0.04,
   critPerAim: 0.018,
   critMultiplier: 1.55,
-  /** AI shooters are less lethal so player upgrades feel good */
   aiHitPenalty: 0.12,
   aiDamageFactor: 0.78,
   playerHitBonus: 0.04,
@@ -38,5 +45,27 @@ export const MAX_CHAT_LEN = 160;
 export const DEFAULT_CASH = 3000;
 export const DEFAULT_HEALTH = 100;
 
-/** Seconds before a dead player leader comes back */
 export const RESPAWN_DELAY_SEC = 3;
+
+export function isSafeWorldPos(x: number, y: number, insideBuildingId: string | null): boolean {
+  // Interiors that are in the north / civic life are always safe
+  if (insideBuildingId) {
+    const safeInteriors = new Set([
+      "bar_rusty",
+      "shop_pawn",
+      "hospital",
+      "gym",
+      "safehouse",
+      "club_neon",
+      "church",
+      "shop_liquor",
+      "garage",
+    ]);
+    // Warehouse is in war narrative but still no PvP inside for simplicity
+    if (safeInteriors.has(insideBuildingId) || insideBuildingId === "warehouse" || insideBuildingId === "shop_gun") {
+      return true;
+    }
+    return true; // all interiors non-lethal for now
+  }
+  return y < SAFE_Y_MAX;
+}

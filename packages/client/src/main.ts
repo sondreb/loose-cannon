@@ -86,8 +86,10 @@ const keys = {
   left: false,
   right: false,
 };
+/** Throttle continuous steer packets only — first press is always immediate */
 let lastKeyMoveSent = 0;
 let keyMoving = false;
+const DIR_RESEND_MS = 50;
 
 function pushEvent(text: string): void {
   const d = document.createElement("div");
@@ -663,13 +665,36 @@ function updateActionBanner(s: WorldSnapshot): void {
   const detail = s.you.actionDetail;
   actionStatus.textContent = action;
   actionDetail.textContent = detail ?? "";
-  actionBanner.classList.remove("assault", "moving", "idle");
+  actionBanner.classList.remove("assault", "moving", "idle", "safe", "war");
   if (action === "ASSASSINATE" || action === "ENGAGING" || action === "ALERT") {
     actionBanner.classList.add("assault");
   } else if (action === "GOING" || action === "MOVING") {
     actionBanner.classList.add("moving");
   } else {
     actionBanner.classList.add("idle");
+  }
+  if (s.you.inSafeZone) actionBanner.classList.add("safe");
+  else actionBanner.classList.add("war");
+}
+
+function updateZoneObjective(s: WorldSnapshot): void {
+  if (s.you.insideBuildingId) {
+    const b = s.buildings.find((bb) => bb.id === s.you.insideBuildingId);
+    objective.textContent = b
+      ? `INSIDE: ${b.name.toUpperCase()} — E to exit near door`
+      : "INSIDE";
+    objective.classList.remove("zone-safe", "zone-war");
+    objective.classList.add("zone-safe");
+    return;
+  }
+  if (s.you.inSafeZone) {
+    objective.textContent = "SAFE DOWNTOWN (PvE) — recruit · shop · no murders";
+    objective.classList.remove("zone-war");
+    objective.classList.add("zone-safe");
+  } else {
+    objective.textContent = "WAR ZONE (PvP) — rival gangs · RMB attack · survive";
+    objective.classList.remove("zone-safe");
+    objective.classList.add("zone-war");
   }
 }
 
@@ -680,17 +705,79 @@ function onSnapshot(s: WorldSnapshot): void {
   renderDialogue();
   renderShop();
   updateActionBanner(s);
+  updateZoneObjective(s);
   if (s.you.respawnIn != null && s.you.respawnIn > 0) {
     respawnOverlay.classList.remove("hidden");
     respawnCount.textContent = Math.ceil(s.you.respawnIn).toString();
   } else {
     respawnOverlay.classList.add("hidden");
   }
-  if (s.you.insideBuildingId) {
-    const b = s.buildings.find((bb) => bb.id === s.you.insideBuildingId);
-    objective.textContent = b ? `INSIDE: ${b.name.toUpperCase()} — E to exit near door` : "INSIDE";
-  } else {
-    objective.textContent = "SKIDROW — LMB move · RMB attack (chase) · E interact";
+}
+
+/** Screen WASD/arrows → world-space free movement vector (isometric camera). */
+function worldDirFromKeys(): { wx: number; wy: number } {
+  let wx = 0;
+  let wy = 0;
+  if (keys.up) {
+    wx -= 1;
+    wy -= 1;
+  }
+  if (keys.down) {
+    wx += 1;
+    wy += 1;
+  }
+  if (keys.left) {
+    wx -= 1;
+    wy += 1;
+  }
+  if (keys.right) {
+    wx += 1;
+    wy -= 1;
+  }
+  return { wx, wy };
+}
+
+function canKeyboardMove(): boolean {
+  if (!snap || !socket || chatFocused) return false;
+  if (snap.dialogue || snap.shop) return false;
+  if (snap.you.respawnIn != null && snap.you.respawnIn > 0) return false;
+  return true;
+}
+
+/** Instant local prediction + optional network send (immediate on press). */
+function applyKeyboardSteer(forceSend: boolean): void {
+  if (!view) return;
+  if (!canKeyboardMove()) {
+    if (keyMoving) {
+      view.clearLocalPrediction();
+      socket?.send({ type: "intent.dir", dx: 0, dy: 0 });
+      keyMoving = false;
+    }
+    return;
+  }
+
+  const { wx, wy } = worldDirFromKeys();
+  if (wx === 0 && wy === 0) {
+    view.clearLocalPrediction();
+    if (keyMoving) {
+      socket.send({ type: "intent.dir", dx: 0, dy: 0 });
+      keyMoving = false;
+      lastKeyMoveSent = performance.now();
+    }
+    return;
+  }
+
+  const len = Math.hypot(wx, wy) || 1;
+  const dx = wx / len;
+  const dy = wy / len;
+  // Local prediction every frame — zero perceived input lag
+  view.setLocalPrediction(dx, dy);
+
+  const now = performance.now();
+  if (forceSend || !keyMoving || now - lastKeyMoveSent >= DIR_RESEND_MS) {
+    lastKeyMoveSent = now;
+    keyMoving = true;
+    socket.send({ type: "intent.dir", dx, dy });
   }
 }
 
@@ -724,71 +811,13 @@ function setKeyFromCode(code: string, down: boolean): boolean {
  * - Screen down => increase x and y
  * - Screen left => decrease x, increase y
  * - Screen right => increase x, decrease y
+ *
+ * Prediction runs every frame; network intents are immediate on press
+ * and re-sent at DIR_RESEND_MS while held.
  */
 function keyboardMoveLoop(): void {
   requestAnimationFrame(keyboardMoveLoop);
-  if (!snap || !socket || chatFocused) {
-    if (keyMoving) {
-      socket?.send({ type: "intent.dir", dx: 0, dy: 0 });
-      keyMoving = false;
-    }
-    return;
-  }
-  if (snap.dialogue || snap.shop) {
-    if (keyMoving) {
-      socket.send({ type: "intent.dir", dx: 0, dy: 0 });
-      keyMoving = false;
-    }
-    return;
-  }
-  if (snap.you.respawnIn != null && snap.you.respawnIn > 0) {
-    if (keyMoving) {
-      socket.send({ type: "intent.dir", dx: 0, dy: 0 });
-      keyMoving = false;
-    }
-    return;
-  }
-
-  // Screen-space input → world-space free movement
-  let wx = 0;
-  let wy = 0;
-  if (keys.up) {
-    wx -= 1;
-    wy -= 1;
-  }
-  if (keys.down) {
-    wx += 1;
-    wy += 1;
-  }
-  if (keys.left) {
-    wx -= 1;
-    wy += 1;
-  }
-  if (keys.right) {
-    wx += 1;
-    wy -= 1;
-  }
-
-  const now = performance.now();
-  if (wx === 0 && wy === 0) {
-    if (keyMoving) {
-      socket.send({ type: "intent.dir", dx: 0, dy: 0 });
-      keyMoving = false;
-      lastKeyMoveSent = now;
-    }
-    return;
-  }
-
-  if (now - lastKeyMoveSent < 33) return; // ~30 Hz continuous steer
-  lastKeyMoveSent = now;
-  keyMoving = true;
-
-  const len = Math.hypot(wx, wy) || 1;
-  socket.send({
-    type: "intent.dir",
-    dx: wx / len,
-    dy: wy / len,
-  });
+  applyKeyboardSteer(false);
 }
 
 async function startGame(): Promise<void> {
@@ -836,7 +865,14 @@ function bindInput(): void {
           return;
         }
       }
+      // Click-to-move: predict instantly, then authorise on server
+      keys.up = keys.down = keys.left = keys.right = false;
+      if (keyMoving) {
+        keyMoving = false;
+        socket.send({ type: "intent.dir", dx: 0, dy: 0 });
+      }
       const w = view.screenToWorld(e.clientX, e.clientY);
+      view.predictClickMove(w.x, w.y);
       socket.send({ type: "intent.move", x: w.x, y: w.y });
     } else if (e.button === 2) {
       // RMB: attack-move — pick enemy with generous radius, or fire at ground point
@@ -869,6 +905,8 @@ function bindInput(): void {
     }
     if (setKeyFromCode(e.code, true)) {
       e.preventDefault();
+      // First frame of press: send + predict immediately (no 33ms wait)
+      applyKeyboardSteer(true);
       return;
     }
     if (e.key === "Enter") {
@@ -880,6 +918,7 @@ function bindInput(): void {
       // Stop keyboard walk so interact doesn't keep sliding
       keys.up = keys.down = keys.left = keys.right = false;
       keyMoving = false;
+      view.clearLocalPrediction();
       socket.send({ type: "intent.dir", dx: 0, dy: 0 });
       socket.send({ type: "intent.stop" });
       socket.send({ type: "intent.interact" });
@@ -921,11 +960,19 @@ function bindInput(): void {
   });
 
   window.addEventListener("keyup", (e) => {
-    if (setKeyFromCode(e.code, false)) e.preventDefault();
+    if (setKeyFromCode(e.code, false)) {
+      e.preventDefault();
+      applyKeyboardSteer(true);
+    }
   });
 
   window.addEventListener("blur", () => {
     keys.up = keys.down = keys.left = keys.right = false;
+    if (keyMoving) {
+      keyMoving = false;
+      view?.clearLocalPrediction();
+      socket?.send({ type: "intent.dir", dx: 0, dy: 0 });
+    }
   });
 
   requestAnimationFrame(keyboardMoveLoop);

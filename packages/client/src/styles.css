@@ -11,7 +11,7 @@
   --accent: #ffcc33;
   --danger: #ff5a4a;
   --ok: #34c759;
-  --blur: 24px;
+  --blur: 12px;
   --scroll-size: 5px;
   --scroll-track: transparent;
   --scroll-thumb: rgba(255, 255, 255, 0.14);
@@ -1069,10 +1069,9 @@ body {
   position: absolute;
   left: 300px;
   top: 12px;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.55);
+  /* blur is expensive — solid glass is enough for HUD */
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 100px;
   color: var(--accent);
   padding: 0.35rem 0.85rem;
@@ -1080,10 +1079,22 @@ body {
   font-weight: 650;
   letter-spacing: 0.04em;
   z-index: 5;
-  max-width: min(360px, 30vw);
+  max-width: min(420px, 36vw);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+#objective.zone-safe {
+  color: #6fd090;
+  border-color: rgba(80, 200, 120, 0.45);
+  background: rgba(10, 28, 18, 0.72);
+}
+
+#objective.zone-war {
+  color: #ff8068;
+  border-color: rgba(255, 80, 60, 0.5);
+  background: rgba(36, 10, 10, 0.72);
 }
 
 /* Syndicate-style order strip + glass */
@@ -1096,9 +1107,7 @@ body {
   display: flex;
   align-items: baseline;
   gap: 0.65rem;
-  background: rgba(12, 10, 8, 0.55);
-  backdrop-filter: blur(16px) saturate(150%);
-  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  background: rgba(12, 10, 8, 0.7);
   border: 1px solid rgba(240, 160, 48, 0.45);
   box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.35),
@@ -1108,6 +1117,14 @@ body {
   min-width: 200px;
   justify-content: center;
   pointer-events: none;
+}
+
+#actionBanner.safe {
+  border-color: rgba(80, 200, 120, 0.4);
+}
+
+#actionBanner.war {
+  border-color: rgba(255, 90, 70, 0.55);
 }
 
 #actionStatus {

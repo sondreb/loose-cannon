@@ -7,9 +7,11 @@ Last updated: 2026-07-10
 | Area | Status | Notes |
 |------|--------|-------|
 | Local WS server + Vite client | Done | `npm run dev` |
-| Isometric map, free WASD + click move | Done | Screen-aligned WASD |
+| Isometric map, free WASD + click move | Done | Instant prediction + intent |
+| PvE safe downtown / PvP war zone | Done | y&lt;38 safe; no murders north |
+| Client prediction + 60 FPS path | Done | Viewport map cull, res cap |
 | Multi-story isometric buildings | Done | Walls, windows, roofs, doors |
-| Character interpolation + walk bob | Done | Client-side smoothing |
+| Character interpolation + walk bob | Done | Prediction for local posse |
 | Buildings enter/exit, many POIs | Done | Exit priority fixed |
 | Dialogue, hire, recruit street NPCs | Done | Recruits convert NPC |
 | Posse UI, portraits, upgrade tiers | Done | Glass panel styling |

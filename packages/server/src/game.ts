@@ -6,6 +6,7 @@ import {
   DEFAULT_HEALTH,
   FIGHT_CHANCE,
   INTERACT_RANGE,
+  isSafeWorldPos,
   MAX_ACTIVE_GOONS,
   MAX_CHAT_LEN,
   MOVE_SPEED,
@@ -13,6 +14,7 @@ import {
   POSSE_DETECT_RANGE,
   PROTOCOL_VERSION,
   RESPAWN_DELAY_SEC,
+  SAFE_Y_MAX,
   SHOP_ARMOR_ORDER,
   SHOP_UPGRADE_ORDER,
   SHOP_WEAPON_ORDER,
@@ -148,7 +150,7 @@ export class GameWorld {
   chat: ChatLine[] = [];
   chatSeq = 0;
   private uid = 0;
-  mapRevision = 4;
+  mapRevision = 6;
   /** Prop interaction cooldowns: propId -> tick available */
   propReadyAt = new Map<string, number>();
 
@@ -667,8 +669,20 @@ export class GameWorld {
     }
   }
 
+  private unitInSafeZone(u: Unit): boolean {
+    const p = this.posses.get(u.posseId);
+    const inside = p?.insideBuildingId ?? u.buildingId;
+    return isSafeWorldPos(u.x, u.y, inside);
+  }
+
   /** Issue attack-move on a hostile (or any non-ally) unit — chase until in range then fire. */
-  private cmdAttackMove(posse: Posse, target: Unit): void {
+  private cmdAttackMove(posse: Posse, target: Unit): boolean {
+    const leader = this.leader(posse);
+    if (!leader) return false;
+    // Safe downtown: no murders
+    if (this.unitInSafeZone(leader) || this.unitInSafeZone(target)) {
+      return false;
+    }
     posse.attackTargetId = target.id;
     posse.moveLabel = null;
     posse.hostile = true;
@@ -689,6 +703,7 @@ export class GameWorld {
       u.ty = target.y + Math.sin(ang) * spread;
       i++;
     }
+    return true;
   }
 
   private tryMoveUnit(u: Unit, nx: number, ny: number, bid: string | null): boolean {
@@ -750,8 +765,13 @@ export class GameWorld {
     if (!target || !target.alive) return;
     if (target.posseId === posse.id) return;
 
+    if (this.unitInSafeZone(shooter) || this.unitInSafeZone(target)) {
+      this.log(session, "SAFE ZONE — holster it. Take the fight south of the tracks.");
+      return;
+    }
+
     // Always commit attack-move: chase if needed, fire when in range
-    this.cmdAttackMove(posse, target);
+    if (!this.cmdAttackMove(posse, target)) return;
     const w = WEAPONS[shooter.weapon];
     const d = dist(shooter.x, shooter.y, target.x, target.y);
     if (d <= w.range + 0.35) {
@@ -763,6 +783,8 @@ export class GameWorld {
 
   private resolveShot(shooter: Unit, target: Unit, session?: CharacterSession): void {
     if (shooter.fireCd > 0 || !shooter.alive || !target.alive) return;
+    // No lethal combat in safe downtown
+    if (this.unitInSafeZone(shooter) || this.unitInSafeZone(target)) return;
     const w = WEAPONS[shooter.weapon];
     const d = dist(shooter.x, shooter.y, target.x, target.y);
     if (d > w.range + 0.55) return;
@@ -1102,7 +1124,7 @@ export class GameWorld {
     for (const id of dead) this.removeMember(posse, id, true);
   }
 
-  /** Pick an outdoor spawn with few nearby player leaders */
+  /** Pick an outdoor spawn with few nearby player leaders — prefer safe downtown */
   private pickQuietRespawn(excludePosseId: string): { x: number; y: number } {
     const points =
       this.map.respawnPoints.length > 0
@@ -1125,8 +1147,9 @@ export class GameWorld {
         if (d < 12) nearby += 1;
         if (d < 6) nearby += 2;
       }
-      // Prefer empty neighborhoods; slight random noise
-      const score = nearby * 100 - minD + Math.random() * 3;
+      // Prefer empty neighborhoods + safe downtown (PvE); slight random noise
+      const warPenalty = pt.y >= SAFE_Y_MAX ? 40 : 0;
+      const score = nearby * 100 - minD + warPenalty + Math.random() * 3;
       return { pt, score, nearby };
     });
 
@@ -1948,14 +1971,21 @@ export class GameWorld {
       const leader = this.leader(posse);
       if (!leader || !leader.alive) continue;
 
-      // Find nearest player posse
+      // AI only fights in the war zone — never aggro in safe downtown
+      if (this.unitInSafeZone(leader)) {
+        posse.hostile = false;
+        continue;
+      }
+
+      // Find nearest player posse (must also be outside safe zone)
       let nearestPlayer: Posse | null = null;
       let nearestD = Infinity;
       for (const p of this.posses.values()) {
         if (!p.isPlayer) continue;
-        if (p.insideBuildingId) continue; // don't aggro into buildings for simplicity
+        if (p.insideBuildingId) continue;
         const pl = this.leader(p);
         if (!pl || !pl.alive) continue;
+        if (this.unitInSafeZone(pl)) continue;
         const d = dist(leader.x, leader.y, pl.x, pl.y);
         if (d < nearestD) {
           nearestD = d;
@@ -2187,7 +2217,13 @@ export class GameWorld {
         })(),
         ...(() => {
           const a = this.computeAction(posse);
-          return { action: a.action, actionDetail: a.actionDetail };
+          const lead = this.leader(posse);
+          const safe = lead ? this.unitInSafeZone(lead) : true;
+          return {
+            action: a.action,
+            actionDetail: a.actionDetail,
+            inSafeZone: safe,
+          };
         })(),
       },
       units,
