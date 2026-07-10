@@ -1,3 +1,4 @@
+import type { DayPhase } from "./lighting.js";
 import type { ArmorId, UpgradeId, WeaponId } from "./weapons.js";
 
 export type TileType =
@@ -243,8 +244,11 @@ export interface MissionRuntime {
 
 /** Visual combat event for one tick (muzzle, tracer, hit, etc.) */
 export interface CombatFxEvent {
-  /** shot = firearm, melee = close weapon, flame = flamethrower stream */
-  kind: "shot" | "melee" | "flame" | "hit" | "miss" | "death";
+  /**
+   * shot / melee / flame = attack start;
+   * hit / miss / blocked / death = outcome (blocked = wall/cover LoS).
+   */
+  kind: "shot" | "melee" | "flame" | "hit" | "miss" | "blocked" | "death";
   x0: number;
   y0: number;
   x1: number;
@@ -257,6 +261,11 @@ export interface CombatFxEvent {
 
 export interface WorldSnapshot {
   tick: number;
+  /**
+   * Outdoor day/night phase from server tick (see shared lighting.ts).
+   * Client paints sky/overlay/neon; interiors still get district/club tint.
+   */
+  dayPhase: DayPhase;
   you: {
     characterId: string;
     posseId: string;

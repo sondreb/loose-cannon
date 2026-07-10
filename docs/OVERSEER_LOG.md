@@ -19,6 +19,32 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-10 — cycle 13 (M6 day/night + district lighting)
+- Focus: Lightweight day/night cycle + per-district atmospheric tint
+- Done:
+  - Shared: `lighting.ts` — `dayPhaseFromTick` (~6 min cycle, longer night), `lightingLook` palettes (phase × district/interior)
+  - Protocol: snapshot `dayPhase`
+  - Server: emits phase from tick in `buildSnapshot`
+  - Client world: sky background, screen wash + vignette, ground brightness, neon windows/signs, rain density, unit/prop tint; club/bar indoor warmth
+  - District flavor: neon_edge magenta, docks teal, war_deep bloody, downtown warm
+  - HUD: DAWN/DAY/DUSK/NIGHT badge on cash/rep row
+  - Smoke: asserts valid `dayPhase`
+- Verify: `npm run build` OK; `npm run smoke` → SMOKE_OK (dayPhase dawn)
+- Next: **M6 presentation** — directional goons / walk bob, or HUD/mobile readability / touch polish
+- Blocked: none
+
+### 2026-07-10 — cycle 12 (M6 missions verified + M5 cover/LoS)
+- Focus: Confirm M6 job pack already in code; ship true wall LoS + soft cover
+- Done:
+  - **M6 missions** (already live, docs were stale): `still_not_guns`, `parking_tax`, `chop_shop_raid`, `rail_rats` — map props/AI/garage wired; smoke covers still_not_guns + chop extract
+  - Shared: `los.ts` (`castLineOfSight`, `hasAdjacentCover`); `COMBAT.coverHitPenalty`; protocol FX kind `blocked`
+  - Server: wall/void blocks shots; soft cover −10% hit; AI prefers LoS targets; combat log on brick
+  - Client: BLOCKED tracer/sparks/float; miss SFX on blocked
+  - Guts tooltips mention cover + full LoS
+- Verify: `npm run build` OK; LoS unit check `LOS_UNIT_OK`; `npm run smoke` → SMOKE_OK (one flaky chop wipe re-ran clean)
+- Next: **M6 presentation polish** (day/night tint, directional goons, HUD/mobile) or M5 ammo/balance note
+- Blocked: none
+
 ### 2026-07-10 — cycle 11 (M5 enemy AI roles + weapon feel)
 - Focus: Shooter / rusher / coward AI + range ring + hit/miss readability
 - Done:

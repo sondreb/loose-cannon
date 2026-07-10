@@ -1,6 +1,6 @@
 # Loose Cannon — Master Plan (Overseer Roadmap)
 
-Last updated: 2026-07-10 (M5 combat AI roles + weapon feel)
+Last updated: 2026-07-10 (M6 day/night + district lighting)
 
 Track completion in `docs/STATUS.md`. This file is the **ordered backlog** for autonomous development. Prefer finishing higher milestones before lower ones unless a dependency forces otherwise.
 
@@ -69,7 +69,7 @@ Full design: [realms.md](./realms.md). Friend groups on one beta/in-memory serve
 ### M5 — Combat & AI depth
 
 - [x] Range readability (selected-unit weapon range ring; war/combat)
-- [ ] Cover / true line-of-sight blocking (optional next)
+- [x] Cover / true line-of-sight blocking (walls block; soft cover wall-hug)
 - [x] Enemy AI roles (shooter, rusher, coward/flee)
 - [x] Weapon feel pass (hit feedback, miss whiz; audio already per-weapon)
 - [ ] Ammo clarity / balance pass; note numbers in STATUS
@@ -82,15 +82,16 @@ Full design: [realms.md](./realms.md). Friend groups on one beta/in-memory serve
 - [x] Free outdoor roam (no district soft-kick)
 - [x] Mobile full-screen dialogue/modals + larger portraits
 - [x] Longer kill / wipe / loot notify toasts
-- [ ] More mission templates (2–4 new outdoor or instance jobs)
-- [ ] Day/night or district lighting tint (lightweight)
+- [x] More mission templates (2–4 new outdoor or instance jobs)
+- [x] Day/night or district lighting tint (lightweight)
 - [ ] Directional goon sprites / walk bob polish
 - [ ] Mobile touch polish (move + fire + interact reliability)
 - [ ] HUD / event-log readability pass (mobile + desktop)
 
 ### M7 — Content density (after M3 memorial)
 
-- [ ] Second instanced mission (different template building)
+- [x] Second instanced mission (garage / Chop Shop Sweep — shipped with M6 pack)
+- [ ] Third+ instanced mission (new building template)
 - [ ] More street hustles / POI interactions
 - [ ] Rival gang variety (names, gear, aggression)
 - [ ] Optional music bed (procedural or loop files) — keep volume low
@@ -118,8 +119,8 @@ Each overseer cycle implements **one** primary milestone item (or a tightly rela
 
 ### Priority order for long unattended loops
 
-1. **M6 more missions** / presentation polish
-2. **M5 remainder** (cover/LoS, balance note) if combat still feels flat
+1. **M6 presentation polish** (directional sprites, HUD/mobile, touch)
+2. **M5 remainder** (ammo/balance note) if combat still feels muddy
 3. **M4 parties** only when solo loop is solid (parties live inside a realm)
 4. Never M8 / Mode B unless human asks
 

@@ -49,6 +49,8 @@ export const COMBAT = {
   aiHitPenalty: 0.12,
   aiDamageFactor: 0.78,
   playerHitBonus: 0.04,
+  /** Soft cover: target hugging a wall takes this hit-chance penalty (additive) */
+  coverHitPenalty: 0.1,
 } as const;
 
 export const MAX_ACTIVE_GOONS = 4;

@@ -49,6 +49,10 @@ if (!Array.isArray(last.memorials)) fail("expected memorials array");
 if (last.memorials.length !== 0) fail("expected empty memorial wall at start");
 const lockedDeep = last.districts.find((d) => d.id === "war_deep");
 if (!lockedDeep || lockedDeep.unlocked) fail("war_deep should start locked at rep 0");
+const phases = new Set(["dawn", "day", "dusk", "night"]);
+if (!phases.has(last.dayPhase)) {
+  fail(`expected dayPhase dawn|day|dusk|night, got ${last.dayPhase}`);
+}
 console.log(
   "tutorial start",
   last.tutorial?.step,
@@ -56,6 +60,8 @@ console.log(
   last.districts.length,
   "realm",
   last.you.realmId,
+  "dayPhase",
+  last.dayPhase,
 );
 
 /** @returns {Promise<object|undefined>} */

@@ -164,7 +164,8 @@ export function statEffectLines(
         lines: [
           `−${Math.round(dodge * 100)}% enemy hit chance (dodge)`,
           `−${Math.round(tough * 100)}% damage taken (toughness)`,
-          "Survivors hold the line",
+          `Soft cover (wall hug): −${Math.round(COMBAT.coverHitPenalty * 100)}% enemy hit`,
+          "Walls fully block LoS shots",
         ],
       };
     }

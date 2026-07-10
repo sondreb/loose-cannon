@@ -1,7 +1,9 @@
 import {
   aiRoleLabel,
+  dayPhaseFromTick,
   INTERACT_RANGE,
   isSafeWorldPos,
+  lightingLook,
   moveSpeedTilesPerSec,
   SAFE_Y_MAX,
   TILE_H,
@@ -9,6 +11,8 @@ import {
   WEAPONS,
   type BuildingPublic,
   type CombatFxEvent,
+  type DayPhase,
+  type LightingLook,
   type PropPublic,
   type UnitPublic,
   type WeaponId,
@@ -107,6 +111,22 @@ function lerpColor(a: number, b: number, t: number): number {
   return (r << 16) | (g << 8) | bl;
 }
 
+/** Multiply two RGB colors (0xffffff = identity). */
+function mulTint(a: number, b: number): number {
+  if (b === 0xffffff) return a;
+  if (a === 0xffffff) return b;
+  const ar = (a >> 16) & 0xff,
+    ag = (a >> 8) & 0xff,
+    ab = a & 0xff;
+  const br = (b >> 16) & 0xff,
+    bg = (b >> 8) & 0xff,
+    bb = b & 0xff;
+  const r = Math.round((ar * br) / 255);
+  const g = Math.round((ag * bg) / 255);
+  const bl = Math.round((ab * bb) / 255);
+  return (r << 16) | (g << 8) | bl;
+}
+
 /** War-zone darkness increases south of the safe line */
 function warFactor(y: number): number {
   if (y < SAFE_Y_MAX) return 0;
@@ -161,6 +181,8 @@ export class WorldView {
   private rainGfx = new Graphics();
   private labels = new Container();
   private overlayLayer = new Container();
+  /** Screen-space day/night + district wash (not under camera zoom) */
+  private atmosphereGfx = new Graphics();
   /** Pixel-art unit chips (combat-scene style) */
   private unitSpriteLayer = new Container();
   private unitSprites = new Map<string, Sprite>();
@@ -199,6 +221,10 @@ export class WorldView {
   private outdoorZoomTarget = 1;
   private wasInside = false;
   private interiorZoomLocked = false;
+  /** Cached lighting for this frame / map redraw */
+  private look: LightingLook = lightingLook("night", "downtown", false);
+  private lastDayPhase: DayPhase | null = null;
+  private lastLightKey = "";
 
   constructor(private canvas: HTMLCanvasElement) {
     this.app = new Application();
@@ -208,7 +234,7 @@ export class WorldView {
     await this.app.init({
       canvas: this.canvas,
       resizeTo: window,
-      // Combat-scene night purple
+      // Combat-scene night purple (modulated by day/night each frame)
       background: 0x0e0c18,
       antialias: false,
       resolution: Math.min(window.devicePixelRatio || 1, 1),
@@ -218,7 +244,7 @@ export class WorldView {
     });
     // Load painted goons / props (non-blocking if fail → procedural fallback)
     await loadGameSprites().catch(() => undefined);
-    this.app.stage.addChild(this.root);
+    this.app.stage.addChild(this.root, this.atmosphereGfx);
     this.root.addChild(
       this.mapLayer,
       this.buildingLayer,
@@ -248,6 +274,7 @@ export class WorldView {
       this.interpolateLocals(dt);
       this.interpolateRemotes(dt);
       this.updateCamera(dt);
+      if (this.lastSnap) this.refreshLighting(this.lastSnap);
       if (this.mapRedrawPending && this.lastSnap) {
         this.drawMapViewport(this.lastSnap);
         this.mapRedrawPending = false;
@@ -256,8 +283,59 @@ export class WorldView {
         this.drawEntities(this.lastSnap);
         this.drawHoverOverlay(this.lastSnap);
         this.drawWeather(this.lastSnap);
+        this.drawAtmosphere();
       }
     });
+  }
+
+  /** Current day/night + district look (for HUD). */
+  getLighting(): LightingLook {
+    return this.look;
+  }
+
+  private refreshLighting(snap: WorldSnapshot): void {
+    const phase = snap.dayPhase ?? dayPhaseFromTick(snap.tick);
+    const indoor = !!snap.you.insideBuildingId;
+    const place = indoor
+      ? (snap.you.insideBuildingId ?? snap.you.districtId)
+      : snap.you.districtId;
+    const key = `${phase}|${place}|${indoor ? 1 : 0}`;
+    if (key !== this.lastLightKey) {
+      this.lastLightKey = key;
+      this.look = lightingLook(phase, place, indoor);
+      if (this.lastDayPhase !== phase) {
+        this.lastDayPhase = phase;
+        // Phase shift changes ground palette — rebuild viewport when outdoors
+        if (!indoor) this.mapRedrawPending = true;
+      }
+      // District / indoor changes also need horizon/neon refresh
+      this.mapRedrawPending = true;
+    }
+    // Sky follows phase even between full rebuilds
+    try {
+      this.app.renderer.background.color = this.look.sky;
+    } catch {
+      /* older pixi path */
+    }
+  }
+
+  /** Full-screen color wash (screen space, above world). */
+  private drawAtmosphere(): void {
+    const g = this.atmosphereGfx;
+    g.clear();
+    const w = this.app.renderer.width;
+    const h = this.app.renderer.height;
+    const { overlay, overlayAlpha } = this.look;
+    if (overlayAlpha <= 0.01) return;
+    // Soft multiply-style wash: two passes (tint + slight vignette)
+    g.rect(0, 0, w, h);
+    g.fill({ color: overlay, alpha: overlayAlpha * 0.55 });
+    // Corner vignette reads as city night depth without killing readability
+    const vig = Math.min(0.22, overlayAlpha * 0.9);
+    g.rect(0, 0, w, h * 0.12);
+    g.fill({ color: 0x000010, alpha: vig * 0.45 });
+    g.rect(0, h * 0.88, w, h * 0.12);
+    g.fill({ color: 0x000010, alpha: vig * 0.55 });
   }
 
   getSnapshot(): WorldSnapshot | null {
@@ -608,6 +686,49 @@ export class WorldView {
         life: 0.55,
         max: 0.55,
         text: "miss",
+        crit: false,
+      });
+    }
+
+    if (e.kind === "blocked") {
+      // Bullet dies on brick — orange sparks + BLOCKED float
+      this.fx.push({
+        kind: "tracer",
+        x0: e.x0 + Math.cos(ang) * 0.35,
+        y0: e.y0 + Math.sin(ang) * 0.35,
+        x1: e.x1,
+        y1: e.y1,
+        life: 0.12,
+        max: 0.12,
+        color: 0xc8a060,
+        wide: false,
+      });
+      for (let i = 0; i < 10; i++) {
+        this.fx.push({
+          kind: "spark",
+          x: e.x1,
+          y: e.y1,
+          life: 0.28 + Math.random() * 0.15,
+          max: 0.42,
+          vx: (Math.random() - 0.5) * 6.5,
+          vy: (Math.random() - 0.5) * 6.5,
+        });
+      }
+      this.fx.push({
+        kind: "impact",
+        x: e.x1,
+        y: e.y1,
+        life: 0.22,
+        max: 0.22,
+        crit: false,
+      });
+      this.fx.push({
+        kind: "dmgText",
+        x: e.x1,
+        y: e.y1,
+        life: 0.65,
+        max: 0.65,
+        text: "BLOCKED",
         crit: false,
       });
     }
@@ -997,10 +1118,10 @@ export class WorldView {
       return;
     }
 
-    // ——— Outdoor city: combat-scene rainy neon night ———
+    // ——— Outdoor city: combat-scene ground + day/night horizon ———
     const wf = warFactor(this.followY);
-    // Deep indigo night → bloodier purple-black in war zone
-    const base = lerpColor(0x100e1c, 0x160a12, wf);
+    // Phase horizon → bloodier purple-black in war zone
+    const base = lerpColor(this.look.horizon, 0x160a12, wf * 0.85);
     g.rect(camSx - halfW, camSy - halfH, halfW * 2, halfH * 2);
     g.fill({ color: base });
 
@@ -1058,8 +1179,9 @@ export class WorldView {
     const hw = TILE_W / 2;
     const war = indoor ? 0 : warFactor(y + 0.5);
     const seed = (x * 17 + y * 31) >>> 0;
+    const bright = indoor ? 1 : this.look.groundBright;
 
-    // Combat-scene wet-night palette (cool asphalt, purple sidewalks)
+    // Combat-scene wet-night palette (cool asphalt, purple sidewalks) + day brighten
     let color = 0x2a2840;
     if (type === "road") {
       // Slight tonal variation so asphalt reads as textured, not flat purple grid
@@ -1086,6 +1208,7 @@ export class WorldView {
       const tones = [0x1a1e2a, 0x181c28, 0x1c202e, 0x161a26, 0x1e222e];
       color = lerpColor(tones[seed % tones.length]!, 0x1a1014, war);
     }
+    if (!indoor && bright !== 1) color = shade(color, bright);
 
     // Main diamond (slight inset stroke later for cartoon edge)
     g.poly([sx, sy, sx + hw, sy + TILE_H / 2, sx, sy + TILE_H, sx - hw, sy + TILE_H / 2]);
@@ -1273,9 +1396,12 @@ export class WorldView {
     const w = this.app.renderer.width / this.zoom;
     const h = this.app.renderer.height / this.zoom;
     const t = this.time;
+    const rainScale = Math.max(0.05, this.look.rain);
+    const neonScale = Math.max(0.15, this.look.neon);
 
     // Diagonal rain streaks (stable pseudo-random field) — keep light for FPS
-    const count = 55;
+    // Day: sparse drizzle; night/dusk: full wet neon look
+    const count = Math.max(8, Math.round(55 * rainScale));
     for (let i = 0; i < count; i++) {
       const h1 = ((i * 1103515245 + 12345) >>> 0) / 0xffffffff;
       const h2 = ((i * 1664525 + 1013904223) >>> 0) / 0xffffffff;
@@ -1285,16 +1411,21 @@ export class WorldView {
       const len = 12 + (i % 6) * 3;
       g.moveTo(px, py);
       g.lineTo(px + 4, py + len);
-      g.stroke({ color: 0xd0e0ff, width: 1.1, alpha: 0.1 + (i % 4) * 0.035 });
+      g.stroke({
+        color: 0xd0e0ff,
+        width: 1.1,
+        alpha: (0.1 + (i % 4) * 0.035) * rainScale,
+      });
     }
 
-    // Ground wet glints + neon bounce near camera
-    for (let i = 0; i < 18; i++) {
+    // Ground wet glints + neon bounce near camera (stronger at night / neon_edge)
+    const glints = Math.max(4, Math.round(18 * neonScale));
+    for (let i = 0; i < glints; i++) {
       const h1 = ((i * 2654435761) >>> 0) / 0xffffffff;
       const h2 = ((i * 2246822519) >>> 0) / 0xffffffff;
       const gx = camSx + (h1 - 0.5) * w * 0.75;
       const gy = camSy + (h2 - 0.5) * h * 0.55 + 18;
-      const pulse = 0.035 + Math.sin(t * 2.8 + i) * 0.02;
+      const pulse = (0.035 + Math.sin(t * 2.8 + i) * 0.02) * neonScale;
       g.ellipse(gx, gy, 12 + (i % 5), 3.5);
       g.fill({ color: i % 2 === 0 ? 0xff50c8 : 0x50e8ff, alpha: pulse });
     }
@@ -1609,6 +1740,7 @@ export class WorldView {
     g.stroke({ color: 0x0a0812, width: 1.2, alpha: 0.45 });
 
     const neonPalette = [0xff40aa, 0x40e0ff, 0x60ff90, 0xffc040, 0xc060ff];
+    const neonMul = Math.max(0.12, this.look.neon);
     for (let f = 0; f < stories; f++) {
       const fy = 1 - (f + 0.55) / stories;
       for (let i = 1; i <= 3; i++) {
@@ -1616,7 +1748,10 @@ export class WorldView {
         const bx = c00.sx + (c10.sx - c00.sx) * t;
         const by = c00.sy + (c10.sy - c00.sy) * t;
         const broken = war > 0.25 && (b.id.charCodeAt(0) + f + i) % 3 === 0;
-        const lit = !broken && (b.id.charCodeAt(0) + f + i) % 2 === 0;
+        // Day: fewer lit windows; night/neon districts almost all glow
+        const litChance = neonMul > 0.7 ? 2 : neonMul > 0.4 ? 3 : 5;
+        const lit =
+          !broken && (b.id.charCodeAt(0) + f + i) % litChance === 0;
         const winNeon = neonPalette[(b.id.charCodeAt(0) + f + i) % neonPalette.length]!;
         // Window frame
         g.rect(bx - 4, by - h * fy - 5, 8, 7);
@@ -1627,9 +1762,9 @@ export class WorldView {
           g.rect(bx - 1, by - h * fy - 2, 3, 2);
           g.fill({ color: 0x3a2010, alpha: 0.6 });
         } else if (lit) {
-          g.fill({ color: winNeon, alpha: 0.92 });
+          g.fill({ color: winNeon, alpha: 0.55 + 0.4 * neonMul });
           g.circle(bx, by - h * fy - 1, 7);
-          g.fill({ color: winNeon, alpha: 0.14 });
+          g.fill({ color: winNeon, alpha: 0.06 + 0.12 * neonMul });
         } else {
           g.fill({ color: 0x12101c, alpha: 0.75 });
         }
@@ -1648,20 +1783,24 @@ export class WorldView {
 
     // Vertical neon sign on street face (like LIQUOR / LOANS)
     {
+      const neonMul = Math.max(0.15, this.look.neon);
       const midX = (c00.sx + c10.sx) / 2;
       const midY = (c00.sy + c10.sy) / 2;
       const signH = Math.min(h * 0.65, 34);
       // Pole glow
       g.circle(midX - 14, midY - h * 0.55, 14);
-      g.fill({ color: accent, alpha: 0.12 + Math.sin(this.time * 3 + b.id.charCodeAt(0)) * 0.03 });
+      g.fill({
+        color: accent,
+        alpha: (0.08 + Math.sin(this.time * 3 + b.id.charCodeAt(0)) * 0.03) * neonMul,
+      });
       g.roundRect(midX - 20, midY - h * 0.78, 10, signH, 2);
       g.fill({ color: 0x0a0810, alpha: 0.9 });
       g.roundRect(midX - 19, midY - h * 0.78 + 1, 8, signH - 2, 1);
-      g.fill({ color: accent, alpha: 0.82 });
+      g.fill({ color: accent, alpha: 0.45 + 0.4 * neonMul });
       // Fake letter bars on neon
       for (let i = 0; i < 4; i++) {
         g.rect(midX - 17, midY - h * 0.75 + 4 + i * (signH / 5), 4, 2);
-        g.fill({ color: 0xffffff, alpha: 0.35 });
+        g.fill({ color: 0xffffff, alpha: 0.2 + 0.2 * neonMul });
       }
     }
 
@@ -1700,11 +1839,14 @@ export class WorldView {
     // Door handle
     g.circle(door.sx + 3, door.sy - 6, 1.5);
     g.fill({ color: 0xc0a060, alpha: 0.8 });
-    // Neon door glow
-    g.circle(door.sx, door.sy - 4, 10);
-    g.stroke({ color: accent, width: 1.8, alpha: 0.45 });
-    g.circle(door.sx, door.sy - 4, 16);
-    g.stroke({ color: accent, width: 1, alpha: 0.14 });
+    // Neon door glow (brighter at night / neon edge)
+    {
+      const neonMul = Math.max(0.2, this.look.neon);
+      g.circle(door.sx, door.sy - 4, 10);
+      g.stroke({ color: accent, width: 1.8, alpha: 0.25 + 0.35 * neonMul });
+      g.circle(door.sx, door.sy - 4, 16);
+      g.stroke({ color: accent, width: 1, alpha: 0.06 + 0.12 * neonMul });
+    }
   }
 
   private drawProps(props: PropPublic[]): void {
@@ -1741,9 +1883,9 @@ export class WorldView {
         spr.y = sy + 4;
         spr.visible = true;
         spr.alpha = 1;
-        // War-zone cars get a slight red tint
-        if (p.kind === "car" && war > 0.35) spr.tint = 0xffc0c0;
-        else spr.tint = 0xffffff;
+        // War-zone cars get a slight red tint; all props pick up day/district wash
+        const baseTint = p.kind === "car" && war > 0.35 ? 0xffc0c0 : 0xffffff;
+        spr.tint = mulTint(baseTint, this.look.entityTint);
         continue;
       }
 
@@ -2114,12 +2256,13 @@ export class WorldView {
       spr.x = sx + sway + danceSway;
       spr.y = sy + 2 - danceBob;
       spr.visible = true;
-      // Team tint: posse color wash (keep readable)
-      if (mine) spr.tint = 0xffffff;
-      else if (isDancer) spr.tint = 0xffffff;
-      else if (isNpc) spr.tint = 0xe8f4ff;
-      else if (posse?.hostile) spr.tint = 0xffd0d0;
-      else spr.tint = 0xffffff;
+      // Team tint: posse color wash (keep readable) × day/district atmosphere
+      const lightTint = this.look.entityTint;
+      if (mine) spr.tint = mulTint(0xffffff, lightTint);
+      else if (isDancer) spr.tint = mulTint(0xffffff, lightTint);
+      else if (isNpc) spr.tint = mulTint(0xe8f4ff, lightTint);
+      else if (posse?.hostile) spr.tint = mulTint(0xffd0d0, lightTint);
+      else spr.tint = mulTint(0xffffff, lightTint);
       bh = targetH * 0.85;
       used.add(u.id);
     } else {

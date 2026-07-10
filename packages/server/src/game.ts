@@ -14,6 +14,7 @@ import {
   LAY_LOW_HEAT_REDUCE,
   DANCER_MAX_STAGE,
   dancerTipCost,
+  dayPhaseFromTick,
   DEFAULT_REALM_ID,
   listMissionOffers,
   layLowCost,
@@ -26,11 +27,14 @@ import {
   AI_FLEE_HEALTH_FRAC,
   armorPierce,
   assignAiPosseRoles,
+  castLineOfSight,
   critChance,
   damagePower,
   fireCooldownFactor,
   gutsDamageTakenFactor,
+  hasAdjacentCover,
   hitChanceClamped,
+  isBlockedTile,
   moveSpeedTilesPerSec,
   pickRecruitArchetype,
   preferredEngageRange,
@@ -1576,6 +1580,44 @@ export class GameWorld {
     }
   }
 
+  /** True if tile blocks bullets (wall/void). Doors stay open for LoS. */
+  private isLosBlockingTile(tx: number, ty: number): boolean {
+    if (tx < 0 || ty < 0 || tx >= this.map.width || ty >= this.map.height) return true;
+    return isBlockedTile(this.map.tiles[ty]![tx]!);
+  }
+
+  /**
+   * Prefer living targets with clear LoS; among those, closest wins.
+   * If nobody has LoS, still return closest so units close the gap.
+   */
+  private pickBestFireTarget(shooter: Unit, candidateIds: string[]): Unit | null {
+    let bestLos: Unit | null = null;
+    let bestLosD = Infinity;
+    let bestAny: Unit | null = null;
+    let bestAnyD = Infinity;
+    for (const id of candidateIds) {
+      const m = this.units.get(id);
+      if (!m || !m.alive) continue;
+      const dd = dist(shooter.x, shooter.y, m.x, m.y);
+      if (dd < bestAnyD) {
+        bestAnyD = dd;
+        bestAny = m;
+      }
+      const clear = castLineOfSight(
+        shooter.x,
+        shooter.y,
+        m.x,
+        m.y,
+        (tx, ty) => this.isLosBlockingTile(tx, ty),
+      ).clear;
+      if (clear && dd < bestLosD) {
+        bestLosD = dd;
+        bestLos = m;
+      }
+    }
+    return bestLos ?? bestAny;
+  }
+
   private resolveShot(shooter: Unit, target: Unit, session?: CharacterSession): void {
     if (shooter.fireCd > 0 || !shooter.alive || !target.alive) return;
     // Downed boss cannot fight
@@ -1590,10 +1632,59 @@ export class GameWorld {
     shooter.fireCd = w.fireCooldown * fireCooldownFactor(shooter.stats.speed);
     shooter.facing = facingFromDelta(target.x - shooter.x, target.y - shooter.y);
 
-    // Always emit attack VFX so shots/swings are visible even on miss
     const weapon = shooter.weapon;
     const isMelee = weapon === "pipe" || weapon === "switchblade";
     const isFlame = weapon === "flamethrower";
+    const isAi =
+      shooter.kind === "ai_boss" || shooter.kind === "ai_goon" || shooter.kind === "npc";
+
+    // True LoS: walls/void eat the round (melee only needs clear path when not adjacent)
+    const needLos = !isMelee || d > 1.15;
+    if (needLos) {
+      const los = castLineOfSight(
+        shooter.x,
+        shooter.y,
+        target.x,
+        target.y,
+        (tx, ty) => this.isLosBlockingTile(tx, ty),
+      );
+      if (!los.clear) {
+        // Muzzle + tracer die on the façade
+        if (!isMelee) {
+          this.pushCombatFx({
+            kind: isFlame ? "flame" : "shot",
+            x0: shooter.x,
+            y0: shooter.y,
+            x1: los.hitX,
+            y1: los.hitY,
+            weapon,
+          });
+        } else {
+          this.pushCombatFx({
+            kind: "melee",
+            x0: shooter.x,
+            y0: shooter.y,
+            x1: los.hitX,
+            y1: los.hitY,
+            weapon,
+          });
+        }
+        this.pushCombatFx({
+          kind: "blocked",
+          x0: shooter.x,
+          y0: shooter.y,
+          x1: los.hitX,
+          y1: los.hitY,
+          weapon,
+        });
+        if (session && !isAi) {
+          this.log(session, `${shooter.name}'s shot eats brick — no line of sight.`);
+        }
+        return;
+      }
+    }
+
+    // Always emit attack VFX so shots/swings are visible even on miss
     this.pushCombatFx({
       kind: isMelee ? "melee" : isFlame ? "flame" : "shot",
       x0: shooter.x,
@@ -1603,13 +1694,17 @@ export class GameWorld {
       weapon,
     });
 
-    const isAi =
-      shooter.kind === "ai_boss" || shooter.kind === "ai_goon" || shooter.kind === "npc";
     const aim = shooter.stats.aim;
     const muscle = shooter.stats.muscle;
 
     // Hit chance: Aim hits, target Guts dodges, range hurts (shared formula)
-    const hitChance = hitChanceClamped(aim, target.stats.guts, d, { isAi });
+    let hitChance = hitChanceClamped(aim, target.stats.guts, d, { isAi });
+    // Soft cover: hug a wall → harder to tag
+    if (
+      hasAdjacentCover(target.x, target.y, (tx, ty) => this.isLosBlockingTile(tx, ty))
+    ) {
+      hitChance = Math.max(0.08, hitChance - COMBAT.coverHitPenalty);
+    }
 
     if (Math.random() > hitChance) {
       this.pushCombatFx({
@@ -1621,8 +1716,14 @@ export class GameWorld {
         weapon,
       });
       if (session && !isAi) {
-        const dodgeNote =
-          target.stats.guts >= 7 ? ` (${target.name}'s guts)` : "";
+        const notes: string[] = [];
+        if (target.stats.guts >= 7) notes.push(`${target.name}'s guts`);
+        if (
+          hasAdjacentCover(target.x, target.y, (tx, ty) => this.isLosBlockingTile(tx, ty))
+        ) {
+          notes.push("cover");
+        }
+        const dodgeNote = notes.length ? ` (${notes.join(" + ")})` : "";
         this.log(session, `${shooter.name} missed ${target.name}.${dodgeNote}`);
       }
       return;
@@ -4456,17 +4557,7 @@ export class GameWorld {
           this.assignAiRoleCombat(posse, pl.x, pl.y);
           for (const u of this.members(posse)) {
             if (u.incapacitated) continue;
-            let best: Unit | null = null;
-            let bd = Infinity;
-            for (const mid of nearestPlayer.memberIds) {
-              const m = this.units.get(mid);
-              if (!m || !m.alive) continue;
-              const dd = dist(u.x, u.y, m.x, m.y);
-              if (dd < bd) {
-                bd = dd;
-                best = m;
-              }
-            }
+            const best = this.pickBestFireTarget(u, nearestPlayer.memberIds);
             if (best) this.resolveShot(u, best);
           }
           // Player posse auto-return fire if hostile (keep own front if attacking, else circle fire)
@@ -4476,17 +4567,7 @@ export class GameWorld {
           for (const id of nearestPlayer.memberIds) {
             const u = this.units.get(id);
             if (!u || !u.alive) continue;
-            let best: Unit | null = null;
-            let bd = Infinity;
-            for (const eid of posse.memberIds) {
-              const e = this.units.get(eid);
-              if (!e || !e.alive) continue;
-              const dd = dist(u.x, u.y, e.x, e.y);
-              if (dd < bd) {
-                bd = dd;
-                best = e;
-              }
-            }
+            const best = this.pickBestFireTarget(u, posse.memberIds);
             if (best) this.resolveShot(u, best);
           }
         }
@@ -4664,6 +4745,7 @@ export class GameWorld {
 
     return {
       tick: this.tick,
+      dayPhase: dayPhaseFromTick(this.tick),
       you: {
         characterId: session.characterId,
         posseId: session.posseId,

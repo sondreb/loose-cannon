@@ -1,6 +1,8 @@
 import {
   ARMORS,
   combatPreviewLine,
+  DAY_PHASE_LABEL,
+  dayPhaseFromTick,
   DEFAULT_REALM_ID,
   heatBand,
   INTERACT_RANGE,
@@ -15,6 +17,7 @@ import {
   WEAPONS,
   type ArmorId,
   type CombatFxEvent,
+  type DayPhase,
   type ServerMessage,
   type UnitPublic,
   type UnitStats,
@@ -586,11 +589,13 @@ function renderPosse(): void {
   const h = snap.you.heat ?? 0;
   const band = heatBand(h);
   const stash = snap.you.stashCash ?? 0;
+  const phase: DayPhase = snap.dayPhase ?? dayPhaseFromTick(snap.tick);
+  const phaseLabel = DAY_PHASE_LABEL[phase] ?? phase.toUpperCase();
   cashRep.innerHTML = `<span class="cash" title="Pocket cash — lost on wipe">$${snap.you.cash}</span>${
     stash > 0
       ? ` <span class="stash-cash" title="Crash Pad stash — safe on wipe">⌂$${stash}</span>`
       : ""
-  } <span class="rep">Rep ${snap.you.rep}</span> <span class="heat heat-${band}" title="Street heat — cool off at the bar">Heat ${h}</span>`;
+  } <span class="rep">Rep ${snap.you.rep}</span> <span class="heat heat-${band}" title="Street heat — cool off at the bar">Heat ${h}</span> <span class="day-phase day-${phase}" title="City day/night cycle (~6 min) — neon brighter at night">${phaseLabel}</span>`;
   updateRealmHud(snap.you.realmId ?? myRealmId);
   const units = myUnits();
   const key = units
@@ -1718,7 +1723,7 @@ function playCombatFxAudio(events: CombatFxEvent[]): void {
         sfx.play(e.crit ? "crit" : "hit");
         hits++;
       }
-    } else if (e.kind === "miss") {
+    } else if (e.kind === "miss" || e.kind === "blocked") {
       sfx.play("miss");
     } else if (e.kind === "death") {
       sfx.play("death", { force: true });

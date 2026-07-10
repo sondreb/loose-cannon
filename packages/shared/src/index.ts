@@ -10,4 +10,6 @@ export * from "./districts.js";
 export * from "./memorial.js";
 export * from "./realms.js";
 export * from "./pathfind.js";
+export * from "./los.js";
+export * from "./lighting.js";
 export * from "./voiceLines.js";

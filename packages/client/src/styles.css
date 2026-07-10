@@ -491,6 +491,31 @@ body {
 #cashRep .heat-hot {
   color: #ff8a40;
 }
+#cashRep .day-phase {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  opacity: 0.92;
+}
+#cashRep .day-dawn {
+  color: #ffb090;
+  background: rgba(80, 40, 30, 0.55);
+}
+#cashRep .day-day {
+  color: #d0e0ff;
+  background: rgba(40, 50, 80, 0.55);
+}
+#cashRep .day-dusk {
+  color: #ff8060;
+  background: rgba(70, 30, 20, 0.55);
+}
+#cashRep .day-night {
+  color: #90a0ff;
+  background: rgba(20, 20, 50, 0.65);
+}
 #cashRep .heat-wanted {
   color: #ff5050;
   text-shadow: 0 0 8px rgba(255, 60, 40, 0.45);

@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-10 (M5 combat AI roles + weapon feel)  
+Last updated: 2026-07-10 (M6 day/night + district lighting)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -32,6 +32,9 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | **Enemy AI roles** | **Done** | Shooter / rusher / coward; role gear + engage bands; HUD badges |
 | **Weapon range readability** | **Done** | Selected-unit iso range ring (war / combat) |
 | **Hit / miss feedback** | **Done** | Miss whiz tracers; heavier shotgun/minigun/tommy hit FX |
+| **Cover / LoS** | **Done** | Walls/void block shots; soft cover near walls; BLOCKED FX |
+| **More missions (M6)** | **Done** | +4 jobs: still_not_guns, parking_tax, chop_shop_raid, rail_rats |
+| **Day/night + district light** | **Done** | ~6 min cycle; sky/overlay/neon/rain; district tints; HUD phase |
 | Parties / co-op | Not started | M4 (within a realm) |
 | Automated overseer scaffolding | Done | AGENTS + scripts/overseer |
 
@@ -43,6 +46,10 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | `warehouse_raid` | Warehouse Wipe | Instance | Clear → extract | $450 + 4 rep |
 | `protection_corner` | Corner Tax | Outdoor | Hold `p1` ~12s | $350 + 3 rep |
 | `collect_debt` | Debt Collection | Outdoor | Kill Dumpster Dogs boss | $500 + 5 rep |
+| `still_not_guns` | Still Not Guns | Outdoor | Crate `cr2` (58, 50) | $300 + 2 rep |
+| `parking_tax` | Parking Racket | Outdoor | Hold `p3` ~15s | $400 + 3 rep |
+| `chop_shop_raid` | Chop Shop Sweep | Instance (garage) | Clear → extract | $520 + 5 rep |
+| `rail_rats` | Rail Rat Removal | Outdoor | Kill Rail Rats boss | $420 + 4 rep |
 
 ### Tutorial (live)
 
@@ -109,10 +116,35 @@ Rep still gates **shop stock** and some content; map shows HOT / recommended rep
 - Miss: gray whiz tracer + sparks + “miss” float; heavy weapons stronger hit blood/impact/shake  
 - Smoke: bay hostiles must all carry `aiRole`
 
+### Cover / LoS (live)
+
+- Shared `los.ts`: `castLineOfSight` ray-march; `hasAdjacentCover` for wall-hug soft cover  
+- Server: wall/void blocks bullets (doors open); melee only needs LoS when not adjacent  
+- Soft cover: −10% hit chance when target adjacent to wall  
+- FX: `blocked` kind — tracer to façade, sparks, **BLOCKED** float; combat log notes brick  
+- AI auto-fire prefers clear-LoS targets  
+- Guts tooltips mention cover + full LoS block  
+
+### M6 extra missions (live)
+
+- Board order: starter 4 + `still_not_guns`, `parking_tax`, `chop_shop_raid`, `rail_rats`  
+- Map: `cr2`, `p3`, `ai_rats`, garage interior template for chop instance  
+- Smoke: asserts all 4 offers; completes still_not_guns + full chop_shop extract  
+
+### Day/night + district lighting (live)
+
+- Shared `lighting.ts`: `dayPhaseFromTick`, `lightingLook(phase, district|interior, indoor)`  
+- Cycle ~**6 real minutes** (longer night); phases: **dawn / day / dusk / night**  
+- Snapshot `dayPhase` (server tick → all clients in a realm stay synced)  
+- Client: sky background, screen wash + vignette, ground brightness, neon window/sign strength, rain density, unit/prop tint  
+- District flavor: neon_edge magenta, docks teal fog, war_deep bloody, downtown warm, club interiors pink  
+- HUD: cash/rep row badge **DAWN / DAY / DUSK / NIGHT**  
+- Smoke: asserts `dayPhase` ∈ {dawn,day,dusk,night}
+
 ## Next for overseer (priority)
 
-1. **M6 more missions** — 2+ new outdoor or instance jobs  
-2. **M5 remainder** — true cover/LoS, balance numbers note, ammo clarity if needed  
+1. **M6 presentation polish** — directional goon sprites / walk bob, HUD/mobile readability, mobile touch  
+2. **M5 remainder** — ammo clarity / balance numbers note if combat still muddy  
 3. **M4 parties** after solo loop feels solid (scoped per realm)  
 4. **Never** Mode B (Postgres/auth/k8s) unless human asks  
 
@@ -124,8 +156,8 @@ Rep still gates **shop stock** and some content; map shows HOT / recommended rep
 | Smoke needs live server | Ops | `npm run smoke` → `ws://127.0.0.1:3001` |
 | Safe-zone fire spam logs | Low | No crash |
 | Disconnect = wipe | Low | Mode A design |
-| Only one instance template | Design | Add more in M6/M7 |
-| Goon sprites one facing | Low | Flip + procedural fallback |
+| Two instance templates | Design | warehouse + garage; more in M7 |
+| Goon sprites one facing | Low | Flip + procedural fallback; next M6 item |
 
 ## Still deferred (Mode B)
 
