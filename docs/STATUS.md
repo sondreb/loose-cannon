@@ -1,6 +1,7 @@
 # Implementation Status (post interactive core session)
 
-Last updated: 2026-07-10
+Last updated: 2026-07-10  
+Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
 
@@ -26,13 +27,23 @@ Last updated: 2026-07-10
 | Glass login / modern HUD | Done | Apple-style gloss |
 | Proximity chat | Done | |
 | Dead goons removed from roster | Done | |
+| **Job board / fixer missions** | Not started | MASTER_PLAN M2 |
+| **Mission instances** (objectives/extract) | Not started | MASTER_PLAN M2 |
+| **Heat / rep gates** | Not started | MASTER_PLAN M3 |
+| **Parties / co-op jobs** | Not started | MASTER_PLAN M4 |
+| Automated overseer scaffolding | Done | AGENTS.md + scripts/overseer |
+
+## Next for overseer (priority)
+
+1. Harden M1 if smoke/build fails; else start **M2 job board + first mission instance**.
+2. Keep Mode A only (no Postgres/auth/k8s).
 
 ## Still deferred (Mode B / later)
 
 - Persistence (Postgres), real auth, multi-region
 - Voice TTS batch, Grok Imagine → pixel atlases
 - Turf wars, player gangs, seasons
-- Full mission instances / matchmaking
+- Full matchmaking scale-out
 - Mobile touch polish
 
 ## How to run
@@ -44,3 +55,12 @@ npm run dev
 ```
 
 World resets when the server process restarts.
+
+### Autonomous development
+
+See [OVERSEER.md](./OVERSEER.md). Quick start (PowerShell, repo root):
+
+```powershell
+.\scripts\overseer\run-cycle.ps1              # one cycle (prompts for tools)
+.\scripts\overseer\overseer-loop.ps1 -Yolo -MaxCycles 5
+```

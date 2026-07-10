@@ -1,0 +1,25 @@
+Continue as the Loose Cannon development overseer in this repository.
+
+## Start every cycle
+1. Read AGENTS.md, docs/STATUS.md, docs/MASTER_PLAN.md, and the latest docs/OVERSEER_LOG.md entries.
+2. Inspect git status / recent changes if useful so you do not redo work.
+3. Choose the single next incomplete milestone item from MASTER_PLAN (highest priority unfinished).
+
+## Execute
+- Implement that milestone (or a coherent vertical slice if the full item is too large for one cycle).
+- Spawn subagents when useful (explore before large edits; plan for multi-file systems; implement/test in parallel when safe).
+- Keep server authority: clients send intents only.
+- Do NOT start Mode B infrastructure (databases, real auth, k8s).
+
+## Verify
+- Prefer: `npm run smoke`
+- After structural/protocol changes: `npm run build`
+- Fix breakages you introduced before ending the cycle.
+
+## Close the cycle
+1. Update docs/STATUS.md (accurate live status + date).
+2. Append a cycle entry to docs/OVERSEER_LOG.md (focus, done, verify, next, blocked).
+3. If MASTER_PLAN checkboxes should flip, update them.
+4. End with a short summary: what shipped, what's next, any human decision needed.
+
+If blocked on a product/design decision or external credentials, write the blocker clearly in STATUS and OVERSEER_LOG and stop implementing unrelated features.

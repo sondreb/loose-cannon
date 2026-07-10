@@ -60,7 +60,21 @@ npm run build:azure   # produces deploy/client + deploy/server
 - [Game design](./docs/game-design.md)
 - [Architecture](./docs/architecture.md)
 - [PRD](./docs/prd.md)
+- [Status](./docs/STATUS.md) · [Master plan](./docs/MASTER_PLAN.md)
+- [Automated overseer](./docs/OVERSEER.md) (Grok Build continuous development)
 - [Azure deploy](./.github/DEPLOY.md)
+
+### Keep developing with Grok (overseer)
+
+```powershell
+# Interactive goal mode
+grok
+# then: /goal … (see docs/OVERSEER.md)
+
+# One headless cycle / continuous loop
+.\scripts\overseer\run-cycle.ps1
+.\scripts\overseer\overseer-loop.ps1 -Yolo -MaxCycles 5
+```
 
 ## Inspiration
 

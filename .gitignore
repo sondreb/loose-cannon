@@ -8,3 +8,7 @@ deploy/
 .DS_Store
 *.tsbuildinfo
 .azure/
+
+# Overseer automation (local session + logs)
+scripts/overseer/.session-id
+scripts/overseer/logs/
