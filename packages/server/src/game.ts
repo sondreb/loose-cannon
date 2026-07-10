@@ -101,6 +101,8 @@ interface PosseMission {
   phase: "active" | "extract" | "failed";
   /** Extract objective completed */
   extracted: boolean;
+  /** Logged once when door unlocks after clear */
+  extractAnnounced?: boolean;
 }
 
 interface Unit {
@@ -1218,7 +1220,9 @@ export class GameWorld {
     const indoor =
       t === "floor" || t === "bar" || t === "shop" || t === "hospital" || t === "gym";
     if (buildingId) {
-      const b = this.map.buildings.find((bb) => bb.id === buildingId);
+      // Must resolve mi_* private mission layers to the template warehouse (etc.).
+      // Looking up mi_* in map.buildings fails and freezes movement in instances.
+      const b = this.resolveBuildingDef(buildingId);
       if (!b) return false;
       const tx = Math.floor(x);
       const ty = Math.floor(y);
@@ -2409,18 +2413,24 @@ export class GameWorld {
 
     // 1) Mission instance exit / seal (private warehouse etc.)
     if (posse.mission?.instanceLayerId && posse.insideBuildingId === posse.mission.instanceLayerId) {
+      // Ensure phase flips to extract if hostiles already cleared (runtime may not have run yet)
+      this.missionRuntime(posse);
       const tmpl = this.resolveBuildingDef(posse.mission.instanceLayerId);
-      if (tmpl && exitDist(tmpl.exitX, tmpl.exitY) <= EXIT_USE_RANGE) {
-        // Prefer talking to an NPC only if they're clearly closer than the door
-        const npc = pickNpcInRange();
-        if (!npc || npc.d >= exitDist(tmpl.exitX, tmpl.exitY) - 0.15) {
-          if (posse.mission.phase === "extract") {
-            this.cmdMissionExtract(session, posse);
-            return;
-          }
+      // Generous extract range — door sits on the north wall tile; stand on the floor under it
+      const EXTRACT_RANGE = 2.6;
+      if (tmpl && exitDist(tmpl.exitX, tmpl.exitY) <= EXTRACT_RANGE) {
+        if (posse.mission.phase === "extract") {
+          this.cmdMissionExtract(session, posse);
+          return;
+        }
+        if (!this.hostilesCleared(posse.mission)) {
           this.log(session, "Exit sealed until hostiles are down. (Or abandon the contract.)");
           return;
         }
+        // Hostiles dead but phase not updated — force extract path
+        posse.mission.phase = "extract";
+        this.cmdMissionExtract(session, posse);
+        return;
       }
     }
 
@@ -2775,7 +2785,8 @@ export class GameWorld {
     if (!posse.insideBuildingId) return;
     // Instanced jobs: only extract door completes, or abandon
     if (posse.mission?.instanceLayerId && posse.insideBuildingId === posse.mission.instanceLayerId) {
-      if (posse.mission.phase === "extract") {
+      this.missionRuntime(posse);
+      if (posse.mission.phase === "extract" || this.hostilesCleared(posse.mission)) {
         this.cmdMissionExtract(session, posse);
         return;
       }
@@ -3798,7 +3809,15 @@ export class GameWorld {
 
   private cmdMissionExtract(session: CharacterSession, posse: Posse): void {
     const m = posse.mission;
-    if (!m || m.phase !== "extract") return;
+    if (!m) return;
+    // If hostiles are gone, allow extract even if phase lagged a tick
+    if (m.phase !== "extract") {
+      if (m.phase === "active" && this.hostilesCleared(m)) {
+        m.phase = "extract";
+      } else {
+        return;
+      }
+    }
     m.extracted = true;
     this.log(session, "Extract confirmed. Walking out like you own the bay.");
     this.tryCompleteMission(session, posse);
@@ -3848,7 +3867,20 @@ export class GameWorld {
           return d && d.kind !== "extract";
         })
         .every((o) => o.done);
-      if (combatDone) m.phase = "extract";
+      if (combatDone) {
+        m.phase = "extract";
+        // One-shot log so the player knows the door is open
+        if (!m.extractAnnounced) {
+          m.extractAnnounced = true;
+          const session = [...this.sessions.values()].find((s) => s.posseId === posse.id);
+          if (session) {
+            this.log(
+              session,
+              "Bay clear. Get to the EXIT door (north wall) and press E / click EXIT to extract.",
+            );
+          }
+        }
+      }
     }
 
     const allDone = objectives.every((o) => o.done);

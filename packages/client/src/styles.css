@@ -2866,6 +2866,68 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
   opacity: 0.85;
 }
 
+/* In-game confirm dialog — never use window.confirm / alert */
+.confirm-card {
+  width: min(400px, 94vw);
+  padding: 1.15rem 1.25rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.confirm-kicker {
+  margin: 0;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: #ff8060;
+}
+
+.confirm-card h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  letter-spacing: 0.04em;
+  color: #f2efe8;
+}
+
+.confirm-body {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: #c8c0d0;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.confirm-ok-btn {
+  appearance: none;
+  border: 1px solid rgba(255, 100, 70, 0.55);
+  background: linear-gradient(180deg, #4a2218, #2a140e);
+  color: #ffb0a0;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 0.45rem 0.9rem;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+.confirm-ok-btn:hover {
+  border-color: #ff8060;
+  filter: brightness(1.1);
+}
+
+.confirm-ok-btn.danger {
+  border-color: rgba(255, 80, 60, 0.65);
+  color: #ff9080;
+}
+
 .mission-hud-objectives {
   list-style: none;
   margin: 0.35rem 0 0;

@@ -197,6 +197,12 @@ const tutorialTitle = $("tutorialTitle");
 const tutorialBody = $("tutorialBody");
 const tutorialHint = $("tutorialHint");
 const tutorialSkip = $("tutorialSkip");
+const confirmModal = $("confirmModal");
+const confirmKicker = $("confirmKicker");
+const confirmTitle = $("confirmTitle");
+const confirmBody = $("confirmBody");
+const confirmCancel = $("confirmCancel");
+const confirmOk = $("confirmOk");
 const minimapBtn = $("minimap");
 const districtMapModal = $("districtMapModal");
 const districtMapClose = $("districtMapClose");
@@ -618,6 +624,46 @@ function escapeAttr(s: string): string {
     .replace(/"/g, "&quot;")
     .replace(/</g, "&lt;")
     .replace(/\n/g, " · ");
+}
+
+/**
+ * In-game confirm dialog. Never use window.confirm / alert / prompt —
+ * they break immersion and look broken on fullscreen/mobile.
+ */
+type ConfirmOpts = {
+  kicker?: string;
+  title: string;
+  body: string;
+  okLabel?: string;
+  cancelLabel?: string;
+  danger?: boolean;
+};
+
+let confirmResolve: ((ok: boolean) => void) | null = null;
+
+function closeConfirm(result: boolean): void {
+  confirmModal.classList.add("hidden");
+  const r = confirmResolve;
+  confirmResolve = null;
+  r?.(result);
+}
+
+function showConfirm(opts: ConfirmOpts): Promise<boolean> {
+  // Replace any pending confirm
+  if (confirmResolve) closeConfirm(false);
+
+  confirmKicker.textContent = opts.kicker ?? "CONFIRM";
+  confirmTitle.textContent = opts.title;
+  confirmBody.textContent = opts.body;
+  confirmOk.textContent = opts.okLabel ?? "CONFIRM";
+  confirmCancel.textContent = opts.cancelLabel ?? "CANCEL";
+  confirmOk.classList.toggle("danger", !!opts.danger);
+  confirmModal.classList.remove("hidden");
+  sfx.play("ui");
+
+  return new Promise<boolean>((resolve) => {
+    confirmResolve = resolve;
+  });
 }
 
 let lastPosseKey = "";
@@ -2519,14 +2565,33 @@ function bindInput(): void {
   });
   jobBoardClose.addEventListener("click", () => socket.send({ type: "jobBoard.close" }));
   missionAbandon.addEventListener("click", () => {
-    if (confirm("Abandon this job? No pay, no glory.")) {
-      socket.send({ type: "mission.abandon" });
-    }
+    void showConfirm({
+      kicker: "JOB",
+      title: "Abandon this job?",
+      body: "No pay, no glory. Rita will remember. Briefly.",
+      okLabel: "ABANDON",
+      cancelLabel: "KEEP WORKING",
+      danger: true,
+    }).then((ok) => {
+      if (ok) socket?.send({ type: "mission.abandon" });
+    });
   });
   tutorialSkip.addEventListener("click", () => {
-    if (confirm("Skip the first-session guide? You can still find Rita in the bar.")) {
-      socket.send({ type: "tutorial.skip" });
-    }
+    void showConfirm({
+      kicker: "TUTORIAL",
+      title: "Skip the first-session guide?",
+      body: "You can still find Rita in the bar. The streets won't hold your hand.",
+      okLabel: "SKIP GUIDE",
+      cancelLabel: "KEEP LEARNING",
+      danger: true,
+    }).then((ok) => {
+      if (ok) socket?.send({ type: "tutorial.skip" });
+    });
+  });
+  confirmCancel.addEventListener("click", () => closeConfirm(false));
+  confirmOk.addEventListener("click", () => closeConfirm(true));
+  confirmModal.addEventListener("click", (e) => {
+    if (e.target === confirmModal) closeConfirm(false);
   });
   minimapBtn.addEventListener("click", () => openDistrictMap());
   districtMapClose.addEventListener("click", () => closeDistrictMap());
@@ -2618,6 +2683,11 @@ function bindInput(): void {
 
   window.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
+    if (confirmResolve) {
+      e.preventDefault();
+      closeConfirm(false);
+      return;
+    }
     if (goonProfileUnitId) {
       e.preventDefault();
       closeGoonProfile();

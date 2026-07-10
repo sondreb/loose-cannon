@@ -423,6 +423,7 @@ export function createSkidrowMap(): WorldMapDef {
       iy1: 87,
       spawnX: 27,
       spawnY: 85,
+      // Door tile is y=82; extract check uses this. Walk onto y=83 under the door.
       exitX: 27,
       exitY: 82,
       exteriorSpawnX: 53,
