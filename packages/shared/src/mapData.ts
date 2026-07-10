@@ -51,7 +51,17 @@ export interface WorldMapDef {
   /** World props / activity spots (outdoor) */
   props: Array<{
     id: string;
-    kind: "dumpster" | "protection" | "hydrant" | "neon" | "car" | "crate";
+    kind:
+      | "dumpster"
+      | "protection"
+      | "hydrant"
+      | "neon"
+      | "car"
+      | "crate"
+      | "motorcycle"
+      | "cone"
+      | "phonebooth"
+      | "mailbox";
     x: number;
     y: number;
     label?: string;
@@ -550,23 +560,42 @@ export function createSkidrowMap(): WorldMapDef {
   }
 
   const props: WorldMapDef["props"] = [
-    // Safe downtown
+    // Safe downtown — denser street clutter (combat-scene energy)
     { id: "d1", kind: "dumpster", x: 14, y: 22, label: "Dumpster of Destiny" },
+    { id: "d1b", kind: "dumpster", x: 34, y: 26, label: "Alley buffet" },
     { id: "n2", kind: "neon", x: 50, y: 12, label: "PAWN" },
+    { id: "n2b", kind: "neon", x: 10, y: 18, label: "LIQUOR" },
     { id: "h1", kind: "hydrant", x: 20, y: 24 },
+    { id: "h1b", kind: "hydrant", x: 42, y: 20 },
     { id: "cr1", kind: "crate", x: 44, y: 28, label: "Definitely not guns" },
+    { id: "taxi1", kind: "car", x: 38, y: 20, label: "Checker cab (retired)" },
+    { id: "cone1", kind: "cone", x: 18, y: 19 },
+    { id: "cone2", kind: "cone", x: 41, y: 21 },
+    { id: "phone1", kind: "phonebooth", x: 28, y: 22, label: "Last working booth" },
+    { id: "mail1", kind: "mailbox", x: 46, y: 18 },
     // War zone
     { id: "d2", kind: "dumpster", x: 55, y: 45, label: "Smells like opportunity" },
     { id: "d3", kind: "dumpster", x: 88, y: 50, label: "Industrial salad" },
+    { id: "d4", kind: "dumpster", x: 22, y: 52, label: "Evidence disposal" },
     { id: "p1", kind: "protection", x: 30, y: 48, label: "Protection Corner" },
     { id: "p2", kind: "protection", x: 72, y: 48, label: "Toll Booth (unofficial)" },
     { id: "p3", kind: "protection", x: 50, y: 66, label: "Parking Racket" },
     { id: "c1", kind: "car", x: 48, y: 74, label: "Rusty Coupe" },
     { id: "c2", kind: "car", x: 52, y: 78, label: "No plates, no problems" },
     { id: "c3", kind: "car", x: 56, y: 72, label: "Chop candidate" },
+    { id: "c4", kind: "car", x: 40, y: 42, label: "Bullet magnet taxi" },
+    { id: "c5", kind: "car", x: 62, y: 44, label: "Abandoned sedan" },
+    { id: "bike1", kind: "motorcycle", x: 46, y: 46, label: "Burning hog" },
+    { id: "bike2", kind: "motorcycle", x: 80, y: 52, label: "Chopper of regret" },
     { id: "n1", kind: "neon", x: 94, y: 58, label: "OPEN" },
+    { id: "n3", kind: "neon", x: 26, y: 50, label: "LOANS" },
+    { id: "n4", kind: "neon", x: 70, y: 62, label: "24HR" },
     { id: "h2", kind: "hydrant", x: 64, y: 46 },
     { id: "cr2", kind: "crate", x: 58, y: 50, label: "Still not guns" },
+    { id: "cone3", kind: "cone", x: 39, y: 41 },
+    { id: "cone4", kind: "cone", x: 61, y: 43 },
+    { id: "phone2", kind: "phonebooth", x: 16, y: 46, label: "Bulletproof glass (not)" },
+    { id: "mail2", kind: "mailbox", x: 54, y: 48 },
   ];
 
   return {

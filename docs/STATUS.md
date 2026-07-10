@@ -1,6 +1,6 @@
 # Implementation Status (post interactive core session)
 
-Last updated: 2026-07-10 (cycle 6)  
+Last updated: 2026-07-10 (cycle 7 — combat-scene graphics)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -11,7 +11,9 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Overseer: [OVERSEER.md](./OVERSEE
 | Isometric map, free WASD + click move | Done | Instant prediction + intent |
 | PvE safe downtown / PvP war zone | Done | y&lt;38 safe; no murders north |
 | Client prediction + 60 FPS path | Done | Viewport map cull, res cap |
-| Multi-story isometric buildings | Done | Walls, windows, roofs, doors |
+| Multi-story isometric buildings | Done | Walls, windows, roofs, doors, neon signs, awnings |
+| **Combat-scene world look** | **Done** | Solid wet asphalt, crosswalks, rain, neon puddles, street dressing |
+| **Painted goon/prop sprites** | **Done** | Imagine PNGs + procedural fallback; taxi/dumpster/bike/booth |
 | Character interpolation + walk bob | Done | Prediction for local posse |
 | Buildings enter/exit, many POIs | Done | Exit priority fixed |
 | Dialogue, hire, recruit street NPCs | Done | Recruits convert NPC |
@@ -113,7 +115,8 @@ HUD: `Heat N` next to cash/rep (cool/warm/hot/wanted colors).
 ## Still deferred (Mode B / later)
 
 - Persistence (Postgres), real auth, multi-region
-- Voice TTS batch, Grok Imagine → pixel atlases
+- Directional walk cycles / more goon sprite variants
+- Voice TTS batch
 - Turf wars, player gangs, seasons
 - Full matchmaking scale-out
 - Mobile touch polish

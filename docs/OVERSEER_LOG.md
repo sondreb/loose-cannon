@@ -19,6 +19,18 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-10 — cycle 7 (combat-scene graphics pass)
+- Focus: Close the gap between live UI and `public/art/combat-scene.jpg`
+- Done:
+  - Ground: solid wet asphalt (no sparse grass grid), crosswalks, puddles, cracks, manholes, cones, traffic lights, rain denser
+  - Buildings: brick lines, more neon windows/signs, door awnings, stronger outlines
+  - Units: painted goon sprites (m/f + bartender) via Pixi; detailed procedural fallback
+  - Props: taxi/dumpster/motorcycle/phonebooth/cone/mailbox sprites + denser map props
+  - Script: `scripts/process-sprites.py` chroma-key pipeline for Imagine assets
+- Verify: `npm run build` OK; smoke pathing flake unrelated to art
+- Next: memorial wall or more sprite variants / walk frames
+- Blocked: none
+
 ### 2026-07-10 — cycle 6 (M3 district map UI)
 - Focus: District unlock + city map UI (“where can I go”)
 - Done:

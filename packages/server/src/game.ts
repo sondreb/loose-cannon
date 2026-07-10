@@ -2284,11 +2284,16 @@ export class GameWorld {
       return;
     }
 
-    if (prop.kind === "car") {
+    if (prop.kind === "car" || prop.kind === "motorcycle") {
       this.propReadyAt.set(propId, this.tick + TICK_HZ * 90);
       const cash = 30 + Math.floor(Math.random() * 100);
       posse.cash += cash;
-      this.log(session, `Liberated $${cash} from ${prop.label ?? "a car"}. The radio only plays static now.`);
+      this.log(
+        session,
+        prop.kind === "motorcycle"
+          ? `Yanked $${cash} from ${prop.label ?? "a bike"}. The tank still smells like regret.`
+          : `Liberated $${cash} from ${prop.label ?? "a car"}. The radio only plays static now.`,
+      );
       return;
     }
 
@@ -2306,8 +2311,19 @@ export class GameWorld {
       return;
     }
 
-    if (prop.kind === "neon" || prop.kind === "hydrant") {
-      this.log(session, prop.label ? `"${prop.label}" flickers judgmentally.` : "You stare. It stares back.");
+    if (
+      prop.kind === "neon" ||
+      prop.kind === "hydrant" ||
+      prop.kind === "cone" ||
+      prop.kind === "phonebooth" ||
+      prop.kind === "mailbox"
+    ) {
+      this.log(
+        session,
+        prop.label
+          ? `"${prop.label}" has nothing useful. Mood, though? Immaculate.`
+          : "You stare. It stares back. The streets keep their secrets.",
+      );
       return;
     }
   }
