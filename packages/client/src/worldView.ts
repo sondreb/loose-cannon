@@ -2383,6 +2383,8 @@ export class WorldView {
       g.fill({ color: mine ? 0x60c080 : 0xe04040 });
     }
 
+    // Indoors: hide own-posse name tags — small rooms get unreadable with 4 labels
+    const hideOwnNameIndoors = mine && !!snap.you.insideBuildingId;
     const name = u.name.split(" ")[0] ?? u.name;
     let lab = this.labelPool.get(u.id);
     if (!lab) {
@@ -2399,12 +2401,16 @@ export class WorldView {
       this.labelPool.set(u.id, lab);
       this.labels.addChild(lab);
     }
-    lab.visible = true;
-    if (lab.text !== name) lab.text = name;
-    lab.style.fill = mine ? 0xffe080 : isNpc ? 0x90d8ff : threat >= 3 ? 0xffa0a0 : 0xe8e8e8;
-    lab.x = sx - lab.width / 2;
-    lab.y = sy - bh - 32;
-    used.add(u.id);
+    if (hideOwnNameIndoors) {
+      lab.visible = false;
+    } else {
+      lab.visible = true;
+      if (lab.text !== name) lab.text = name;
+      lab.style.fill = mine ? 0xffe080 : isNpc ? 0x90d8ff : threat >= 3 ? 0xffa0a0 : 0xe8e8e8;
+      lab.x = sx - lab.width / 2;
+      lab.y = sy - bh - 32;
+      used.add(u.id);
+    }
 
     // AI combat role badge (RUSH / HOLD / FLEE) when hostile
     if (!mine && !isNpc && u.aiRole && (posse?.hostile || threat >= 1)) {
