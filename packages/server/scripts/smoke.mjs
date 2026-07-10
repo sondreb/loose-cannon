@@ -60,10 +60,10 @@ console.log(
 
 /** @returns {Promise<object|undefined>} */
 async function goTo(x, y, seconds = 16) {
-  // Re-issue move periodically (straight-line path can stick on façades)
+  // Re-issue move occasionally (server A* + stuck repath should mostly own routing)
   const steps = seconds * 5;
   for (let i = 0; i < steps; i++) {
-    if (i % 8 === 0) ws.send(JSON.stringify({ type: "intent.move", x, y }));
+    if (i % 12 === 0) ws.send(JSON.stringify({ type: "intent.move", x, y }));
     await wait(200);
     const me = last?.units.find((u) => u.isPlayerLeader);
     if (!me) continue;
@@ -72,7 +72,7 @@ async function goTo(x, y, seconds = 16) {
   return last?.units.find((u) => u.isPlayerLeader);
 }
 
-/** Multi-hop path to avoid getting stuck on building shells */
+/** Multi-hop helper when a single click is not enough */
 async function goVia(points, secondsEach = 12) {
   let me;
   for (const [x, y] of points) {
@@ -96,15 +96,9 @@ function openRitaBoard() {
         await wait(400);
       }
     }
-    let me = await goVia(
-      [
-        [30, 22],
-        [18, 18],
-        [8.5, 15.2],
-      ],
-      12,
-    );
-    if (!me || Math.hypot(me.x - 8.5, me.y - 15.2) > 1.5) fail("bar door");
+    // Single long click — server A* must route around shells
+    let me = await goTo(8.5, 15.2, 28);
+    if (!me || Math.hypot(me.x - 8.5, me.y - 15.2) > 1.5) fail("bar door (pathing)");
     if (last?.you.insideBuildingId !== "bar_rusty") {
       ws.send(JSON.stringify({ type: "intent.interact" }));
       await wait(500);
@@ -124,17 +118,10 @@ console.log("map", last?.mapWidth, "x", last?.mapHeight);
 if (!last?.mapWidth || !last?.mapHeight) fail("missing map size in snapshot");
 
 // --- Bar hire ---
-// Waypoints: spawn (40,30) → open street → bar door (avoid building shells)
-let me = await goVia(
-  [
-    [30, 22],
-    [18, 18],
-    [8.5, 15.2],
-  ],
-  14,
-);
-console.log("at bar door", me?.x?.toFixed(2), me?.y?.toFixed(2));
-if (!me || Math.hypot(me.x - 8.5, me.y - 15.2) > 1.5) fail("bar door");
+// Single click from spawn (~40,30) to bar door — exercises A* around shells
+let me = await goTo(8.5, 15.2, 30);
+console.log("at bar door (direct path)", me?.x?.toFixed(2), me?.y?.toFixed(2));
+if (!me || Math.hypot(me.x - 8.5, me.y - 15.2) > 1.5) fail("bar door direct pathing");
 ws.send(JSON.stringify({ type: "intent.interact" }));
 await wait(500);
 if (last?.you.insideBuildingId !== "bar_rusty") fail(`bar enter ${last?.you.insideBuildingId}`);
@@ -206,6 +193,18 @@ if (!String(last?.you.insideBuildingId ?? "").startsWith("mi_")) {
 if (last?.mission?.id !== "warehouse_raid") fail("warehouse_raid not active");
 if (!last.mission.instanced) fail("mission not marked instanced");
 
+// AI roles on instance hostiles (M5)
+const bayHostiles = (last?.units ?? []).filter(
+  (u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && u.alive,
+);
+if (bayHostiles.length < 2) fail(`expected bay hostiles, got ${bayHostiles.length}`);
+const withRole = bayHostiles.filter((u) => u.aiRole === "shooter" || u.aiRole === "rusher" || u.aiRole === "coward");
+if (withRole.length < bayHostiles.length) {
+  fail(`hostiles missing aiRole: ${JSON.stringify(bayHostiles.map((u) => ({ n: u.name, r: u.aiRole })))}`);
+}
+const roleSet = new Set(withRole.map((u) => u.aiRole));
+console.log("bay AI roles", [...roleSet].join(","), "count", withRole.length);
+
 // Fight hostiles in the bay
 const fireBudget = 200;
 for (let i = 0; i < fireBudget; i++) {
@@ -252,6 +251,79 @@ if (last?.you.insideBuildingId) fail("should be outdoors after extract");
 // Combat + mission should push heat well above soft-job baseline
 if ((last.you.heat ?? 0) < 15) fail(`expected higher heat after warehouse fight, got ${last.you.heat}`);
 console.log("warehouse_raid instance ok heat", last.you.heat, "memorials", last.memorials?.length ?? 0);
+
+// --- M6 outdoor: still_not_guns (crate cr2) ---
+await openRitaBoard();
+const m6Ids = ["still_not_guns", "parking_tax", "chop_shop_raid", "rail_rats"];
+for (const id of m6Ids) {
+  if (!last.jobBoard.offers.some((o) => o.id === id)) fail(`missing M6 offer ${id}`);
+}
+console.log("M6 offers present", m6Ids.join(", "));
+cash0 = last.you.cash;
+rep0 = last.you.rep;
+ws.send(JSON.stringify({ type: "jobBoard.accept", missionId: "still_not_guns" }));
+await wait(500);
+if (last?.mission?.id !== "still_not_guns") fail("still_not_guns not active");
+me = await goTo(58, 50, 28);
+ws.send(JSON.stringify({ type: "intent.interact" }));
+await wait(600);
+if (last?.mission) fail("still_not_guns should complete");
+if (last.you.cash < cash0 + 300) fail(`still_not_guns pay expected +300 (cash ${last.you.cash} vs ${cash0})`);
+if (last.you.rep < rep0 + 2) fail("still_not_guns rep");
+console.log("still_not_guns outdoor ok cash", last.you.cash);
+
+// --- M6 instance: chop_shop_raid (garage template) ---
+await openRitaBoard();
+cash0 = last.you.cash;
+rep0 = last.you.rep;
+ws.send(JSON.stringify({ type: "jobBoard.accept", missionId: "chop_shop_raid" }));
+await wait(600);
+if (!String(last?.you.insideBuildingId ?? "").startsWith("mi_")) {
+  fail(`chop shop expected mi_ layer, got ${last?.you.insideBuildingId}`);
+}
+if (last?.mission?.id !== "chop_shop_raid") fail("chop_shop_raid not active");
+if (!last.mission.instanced) fail("chop_shop not marked instanced");
+const chopHostiles = (last?.units ?? []).filter(
+  (u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && u.alive,
+);
+if (chopHostiles.length < 2) fail(`expected chop hostiles >=2, got ${chopHostiles.length}`);
+// Boss name should use Chop label
+if (!chopHostiles.some((u) => /chop/i.test(u.name ?? ""))) {
+  fail(`expected Chop-labeled hostiles, got ${chopHostiles.map((u) => u.name).join(",")}`);
+}
+// Fire with the whole posse selected (leader + goons) — attack-move helps survive leather hostiles
+ws.send(JSON.stringify({ type: "intent.select", unitId: null }));
+await wait(100);
+for (let i = 0; i < 260; i++) {
+  const foe = last?.units.find(
+    (u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && u.alive,
+  );
+  if (!foe) break;
+  ws.send(JSON.stringify({ type: "intent.fire", targetId: foe.id }));
+  await wait(70);
+  if (last?.mission?.phase === "extract") break;
+  if (last?.mission == null && last?.you.respawnIn != null) {
+    fail("chop job failed (died) before extract");
+  }
+}
+for (let i = 0; i < 60; i++) {
+  if (last?.mission?.phase === "extract") break;
+  const foe = last?.units.find((u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && u.alive);
+  if (foe) ws.send(JSON.stringify({ type: "intent.fire", targetId: foe.id }));
+  await wait(120);
+}
+if (last?.mission?.phase !== "extract") {
+  fail(`chop expected extract, got ${last?.mission?.phase}`);
+}
+// Garage template exit ~ (51, 82)
+me = await goTo(51.5, 82.5, 16);
+ws.send(JSON.stringify({ type: "intent.interact" }));
+await wait(600);
+if (last?.mission) fail("chop_shop should clear after extract");
+if (last.you.cash < cash0 + 520) fail(`chop pay expected +520 (cash ${last.you.cash} vs ${cash0})`);
+if (last.you.rep < rep0 + 5) fail("chop rep");
+if (last?.you.insideBuildingId) fail("should be outdoors after chop extract");
+console.log("chop_shop_raid instance ok cash", last.you.cash);
 
 // --- Shop quick check ---
 me = await goTo(51.5, 15.2, 20);

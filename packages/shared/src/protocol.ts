@@ -60,6 +60,11 @@ export interface UnitPublic {
   revealStage?: number;
   /** Stable dancer art key: a | b | c */
   dancerKey?: string;
+  /**
+   * AI combat role for hostiles (shooter / rusher / coward).
+   * Client uses for badges + readability; server is authoritative for behavior.
+   */
+  aiRole?: "shooter" | "rusher" | "coward";
 }
 
 export interface PossePublic {

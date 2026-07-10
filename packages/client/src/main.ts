@@ -1,5 +1,6 @@
 import {
   ARMORS,
+  combatPreviewLine,
   DEFAULT_REALM_ID,
   heatBand,
   INTERACT_RANGE,
@@ -8,12 +9,15 @@ import {
   SHOP_UPGRADE_ORDER,
   SHOP_WEAPON_ORDER,
   shopPrice,
+  statEffectLines,
+  streetRole,
   UPGRADES,
   WEAPONS,
   type ArmorId,
   type CombatFxEvent,
   type ServerMessage,
   type UnitPublic,
+  type UnitStats,
   type UpgradeId,
   type WeaponId,
   type WorldSnapshot,
@@ -552,10 +556,27 @@ function formatBonus(n: number): string {
   return `<span class="flat">·</span>`;
 }
 
-function miniStat(label: string, value: number, baseline = 5): string {
+function miniStat(
+  label: string,
+  value: number,
+  baseline = 5,
+  effectKey?: keyof UnitStats,
+): string {
   const b = statBonus(value, baseline);
   const cls = b > 0 ? "up" : b < 0 ? "down" : "";
-  return `<div class="mini-stat ${cls}" title="${label} ${value} (${b >= 0 ? "+" : ""}${b} vs baseline)"><span class="k">${label}</span><span class="v">${value}</span>${b > 0 ? `<span class="pip">▲${b}</span>` : ""}</div>`;
+  const effect = effectKey ? statEffectLines(effectKey, value) : null;
+  const tip = effect
+    ? `${effect.title} ${value}\n${effect.lines.join("\n")}`
+    : `${label} ${value} (${b >= 0 ? "+" : ""}${b} vs baseline)`;
+  return `<div class="mini-stat ${cls}" title="${escapeAttr(tip)}"><span class="k">${label}</span><span class="v">${value}</span>${b > 0 ? `<span class="pip">▲${b}</span>` : ""}</div>`;
+}
+
+function escapeAttr(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/\n/g, " · ");
 }
 
 let lastPosseKey = "";
@@ -588,6 +609,9 @@ function renderPosse(): void {
   units.forEach((u, i) => {
     const tier = upgradeTier(u.stats);
     const boss = isBossUnit(u);
+    const role = streetRole(u.stats);
+    const isMelee = u.weapon === "pipe" || u.weapon === "switchblade";
+    const preview = combatPreviewLine(u.stats, isMelee);
     const portrait = unitFaceUrl(u.id + u.name, {
       gender: u.gender,
       name: u.name,
@@ -612,22 +636,24 @@ function renderPosse(): void {
             <span class="name">${escapeHtml(u.name)}</span>
             ${boss ? '<span class="badge boss">BOSS</span>' : ""}
             ${u.incapacitated ? '<span class="badge downed">DOWNED</span>' : ""}
-            ${tier > 0 ? `<span class="badge up-tier t${tier}">${tierLabel(tier)}</span>` : '<span class="badge street">Street</span>'}
+            <span class="badge role role-${role.id}" title="${escapeAttr(role.blurb)}">${escapeHtml(role.label)}</span>
+            ${tier > 0 ? `<span class="badge up-tier t${tier}">${tierLabel(tier)}</span>` : ""}
           </div>
           <div class="stars" title="Upgrade tier">${tierStars(tier)}</div>
           <div class="meta gear-line">
             <span class="wep">🔫 ${escapeHtml(WEAPONS[u.weapon].name)}</span>
             <span class="arm">🛡 ${escapeHtml(ARMORS[u.armor].name)}</span>
           </div>
+          <div class="combat-preview" title="${escapeAttr(preview)}">${escapeHtml(preview)}</div>
           ${!u.alive ? '<div class="status-dead">RESPAWNING…</div>' : ""}
           ${u.incapacitated && u.alive ? '<div class="status-dead">CAN\'T FIGHT — covered by crew</div>' : ""}
         </div>
       </div>
       <div class="mini-stats">
-        ${miniStat("AIM", u.stats.aim)}
-        ${miniStat("GUT", u.stats.guts)}
-        ${miniStat("MUS", u.stats.muscle)}
-        ${miniStat("SPD", u.stats.speed)}
+        ${miniStat("AIM", u.stats.aim, 5, "aim")}
+        ${miniStat("GUT", u.stats.guts, 5, "guts")}
+        ${miniStat("MUS", u.stats.muscle, 5, "muscle")}
+        ${miniStat("SPD", u.stats.speed, 5, "speed")}
       </div>
       <div class="hp" title="HP ${Math.round(u.health)} / ${u.maxHealth}">
         <span style="width:${Math.max(0, (u.health / u.maxHealth) * 100)}%"></span>
@@ -722,14 +748,24 @@ function fillArmorBar(
   detailEl.innerHTML = `<b>${escapeHtml(a.name)}</b> · −${Math.round(a.damageReduce * 100)}% damage taken`;
 }
 
-function statBarHtml(label: string, value: number, max = 20, baseline = 5): string {
+function statBarHtml(
+  label: string,
+  value: number,
+  max = 20,
+  baseline = 5,
+  effectKey?: keyof UnitStats,
+): string {
   const b = statBonus(value, baseline);
   const pct = Math.min(100, Math.round((value / max) * 100));
   const boostPct = Math.min(100, Math.round((Math.max(0, baseline) / max) * 100));
+  const effect = effectKey ? statEffectLines(effectKey, value) : null;
+  const tip = effect
+    ? `${effect.title} ${value} · ${effect.lines.join(" · ")}`
+    : `${value} (baseline ${baseline})`;
   return `
-    <div class="stat-bar-row ${b > 0 ? "boosted" : ""}">
+    <div class="stat-bar-row ${b > 0 ? "boosted" : ""}" title="${escapeAttr(tip)}">
       <span class="stat-bar-label">${label}</span>
-      <div class="stat-bar-track" title="${value} (baseline ${baseline})">
+      <div class="stat-bar-track">
         <div class="stat-bar-base" style="width:${boostPct}%"></div>
         <div class="stat-bar-fill" style="width:${pct}%"></div>
       </div>
@@ -762,22 +798,29 @@ function renderGear(): void {
     dead: !u.alive,
   });
 
+  const role = streetRole(u.stats);
+  const isMelee = u.weapon === "pipe" || u.weapon === "switchblade";
+  const preview = combatPreviewLine(u.stats, isMelee);
   statsView.innerHTML = `
     <div class="gear-profile">
       <img class="portrait photo lg" src="${portrait}" alt="" width="56" height="56" draggable="false" />
       <div>
         <div class="gear-name">${escapeHtml(u.name)}</div>
-        <div class="badge up-tier t${tier}">${tierLabel(tier)} ${tierStars(tier)}</div>
-        <div class="muted tiny">Slot keys 1–4 · Icon bar equip · FULL for loadout desk</div>
+        <div class="badge-row">
+          <span class="badge role role-${role.id}" title="${escapeAttr(role.blurb)}">${escapeHtml(role.label)}</span>
+          <span class="badge up-tier t${tier}">${tierLabel(tier)} ${tierStars(tier)}</span>
+        </div>
+        <div class="combat-preview gear" title="${escapeAttr(preview)}">${escapeHtml(preview)}</div>
+        <div class="muted tiny">Hover stats for effects · Train at Pawn-O-Matic / gym</div>
       </div>
     </div>
     <div class="stat-bars">
-      ${statBarHtml("Aim", u.stats.aim)}
-      ${statBarHtml("Guts", u.stats.guts)}
-      ${statBarHtml("Muscle", u.stats.muscle)}
-      ${statBarHtml("Brains", u.stats.brains)}
-      ${statBarHtml("Speed", u.stats.speed)}
-      ${statBarHtml("Max HP", u.stats.maxHealth, 200, 100)}
+      ${statBarHtml("Aim", u.stats.aim, 20, 5, "aim")}
+      ${statBarHtml("Guts", u.stats.guts, 20, 5, "guts")}
+      ${statBarHtml("Muscle", u.stats.muscle, 20, 5, "muscle")}
+      ${statBarHtml("Brains", u.stats.brains, 20, 5, "brains")}
+      ${statBarHtml("Speed", u.stats.speed, 20, 5, "speed")}
+      ${statBarHtml("Max HP", u.stats.maxHealth, 200, 100, "maxHealth")}
     </div>
   `;
 
@@ -803,6 +846,7 @@ function renderCrewEditor(): void {
   crewEditorRoster.innerHTML = "";
   units.forEach((member, i) => {
     const t = upgradeTier(member.stats);
+    const mRole = streetRole(member.stats);
     const img = unitFaceUrl(member.id + member.name, {
       gender: member.gender,
       name: member.name,
@@ -817,7 +861,7 @@ function renderCrewEditor(): void {
       <img class="photo" src="${img}" alt="" width="40" height="40" draggable="false" />
       <div>
         <div class="name">${i + 1}. ${escapeHtml(member.name)}</div>
-        <div class="muted tiny">${tierLabel(t)} · ${escapeHtml(WEAPONS[member.weapon].name)}</div>
+        <div class="muted tiny">${escapeHtml(mRole.label)} · ${escapeHtml(WEAPONS[member.weapon].name)} · ${tierLabel(t)}</div>
       </div>
     `;
     btn.addEventListener("click", () => {
@@ -826,14 +870,18 @@ function renderCrewEditor(): void {
     crewEditorRoster.appendChild(btn);
   });
 
+  const profileRole = streetRole(u.stats);
   crewEditorProfile.innerHTML = `
     <div class="crew-profile-hero">
       <img class="portrait photo xl" src="${portrait}" alt="" width="72" height="72" draggable="false" />
       <div>
         <h3>${escapeHtml(u.name)}</h3>
-        <div class="badge up-tier t${tier}">${tierLabel(tier)} ${tierStars(tier)}</div>
+        <div class="badge-row">
+          <span class="badge role role-${profileRole.id}" title="${escapeAttr(profileRole.blurb)}">${escapeHtml(profileRole.label)}</span>
+          <span class="badge up-tier t${tier}">${tierLabel(tier)} ${tierStars(tier)}</span>
+        </div>
         <p class="muted">HP ${Math.round(u.health)}/${u.maxHealth} · ${u.alive ? "Active" : "Respawning"}</p>
-        <p class="muted tiny">Owned weapons unlock icon slots. Buy more at Pawn-O-Matic.</p>
+        <p class="muted tiny">${escapeHtml(profileRole.blurb)} Train stats at Pawn-O-Matic.</p>
       </div>
     </div>
   `;
@@ -841,16 +889,22 @@ function renderCrewEditor(): void {
   fillWeaponBar(crewWeaponBar, crewWeaponDetail, u, true);
   fillArmorBar(crewArmorBar, crewArmorDetail, u, true);
 
+  const role = streetRole(u.stats);
+  const isMelee = u.weapon === "pipe" || u.weapon === "switchblade";
+  const preview = combatPreviewLine(u.stats, isMelee);
   crewEditorStats.innerHTML = `
-    <div class="equip-label">ATTRIBUTES</div>
+    <div class="equip-label">ATTRIBUTES · ${escapeHtml(role.label)}</div>
+    <p class="stat-role-blurb muted tiny">${escapeHtml(role.blurb)}</p>
+    <p class="combat-preview crew" title="${escapeAttr(preview)}">${escapeHtml(preview)}</p>
     <div class="stat-bars wide">
-      ${statBarHtml("Aim", u.stats.aim)}
-      ${statBarHtml("Guts", u.stats.guts)}
-      ${statBarHtml("Muscle", u.stats.muscle)}
-      ${statBarHtml("Brains", u.stats.brains)}
-      ${statBarHtml("Speed", u.stats.speed)}
-      ${statBarHtml("Max HP", u.stats.maxHealth, 200, 100)}
+      ${statBarHtml("Aim", u.stats.aim, 20, 5, "aim")}
+      ${statBarHtml("Guts", u.stats.guts, 20, 5, "guts")}
+      ${statBarHtml("Muscle", u.stats.muscle, 20, 5, "muscle")}
+      ${statBarHtml("Brains", u.stats.brains, 20, 5, "brains")}
+      ${statBarHtml("Speed", u.stats.speed, 20, 5, "speed")}
+      ${statBarHtml("Max HP", u.stats.maxHealth, 200, 100, "maxHealth")}
     </div>
+    <p class="muted tiny stat-legend">Aim=hit/crit · Guts=dodge+tough · Muscle=dmg/pierce · Speed=move+fire rate</p>
   `;
 }
 

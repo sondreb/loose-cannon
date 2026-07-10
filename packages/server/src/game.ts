@@ -23,7 +23,20 @@ import {
   memorialCause,
   MISSIONS,
   realmLabel,
-  MOVE_SPEED,
+  AI_FLEE_HEALTH_FRAC,
+  armorPierce,
+  assignAiPosseRoles,
+  critChance,
+  damagePower,
+  fireCooldownFactor,
+  gutsDamageTakenFactor,
+  hitChanceClamped,
+  moveSpeedTilesPerSec,
+  pickRecruitArchetype,
+  preferredEngageRange,
+  rollRecruitStats,
+  streetRole,
+  type AiCombatRole,
   nextTutorialStep,
   POSSE_AGGRO_RANGE,
   POSSE_DETECT_RANGE,
@@ -41,6 +54,7 @@ import {
   UPGRADES,
   WEAPONS,
   createSkidrowMap,
+  findGridPath,
   pickVoiceLineId,
   type ArmorId,
   type ChatLine,
@@ -56,6 +70,7 @@ import {
   type StashState,
   type TutorialState,
   type TutorialStepId,
+  type PathPoint,
   type UnitPublic,
   type UnitStats,
   type UpgradeId,
@@ -94,6 +109,10 @@ interface Unit {
   y: number;
   tx: number;
   ty: number;
+  /** Intermediate A* waypoints toward tx/ty (world space); empty = straight-line */
+  path: PathPoint[];
+  /** Ticks with no progress while pathing — triggers repath */
+  stuckTicks: number;
   /** Free-move velocity direction (world space); used when moveMode === "dir" */
   dirX: number;
   dirY: number;
@@ -120,6 +139,8 @@ interface Unit {
   npcRole?: string;
   /** Gentleman's club dancer art key */
   dancerKey?: string;
+  /** Hostile AI fight style (shooter / rusher / coward) */
+  aiRole?: AiCombatRole;
 }
 
 function weaponScore(w: WeaponId): number {
@@ -360,6 +381,8 @@ export class GameWorld {
         y: n.y,
         tx: n.x,
         ty: n.y,
+        path: [],
+        stuckTicks: 0,
         dirX: 0,
         dirY: 0,
         moveMode: "idle",
@@ -479,8 +502,38 @@ export class GameWorld {
       oy: number,
       t: number,
       gender: Gender = "male",
+      role: AiCombatRole = "shooter",
     ) => {
       const g = gearFor(t);
+      // Role-flavored gear so rushers feel different from hold-out shooters
+      let weapon = g.weapon;
+      let ownedWeapons = new Set(g.weapons);
+      let stats = {
+        aim: (g.stats.aim ?? 5) + Math.floor(Math.random() * 2),
+        guts: (g.stats.guts ?? 5) + Math.floor(Math.random() * 2),
+        muscle: (g.stats.muscle ?? 5) + Math.floor(Math.random() * 2),
+        speed: (g.stats.speed ?? 5) + Math.floor(Math.random() * 2),
+        maxHealth: g.stats.maxHealth ?? 100,
+      };
+      if (role === "rusher") {
+        if (t >= 3) weapon = "shotgun";
+        else if (t >= 2) weapon = Math.random() < 0.5 ? "shotgun" : "switchblade";
+        else weapon = Math.random() < 0.55 ? "switchblade" : "pipe";
+        ownedWeapons.add(weapon);
+        stats.muscle = Math.min(12, stats.muscle + 2);
+        stats.speed = Math.min(12, stats.speed + 1);
+        stats.aim = Math.max(2, stats.aim - 1);
+      } else if (role === "coward") {
+        if (weapon === "pipe" || weapon === "switchblade") weapon = "pistol";
+        ownedWeapons.add("pistol");
+        stats.speed = Math.min(12, stats.speed + 2);
+        stats.guts = Math.max(2, stats.guts - 1);
+        stats.aim = Math.min(12, stats.aim + 1);
+      } else {
+        // shooter — prefer ranged if they somehow only have melee
+        if (weapon === "pipe" || weapon === "switchblade") weapon = "pistol";
+        stats.aim = Math.min(12, stats.aim + 1);
+      }
       this.units.set(uid, {
         id: uid,
         name: uname,
@@ -491,18 +544,14 @@ export class GameWorld {
         y: oy,
         tx: ox,
         ty: oy,
+        path: [],
+        stuckTicks: 0,
         dirX: 0,
         dirY: 0,
         moveMode: "idle",
-        health: g.stats.maxHealth ?? DEFAULT_HEALTH,
-        stats: defaultStats({
-          aim: (g.stats.aim ?? 5) + Math.floor(Math.random() * 2),
-          guts: (g.stats.guts ?? 5) + Math.floor(Math.random() * 2),
-          muscle: (g.stats.muscle ?? 5) + Math.floor(Math.random() * 2),
-          speed: (g.stats.speed ?? 5) + Math.floor(Math.random() * 2),
-          maxHealth: g.stats.maxHealth ?? 100,
-        }),
-        weapon: g.weapon,
+        health: stats.maxHealth ?? DEFAULT_HEALTH,
+        stats: defaultStats(stats),
+        weapon,
         armor: g.armor,
         facing: Math.floor(Math.random() * 8),
         alive: true,
@@ -510,24 +559,26 @@ export class GameWorld {
         isPlayerLeader: false,
         incapacitated: false,
         gender,
-        ownedWeapons: new Set(g.weapons),
+        ownedWeapons,
         ownedArmors: new Set(g.armors),
         aiWanderT: Math.random() * 3,
         buildingId: null,
         lastHitByPosseId: null,
+        aiRole: role,
       });
     };
 
     // Boss dead-center; goons on a protective circle (~40% female street meat)
-    make(leaderId, `${name} Boss`, "ai_boss", x, y, threat, "male");
+    const roles = assignAiPosseRoles(3, { aggression });
+    make(leaderId, `${name} Boss`, "ai_boss", x, y, threat, "male", roles[0] ?? "shooter");
     const g1 = `${id}_g1`;
     const g2 = `${id}_g2`;
     const s0 = this.circleSlot(x, y, 0, 2, 1.05);
     const s1 = this.circleSlot(x, y, 1, 2, 1.05);
     const r1 = randomRecruitProfile();
     const r2 = randomRecruitProfile();
-    make(g1, r1.name, "ai_goon", s0.x, s0.y, Math.max(1, threat - 1), r1.gender);
-    make(g2, r2.name, "ai_goon", s1.x, s1.y, Math.max(1, threat - 1), r2.gender);
+    make(g1, r1.name, "ai_goon", s0.x, s0.y, Math.max(1, threat - 1), r1.gender, roles[1] ?? "rusher");
+    make(g2, r2.name, "ai_goon", s1.x, s1.y, Math.max(1, threat - 1), r2.gender, roles[2] ?? "shooter");
     memberIds.push(g1, g2);
     this.posses.get(id)!.memberIds = memberIds;
   }
@@ -614,6 +665,8 @@ export class GameWorld {
       y: spawn.y,
       tx: spawn.x,
       ty: spawn.y,
+      path: [],
+      stuckTicks: 0,
       dirX: 0,
       dirY: 0,
       moveMode: "idle",
@@ -646,6 +699,8 @@ export class GameWorld {
       y: starterSlot.y,
       tx: starterSlot.x,
       ty: starterSlot.y,
+      path: [],
+      stuckTicks: 0,
       dirX: 0,
       dirY: 0,
       moveMode: "idle",
@@ -897,12 +952,78 @@ export class GameWorld {
     };
   }
 
+  /** Route around walls (A*); empty path = straight-line + slide. */
+  private findPathPoints(
+    sx: number,
+    sy: number,
+    gx: number,
+    gy: number,
+    bid: string | null,
+  ): PathPoint[] {
+    const walk = (tx: number, ty: number) => this.canWalk(tx + 0.5, ty + 0.5, bid);
+    const path = findGridPath(sx, sy, gx, gy, walk, { maxExpand: 5500 });
+    return path ?? [];
+  }
+
+  /**
+   * Set click/formation destination. Long outdoor orders get A* waypoints so
+   * units route around building shells instead of sticking on façades.
+   */
+  private setUnitNav(
+    u: Unit,
+    x: number,
+    y: number,
+    bid: string | null,
+    opts?: { pathfind?: boolean },
+  ): void {
+    const p = this.clampWorld(x, y);
+    const doPath = opts?.pathfind !== false;
+    const goalShift = Math.hypot(u.tx - p.x, u.ty - p.y);
+    const goalChanged = goalShift > 0.4 || u.moveMode !== "target";
+    u.moveMode = "target";
+    u.dirX = 0;
+    u.dirY = 0;
+    u.tx = p.x;
+    u.ty = p.y;
+
+    if (!doPath) {
+      if (goalChanged) {
+        u.path = [];
+        u.stuckTicks = 0;
+      }
+      return;
+    }
+
+    // Keep existing route if destination barely moved and we're still on track
+    if (!goalChanged && u.path.length > 0 && u.stuckTicks < 6) {
+      return;
+    }
+
+    const d = Math.hypot(p.x - u.x, p.y - u.y);
+    if (d <= 1.35) {
+      u.path = [];
+    } else {
+      u.path = this.findPathPoints(u.x, u.y, p.x, p.y, bid);
+    }
+    u.stuckTicks = 0;
+  }
+
+  private parkUnit(u: Unit): void {
+    u.moveMode = "idle";
+    u.dirX = 0;
+    u.dirY = 0;
+    u.tx = u.x;
+    u.ty = u.y;
+    u.path = [];
+    u.stuckTicks = 0;
+  }
+
   /** Boss at center, goons in a protective circle. */
   private assignCircleFormation(
     posse: Posse,
     centerX: number,
     centerY: number,
-    opts?: { moveBoss?: boolean; radius?: number },
+    opts?: { moveBoss?: boolean; radius?: number; pathfind?: boolean },
   ): void {
     const leader = this.leader(posse);
     if (!leader?.alive) return;
@@ -910,24 +1031,100 @@ export class GameWorld {
     const c = this.clampWorld(centerX, centerY);
     const rad = opts?.radius ?? this.formationRadius(goons.length);
     const moveBoss = opts?.moveBoss !== false;
+    const bid = posse.insideBuildingId ?? leader.buildingId;
+    const pf = opts?.pathfind;
 
     if (moveBoss) {
-      leader.moveMode = "target";
-      leader.dirX = 0;
-      leader.dirY = 0;
-      leader.tx = c.x;
-      leader.ty = c.y;
+      this.setUnitNav(leader, c.x, c.y, bid, { pathfind: pf });
     }
 
     goons.forEach((u, i) => {
       const slot = this.circleSlot(c.x, c.y, i, goons.length, rad);
-      const p = this.clampWorld(slot.x, slot.y);
-      u.moveMode = "target";
-      u.dirX = 0;
-      u.dirY = 0;
-      u.tx = p.x;
-      u.ty = p.y;
+      // Escort slots are short hops — pathfind only on long player orders
+      this.setUnitNav(u, slot.x, slot.y, bid, {
+        pathfind: pf === true ? true : pf === false ? false : Math.hypot(slot.x - u.x, slot.y - u.y) > 4,
+      });
     });
+  }
+
+  /**
+   * Role-based combat positioning for AI hostiles.
+   * Shooter holds mid-range; rusher closes; coward kites / flees when low HP.
+   */
+  private assignAiRoleCombat(posse: Posse, threatX: number, threatY: number): void {
+    const bid = posse.insideBuildingId;
+    for (const u of this.members(posse)) {
+      if (!u.alive || u.incapacitated) continue;
+      const role: AiCombatRole = u.aiRole ?? (u.kind === "ai_boss" ? "shooter" : "rusher");
+      const w = WEAPONS[u.weapon];
+      const d = dist(u.x, u.y, threatX, threatY) || 0.01;
+      const fx = (threatX - u.x) / d;
+      const fy = (threatY - u.y) / d;
+      const prefer = preferredEngageRange(role, w.range);
+      const hpFrac = u.health / Math.max(1, u.stats.maxHealth);
+      const fleeing =
+        role === "coward"
+          ? hpFrac < AI_FLEE_HEALTH_FRAC + 0.12
+          : role === "shooter" && hpFrac < AI_FLEE_HEALTH_FRAC * 0.7;
+
+      let tx = u.x;
+      let ty = u.y;
+      let shouldMove = false;
+
+      if (fleeing && d < prefer + 1.8) {
+        // Back off hard — cowards and battered shooters create space
+        const back = Math.max(1.4, prefer - d + 1.2);
+        tx = u.x - fx * back;
+        ty = u.y - fy * back;
+        // Lateral juke so they don't all stack on one retreat line
+        const jx = -fy * (0.4 + (u.id.charCodeAt(u.id.length - 1) % 5) * 0.15);
+        const jy = fx * (0.4 + (u.id.charCodeAt(u.id.length - 2) % 5) * 0.15);
+        tx += jx;
+        ty += jy;
+        shouldMove = true;
+      } else if (role === "rusher") {
+        if (d > prefer + 0.25) {
+          tx = threatX - fx * prefer * 0.85;
+          ty = threatY - fy * prefer * 0.85;
+          shouldMove = true;
+        } else if (d < 0.85) {
+          // Don't stand inside the target
+          tx = threatX - fx * 1.0;
+          ty = threatY - fy * 1.0;
+          shouldMove = true;
+        }
+      } else {
+        // Shooter / healthy coward: band around preferred range
+        if (d > prefer + 0.45) {
+          tx = threatX - fx * prefer;
+          ty = threatY - fy * prefer;
+          shouldMove = true;
+        } else if (d < prefer * 0.58) {
+          tx = u.x - fx * (prefer - d + 0.35);
+          ty = u.y - fy * (prefer - d + 0.35);
+          shouldMove = true;
+        }
+      }
+
+      if (shouldMove) {
+        const p = this.clampWorld(tx, ty);
+        if (this.canWalk(p.x, p.y, bid)) {
+          this.setUnitNav(u, p.x, p.y, bid, {
+            pathfind: Math.hypot(p.x - u.x, p.y - u.y) > 3.5,
+          });
+        } else {
+          // Fallback: step toward/away along axis
+          const step = fleeing ? -0.9 : role === "rusher" ? 0.9 : d > prefer ? 0.7 : -0.7;
+          const alt = this.clampWorld(u.x + fx * step, u.y + fy * step);
+          if (this.canWalk(alt.x, alt.y, bid)) {
+            this.setUnitNav(u, alt.x, alt.y, bid, { pathfind: false });
+          }
+        }
+      } else if (dist(u.x, u.y, u.tx, u.ty) < 0.4) {
+        this.parkUnit(u);
+      }
+      u.facing = facingFromDelta(threatX - u.x, threatY - u.y);
+    }
   }
 
   /**
@@ -938,43 +1135,34 @@ export class GameWorld {
     const leader = this.leader(posse);
     if (!leader?.alive) return;
     const goons = this.goons(posse);
+    const bid = posse.insideBuildingId ?? leader.buildingId;
     const dx = threatX - leader.x;
     const dy = threatY - leader.y;
     const d = Math.hypot(dx, dy) || 1;
     const fx = dx / d;
     const fy = dy / d;
+    // Combat slots update often — pathfind only on long approaches
+    const pfLong = d > 5;
 
     if (goons.length === 0) {
       // Solo boss — engage at weapon range
       const range = Math.max(1.1, WEAPONS[leader.weapon].range * 0.78);
-      leader.moveMode = "target";
-      leader.dirX = 0;
-      leader.dirY = 0;
       if (d > range) {
         const p = this.clampWorld(threatX - fx * range * 0.92, threatY - fy * range * 0.92);
-        leader.tx = p.x;
-        leader.ty = p.y;
+        this.setUnitNav(leader, p.x, p.y, bid, { pathfind: pfLong });
       } else {
-        leader.moveMode = "idle";
-        leader.tx = leader.x;
-        leader.ty = leader.y;
+        this.parkUnit(leader);
       }
       return;
     }
 
     // Boss stays in the middle-rear; approach but don't lead the charge
     const bossHold = Math.max(2.05, Math.min(WEAPONS[leader.weapon].range * 0.55, 3.2));
-    leader.moveMode = "target";
-    leader.dirX = 0;
-    leader.dirY = 0;
     if (d > bossHold + 0.35 || d < bossHold - 0.55) {
       const p = this.clampWorld(threatX - fx * bossHold, threatY - fy * bossHold);
-      leader.tx = p.x;
-      leader.ty = p.y;
+      this.setUnitNav(leader, p.x, p.y, bid, { pathfind: pfLong });
     } else {
-      leader.moveMode = "idle";
-      leader.tx = leader.x;
-      leader.ty = leader.y;
+      this.parkUnit(leader);
     }
 
     // Anchor the wall on the boss's current position so the shield moves with him
@@ -999,12 +1187,9 @@ export class GameWorld {
       } else {
         slot = this.frontSlot(bx, by, threatX, threatY, i, goons.length, lineDist, spacing);
       }
-      const p = this.clampWorld(slot.x, slot.y);
-      u.moveMode = "target";
-      u.dirX = 0;
-      u.dirY = 0;
-      u.tx = p.x;
-      u.ty = p.y;
+      this.setUnitNav(u, slot.x, slot.y, bid, {
+        pathfind: Math.hypot(slot.x - u.x, slot.y - u.y) > 4,
+      });
     });
   }
 
@@ -1069,7 +1254,8 @@ export class GameWorld {
         }
       }
     }
-    this.assignCircleFormation(posse, c.x, c.y, { moveBoss: true });
+    // Long click orders: A* around shells for boss + goons
+    this.assignCircleFormation(posse, c.x, c.y, { moveBoss: true, pathfind: true });
   }
 
   /** Spiral search for a walkable outdoor tile near (x,y). */
@@ -1202,17 +1388,16 @@ export class GameWorld {
       leader.dirY = ndy;
       leader.tx = leader.x;
       leader.ty = leader.y;
-      this.assignCircleFormation(posse, leader.x, leader.y, { moveBoss: false });
+      leader.path = [];
+      leader.stuckTicks = 0;
+      this.assignCircleFormation(posse, leader.x, leader.y, { moveBoss: false, pathfind: false });
     } else {
       // Stop → settle into protective circle around boss
       if (!posse.attackTargetId) posse.moveLabel = null;
       leader.dirX = 0;
       leader.dirY = 0;
-      this.assignCircleFormation(posse, leader.x, leader.y, { moveBoss: true });
-      // Boss already at center — park him
-      leader.moveMode = "idle";
-      leader.tx = leader.x;
-      leader.ty = leader.y;
+      this.assignCircleFormation(posse, leader.x, leader.y, { moveBoss: true, pathfind: false });
+      this.parkUnit(leader);
     }
   }
 
@@ -1221,19 +1406,11 @@ export class GameWorld {
     posse.moveLabel = null;
     const leader = this.leader(posse);
     if (leader?.alive) {
-      this.assignCircleFormation(posse, leader.x, leader.y, { moveBoss: true });
-      leader.moveMode = "idle";
-      leader.dirX = 0;
-      leader.dirY = 0;
-      leader.tx = leader.x;
-      leader.ty = leader.y;
+      this.assignCircleFormation(posse, leader.x, leader.y, { moveBoss: true, pathfind: false });
+      this.parkUnit(leader);
     } else {
       for (const u of this.members(posse)) {
-        u.moveMode = "idle";
-        u.dirX = 0;
-        u.dirY = 0;
-        u.tx = u.x;
-        u.ty = u.y;
+        this.parkUnit(u);
       }
     }
   }
@@ -1409,7 +1586,8 @@ export class GameWorld {
     const d = dist(shooter.x, shooter.y, target.x, target.y);
     if (d > w.range + 0.55) return;
 
-    shooter.fireCd = w.fireCooldown;
+    // Speed shortens fire cooldown (runners re-engage faster)
+    shooter.fireCd = w.fireCooldown * fireCooldownFactor(shooter.stats.speed);
     shooter.facing = facingFromDelta(target.x - shooter.x, target.y - shooter.y);
 
     // Always emit attack VFX so shots/swings are visible even on miss
@@ -1429,17 +1607,9 @@ export class GameWorld {
       shooter.kind === "ai_boss" || shooter.kind === "ai_goon" || shooter.kind === "npc";
     const aim = shooter.stats.aim;
     const muscle = shooter.stats.muscle;
-    const guts = target.stats.guts;
 
-    // Hit chance: aim dominates, guts dodges a bit, range hurts
-    let hitChance =
-      COMBAT.baseHit +
-      aim * COMBAT.aimHitPerPoint -
-      guts * COMBAT.gutsDodgePerPoint -
-      d * COMBAT.rangeHitPenalty;
-    if (isAi) hitChance -= COMBAT.aiHitPenalty;
-    else hitChance += COMBAT.playerHitBonus;
-    hitChance = clamp(hitChance, 0.1, 0.94);
+    // Hit chance: Aim hits, target Guts dodges, range hurts (shared formula)
+    const hitChance = hitChanceClamped(aim, target.stats.guts, d, { isAi });
 
     if (Math.random() > hitChance) {
       this.pushCombatFx({
@@ -1450,27 +1620,26 @@ export class GameWorld {
         y1: target.y + (Math.random() - 0.5) * 0.6,
         weapon,
       });
-      if (session && !isAi) this.log(session, `${shooter.name} missed ${target.name}.`);
+      if (session && !isAi) {
+        const dodgeNote =
+          target.stats.guts >= 7 ? ` (${target.name}'s guts)` : "";
+        this.log(session, `${shooter.name} missed ${target.name}.${dodgeNote}`);
+      }
       return;
     }
 
-    // Damage: weapon base × (aim + muscle power) × variance × optional crit − armor
-    const power =
-      1 + aim * COMBAT.aimDamagePerPoint + muscle * COMBAT.muscleDamagePerPoint;
+    // Damage: weapon × (aim + muscle; melee loves muscle) × variance × crit − armor − guts toughness
+    const power = damagePower(aim, muscle, isMelee);
     const variance =
       COMBAT.damageVarianceMin +
       Math.random() * (COMBAT.damageVarianceMax - COMBAT.damageVarianceMin);
-    const critChance = clamp(
-      COMBAT.critBase + aim * COMBAT.critPerAim,
-      0.03,
-      0.4,
-    );
-    const crit = Math.random() < critChance;
+    const crit = Math.random() < critChance(aim);
     const armor = ARMORS[target.armor];
-    const pierce = clamp(muscle * COMBAT.muscleArmorPierce, 0, 0.35);
+    const pierce = armorPierce(muscle);
     const armorFactor = 1 - armor.damageReduce * (1 - pierce);
+    const tough = gutsDamageTakenFactor(target.stats.guts);
 
-    let dmg = w.damage * power * variance * armorFactor;
+    let dmg = w.damage * power * variance * armorFactor * tough;
     if (crit) dmg *= COMBAT.critMultiplier;
     if (isAi) dmg *= COMBAT.aiDamageFactor;
     dmg = Math.max(1, Math.round(dmg));
@@ -1488,10 +1657,14 @@ export class GameWorld {
       dmg,
     });
     if (session && !isAi) {
-      this.log(
-        session,
-        `${shooter.name} ${crit ? "CRIT " : ""}hit ${target.name} for ${dmg}${crit ? "!" : "."}`,
-      );
+      const tag = crit
+        ? aim >= 7
+          ? "CRIT (aim) "
+          : "CRIT "
+        : muscle >= 8 && isMelee
+          ? "SMASH "
+          : "";
+      this.log(session, `${shooter.name} ${tag}hit ${target.name} for ${dmg}${crit ? "!" : "."}`);
     }
 
     if (target.health <= 0) {
@@ -1651,29 +1824,31 @@ export class GameWorld {
 
       const movingDir =
         leader.moveMode === "dir" && (leader.dirX !== 0 || leader.dirY !== 0);
+      const leaderChase =
+        leader.path.length > 0 ? leader.path[0]! : { x: leader.tx, y: leader.ty };
       const movingTarget =
-        leader.moveMode === "target" && dist(leader.x, leader.y, leader.tx, leader.ty) > 0.12;
+        leader.moveMode === "target" && dist(leader.x, leader.y, leaderChase.x, leaderChase.y) > 0.12;
       if (!movingDir && !movingTarget) continue;
 
       const fx = movingDir
         ? leader.dirX
-        : (leader.tx - leader.x) / Math.max(0.001, dist(leader.x, leader.y, leader.tx, leader.ty));
+        : (leaderChase.x - leader.x) /
+          Math.max(0.001, dist(leader.x, leader.y, leaderChase.x, leaderChase.y));
       const fy = movingDir
         ? leader.dirY
-        : (leader.ty - leader.y) / Math.max(0.001, dist(leader.x, leader.y, leader.tx, leader.ty));
+        : (leaderChase.y - leader.y) /
+          Math.max(0.001, dist(leader.x, leader.y, leaderChase.x, leaderChase.y));
 
       // Circle center tracks the boss (slightly ahead so escorts don't lag into him)
       const cx = leader.x + fx * 0.12;
       const cy = leader.y + fy * 0.12;
       const rad = this.formationRadius(goons.length);
+      const bid = posse.insideBuildingId ?? leader.buildingId;
       goons.forEach((u, i) => {
         const slot = this.circleSlot(cx, cy, i, goons.length, rad);
         const p = this.clampWorld(slot.x - fx * 0.1, slot.y - fy * 0.1);
-        u.moveMode = "target";
-        u.dirX = 0;
-        u.dirY = 0;
-        u.tx = p.x;
-        u.ty = p.y;
+        // Soft escort: no A* thrash every tick
+        this.setUnitNav(u, p.x, p.y, bid, { pathfind: false });
       });
     }
   }
@@ -3002,14 +3177,18 @@ export class GameWorld {
       posse.cash -= cost;
       if (recruitNpc) {
         const name = this.recruitNpcAsGoon(session, posse, recruitNpc);
-        d.text = `"${name}" cracks their neck. "Alright boss. I'm with you."`;
+        const role = streetRole(recruitNpc.stats);
+        d.text = `"${name}" cracks their neck. "Alright boss. I'm with you." (${role.label})`;
         this.setDialogueVoice(d, femaleNpc ? "thug_join_f" : "thug_join");
-        this.log(session, `${name} joined the posse for $${cost}.`);
+        this.log(session, `${name} joined the posse for $${cost} (${role.label}).`);
       } else {
-        const name = this.hireGoon(session, posse);
-        d.text = "\"They're yours. Try not to get 'em killed in the first five minutes.\"";
+        const hired = this.hireGoon(session, posse);
+        d.text = `"${hired.name}" — ${hired.archetypeLabel}. ${hired.hireLine} Try not to get 'em killed in the first five minutes.`;
         this.setDialogueVoice(d, femaleBar ? "venus_hire_ok" : "vince_hire_ok");
-        this.log(session, `Hired ${name} for $${cost}.`);
+        this.log(
+          session,
+          `Hired ${hired.name} (${hired.archetypeLabel}) for $${cost}.`,
+        );
       }
       d.choices = [{ id: "bye", label: "Welcome to the posse.", tone: "business" }];
       posse.dialogue = d;
@@ -3021,7 +3200,7 @@ export class GameWorld {
       const femaleBar = this.isFemaleBartender(npc);
       const isRita = /rita/i.test(npc?.name ?? d.npcName);
       d.text =
-        "\"Dumpster Dogs prowl the west road. Silk Street plays nice until they don't. Watch the warehouse.\"";
+        "\"Dumpster Dogs west, Rail Rats on the fringe, Parking Racket south. Warehouse and Chop Shop jobs if you want a sealed room with freeloaders.\"";
       this.setDialogueVoice(
         d,
         isRita ? "rita_tip" : femaleBar ? "venus_rumor" : "vince_rumor",
@@ -3176,7 +3355,7 @@ export class GameWorld {
       }
       this.log(
         session,
-        `JOB ACCEPTED: ${def.title} (INSTANCE). Clear the bay, then extract. Pay $${def.rewardCash} + ${def.rewardRep} rep.`,
+        `JOB ACCEPTED: ${def.title} (INSTANCE). Clear hostiles, then extract. Pay $${def.rewardCash} + ${def.rewardRep} rep.`,
       );
     } else {
       // Outdoor hub objective
@@ -3199,7 +3378,7 @@ export class GameWorld {
     this.tryCompleteMission(session, posse);
   }
 
-  /** Spawn a private AI posse inside the mission layer (warehouse wipe). */
+  /** Spawn a private AI posse inside the mission layer (warehouse / chop shop / etc.). */
   private spawnMissionInstanceHostiles(playerPosse: Posse, def: (typeof MISSIONS)[MissionId]): string {
     const m = playerPosse.mission!;
     const layer = m.instanceLayerId!;
@@ -3210,18 +3389,22 @@ export class GameWorld {
 
     const threat = def.instance?.enemyThreat ?? 1;
     const goonN = Math.max(1, def.instance?.enemyCount ?? 2);
+    const label = def.instance?.enemyLabel ?? "Bay";
     const cx = (tmpl.ix0 + tmpl.ix1) / 2;
     const cy = (tmpl.iy0 + tmpl.iy1) / 2;
+    // Higher threat = slightly tankier instance crew
+    const bossHp = 50 + threat * 8;
+    const goonHp = 36 + threat * 4;
 
     const bossId = `${enemyPosseId}_boss`;
     const memberIds = [bossId];
     this.posses.set(enemyPosseId, {
       id: enemyPosseId,
-      name: "Bay Freeloaders",
+      name: `${label} Freeloaders`,
       leaderId: bossId,
       isPlayer: false,
       hostile: true,
-      cash: 80,
+      cash: 80 + threat * 20,
       rep: 0,
       heat: 0,
       color: 0xa44,
@@ -3250,6 +3433,7 @@ export class GameWorld {
       respawnT: undefined,
     });
 
+    const roles = assignAiPosseRoles(1 + goonN, { aggression: 0.85 });
     const mk = (
       uid: string,
       uname: string,
@@ -3257,7 +3441,39 @@ export class GameWorld {
       x: number,
       y: number,
       hp: number,
+      role: AiCombatRole,
     ) => {
+      let weapon: WeaponId = "pistol";
+      let stats = defaultStats({ aim: 4, guts: 4, muscle: 4, speed: 5, maxHealth: hp });
+      if (role === "rusher") {
+        weapon = threat >= 2 ? "pipe" : "switchblade";
+        stats = defaultStats({
+          aim: 3,
+          guts: 5,
+          muscle: 7 + Math.min(2, threat - 1),
+          speed: 7,
+          maxHealth: hp,
+        });
+      } else if (role === "coward") {
+        weapon = "pistol";
+        stats = defaultStats({
+          aim: 5,
+          guts: 3,
+          muscle: 3,
+          speed: 7,
+          maxHealth: Math.max(28, Math.round(hp * 0.85)),
+        });
+      } else {
+        // Threat 2+: slightly better aim; keep pistols so bay fights stay readable
+        weapon = "pistol";
+        stats = defaultStats({
+          aim: 5 + Math.min(2, threat - 1),
+          guts: 4,
+          muscle: 4,
+          speed: 5,
+          maxHealth: hp,
+        });
+      }
       this.units.set(uid, {
         id: uid,
         name: uname,
@@ -3268,33 +3484,44 @@ export class GameWorld {
         y,
         tx: x,
         ty: y,
+        path: [],
+        stuckTicks: 0,
         dirX: 0,
         dirY: 0,
         moveMode: "idle",
-        health: hp,
-        stats: defaultStats({ aim: 4, guts: 4, muscle: 4, speed: 5, maxHealth: hp }),
-        weapon: "pistol",
-        armor: "none",
+        health: stats.maxHealth,
+        stats,
+        weapon,
+        armor: threat >= 2 ? "leather" : "none",
         facing: 4,
         alive: true,
         fireCd: 0,
         isPlayerLeader: false,
         incapacitated: false,
         gender: "male",
-        ownedWeapons: new Set(["pipe", "pistol"]),
-        ownedArmors: new Set(["none"]),
+        ownedWeapons: new Set(["pipe", "pistol", "switchblade", "shotgun"]),
+        ownedArmors: new Set(["none", "leather"]),
         aiWanderT: 0.5,
         buildingId: layer,
         lastHitByPosseId: null,
+        aiRole: role,
       });
     };
 
-    mk(bossId, "Bay Boss", "ai_boss", cx + 1.2, cy, 55);
+    mk(bossId, `${label} Boss`, "ai_boss", cx + 1.2, cy, bossHp, roles[0] ?? "shooter");
     for (let i = 0; i < goonN; i++) {
       const gid = `${enemyPosseId}_g${i}`;
       memberIds.push(gid);
       const ang = (i / goonN) * Math.PI * 2;
-      mk(gid, `Bay Goon ${i + 1}`, "ai_goon", cx + Math.cos(ang) * 1.4, cy + Math.sin(ang) * 1.1, 40);
+      mk(
+        gid,
+        `${label} Goon ${i + 1}`,
+        "ai_goon",
+        cx + Math.cos(ang) * 1.4,
+        cy + Math.sin(ang) * 1.1,
+        goonHp,
+        roles[i + 1] ?? (i === 0 ? "rusher" : "shooter"),
+      );
     }
     const ep = this.posses.get(enemyPosseId)!;
     ep.memberIds = memberIds;
@@ -3552,7 +3779,11 @@ export class GameWorld {
       const leader = this.leader(posse);
       // Fail instanced job if boss dies (wipe in the bay)
       if (def.instance && leader && !leader.alive) {
-        this.failMission(session, posse, "You went down in the bay. Contract void. Try not to die next time.");
+        this.failMission(
+          session,
+          posse,
+          "You went down on the job. Contract void. Try not to die next time.",
+        );
         continue;
       }
       if (!leader?.alive) continue;
@@ -3638,12 +3869,28 @@ export class GameWorld {
     // Player boss down in instance → fail is handled in updateMissions
   }
 
-  /** Spawn a fresh goon on the protective circle around the boss. Returns name. */
-  private hireGoon(session: CharacterSession, posse: Posse): string {
+  /**
+   * Spawn a fresh goon on the protective circle around the boss.
+   * Returns name + archetype label for dialogue / log.
+   */
+  private hireGoon(
+    session: CharacterSession,
+    posse: Posse,
+  ): { name: string; archetypeLabel: string; hireLine: string } {
     const leader = this.leader(posse);
-    if (!leader) return "Nobody";
+    if (!leader) return { name: "Nobody", archetypeLabel: "street meat", hireLine: "" };
     const id = this.nextId("unit");
     const profile = randomRecruitProfile();
+    const arch = pickRecruitArchetype();
+    const stats = rollRecruitStats(arch);
+    const weapon =
+      arch.weaponHint === "pipe"
+        ? "pipe"
+        : arch.weaponHint === "switchblade"
+          ? "switchblade"
+          : "pistol";
+    const ownedWeapons = new Set(STARTER_WEAPONS);
+    ownedWeapons.add(weapon);
     const nextCount = this.goons(posse).length + 1;
     const slot = this.circleSlot(leader.x, leader.y, nextCount - 1, nextCount, this.formationRadius(nextCount));
     const goon: Unit = {
@@ -3656,17 +3903,14 @@ export class GameWorld {
       y: slot.y,
       tx: slot.x,
       ty: slot.y,
+      path: [],
+      stuckTicks: 0,
       dirX: 0,
       dirY: 0,
       moveMode: "idle",
-      health: DEFAULT_HEALTH,
-      stats: defaultStats({
-        aim: 3 + Math.floor(Math.random() * 4),
-        guts: 3 + Math.floor(Math.random() * 5),
-        muscle: 4 + Math.floor(Math.random() * 4),
-        speed: 4 + Math.floor(Math.random() * 3),
-      }),
-      weapon: "pistol",
+      health: stats.maxHealth,
+      stats: defaultStats(stats),
+      weapon,
       armor: "none",
       facing: leader.facing,
       alive: true,
@@ -3674,7 +3918,7 @@ export class GameWorld {
       isPlayerLeader: false,
       incapacitated: false,
       gender: profile.gender,
-      ownedWeapons: new Set(STARTER_WEAPONS),
+      ownedWeapons,
       ownedArmors: new Set(["none"]),
       aiWanderT: 0,
       buildingId: posse.insideBuildingId,
@@ -3684,7 +3928,7 @@ export class GameWorld {
     posse.memberIds.push(id);
     // Re-space full circle so the boss stays centered
     this.assignCircleFormation(posse, leader.x, leader.y, { moveBoss: false });
-    return profile.name;
+    return { name: profile.name, archetypeLabel: arch.label, hireLine: arch.hireLine };
   }
 
   /**
@@ -3872,12 +4116,18 @@ export class GameWorld {
       } else {
         unit.health = Math.min(unit.stats.maxHealth, unit.health);
       }
-    }
-    if (def.heal) {
+      const role = streetRole(unit.stats);
+      this.log(
+        session,
+        `${unit.name}: ${def.name} (−$${price}) → ${role.label} · A${unit.stats.aim} G${unit.stats.guts} M${unit.stats.muscle} S${unit.stats.speed}`,
+      );
+    } else if (def.heal) {
       unit.health = Math.min(unit.stats.maxHealth, unit.health + def.heal);
       if (!unit.alive && unit.health > 0) unit.alive = true;
+      this.log(session, `${def.name} on ${unit.name} (−$${price}). HP ${Math.round(unit.health)}.`);
+    } else {
+      this.log(session, `Bought ${def.name} for ${unit.name} (−$${price}).`);
     }
-    this.log(session, `Bought ${def.name} for ${unit.name} (−$${price}).`);
   }
 
   private cmdSetWeapon(posse: Posse, unitId: string, weaponId: WeaponId): void {
@@ -3991,7 +4241,8 @@ export class GameWorld {
       if (u.fireCd > 0) u.fireCd = Math.max(0, u.fireCd - dt);
 
       // Downed boss: crawl slowly if forced to move with formation, no free sprint
-      const baseSpeed = MOVE_SPEED * (0.7 + u.stats.speed * 0.06);
+      // Speed stat drives move rate (shared formula)
+      const baseSpeed = moveSpeedTilesPerSec(u.stats.speed);
       const speed = u.incapacitated ? baseSpeed * 0.35 : baseSpeed;
       const posse = this.posses.get(u.posseId);
       const bid = posse?.insideBuildingId ?? u.buildingId;
@@ -4011,14 +4262,28 @@ export class GameWorld {
         u.facing = facingFromDelta(u.dirX, u.dirY);
         u.tx = u.x;
         u.ty = u.y;
+        u.path = [];
         continue;
       }
 
       if (u.moveMode !== "target") continue;
 
-      const dx = u.tx - u.x;
-      const dy = u.ty - u.y;
+      // Follow next A* waypoint, else final tx/ty
+      while (u.path.length > 0) {
+        const wp = u.path[0]!;
+        if (Math.hypot(wp.x - u.x, wp.y - u.y) < 0.28) {
+          u.path.shift();
+          continue;
+        }
+        break;
+      }
+
+      const chase = u.path.length > 0 ? u.path[0]! : { x: u.tx, y: u.ty };
+      const dx = chase.x - u.x;
+      const dy = chase.y - u.y;
       const d = Math.hypot(dx, dy);
+      const finalD = Math.hypot(u.tx - u.x, u.ty - u.y);
+
       if (d > 0.04) {
         const step = Math.min(d, speed * dt);
         const nx = u.x + (dx / d) * step;
@@ -4026,15 +4291,20 @@ export class GameWorld {
         const ox = u.x;
         const oy = u.y;
         const moved = this.tryMoveUnit(u, nx, ny, bid);
-        if (!moved) {
-          // Only abandon the order if we are basically on the target, or stuck with no escape.
-          // Never cancel a long-range click just because one step hit a wall (slide keeps going).
-          if (d < 0.4) {
-            u.tx = u.x;
-            u.ty = u.y;
-            u.moveMode = "idle";
+        const progressed = Math.hypot(u.x - ox, u.y - oy) > 1e-5;
+
+        if (progressed) {
+          u.stuckTicks = 0;
+        } else {
+          u.stuckTicks += 1;
+        }
+
+        if (!moved || !progressed) {
+          // Only abandon if basically on final target
+          if (finalD < 0.4) {
+            this.parkUnit(u);
           } else {
-            // Nudge target sideways toward nearest walkable if current tx/ty is inside a shell
+            // Nudge final goal out of a shell
             if (!bid && !this.canWalk(u.tx, u.ty, null)) {
               const alt = this.nearestWalkableOutdoor(u.tx, u.ty, 8);
               if (alt) {
@@ -4042,23 +4312,41 @@ export class GameWorld {
                 u.ty = alt.y;
               }
             }
-            // If we made zero progress this tick and can't step any cardinal, stop
-            const stuck =
-              Math.hypot(u.x - ox, u.y - oy) < 1e-6 &&
-              !this.canWalk(u.x + 0.2, u.y, bid) &&
-              !this.canWalk(u.x - 0.2, u.y, bid) &&
-              !this.canWalk(u.x, u.y + 0.2, bid) &&
-              !this.canWalk(u.x, u.y - 0.2, bid);
-            if (stuck) {
-              u.tx = u.x;
-              u.ty = u.y;
-              u.moveMode = "idle";
+            // Stuck recovery: repath around façades (~0.3s of no progress)
+            if (u.stuckTicks >= 8 && u.stuckTicks % 8 === 0) {
+              const fresh = this.findPathPoints(u.x, u.y, u.tx, u.ty, bid);
+              if (fresh.length > 0) {
+                u.path = fresh;
+              } else if (u.path.length > 0) {
+                // Skip jammed waypoint and try the next
+                u.path.shift();
+              }
+            }
+            // Hard stuck against wall with no path escape
+            if (u.stuckTicks > 45) {
+              const escape =
+                !bid && this.nearestWalkableOutdoor(u.x + dx * 0.5, u.y + dy * 0.5, 5);
+              if (escape && Math.hypot(escape.x - u.x, escape.y - u.y) > 0.3) {
+                u.path = [{ x: escape.x, y: escape.y }, { x: u.tx, y: u.ty }];
+                u.stuckTicks = 0;
+              } else if (
+                !this.canWalk(u.x + 0.2, u.y, bid) &&
+                !this.canWalk(u.x - 0.2, u.y, bid) &&
+                !this.canWalk(u.x, u.y + 0.2, bid) &&
+                !this.canWalk(u.x, u.y - 0.2, bid)
+              ) {
+                this.parkUnit(u);
+              }
             }
           }
         }
         u.facing = facingFromDelta(dx, dy);
+      } else if (u.path.length === 0 && finalD <= 0.04) {
+        this.parkUnit(u);
+      } else if (u.path.length > 0) {
+        u.path.shift();
       } else {
-        u.moveMode = "idle";
+        this.parkUnit(u);
       }
     }
 
@@ -4142,7 +4430,15 @@ export class GameWorld {
               nearestPlayer.hostile = true;
               nearestPlayer.combatUntil = now + TICK_HZ * 15;
               const s = [...this.sessions.values()].find((ss) => ss.posseId === nearestPlayer!.id);
-              if (s) this.log(s, `${posse.name} wants a piece of you!`);
+              if (s) {
+                const roles = this.members(posse)
+                  .filter((u) => u.alive && u.aiRole)
+                  .map((u) => u.aiRole!);
+                const mix = roles.length
+                  ? ` (${[...new Set(roles)].join(" / ")})`
+                  : "";
+                this.log(s, `${posse.name} wants a piece of you!${mix}`);
+              }
             } else {
               const s = [...this.sessions.values()].find((ss) => ss.posseId === nearestPlayer!.id);
               if (s && Math.random() < 0.4) {
@@ -4156,9 +4452,10 @@ export class GameWorld {
       if (posse.hostile && nearestPlayer) {
         const pl = this.leader(nearestPlayer);
         if (pl) {
-          // AI uses same front-line shield: goons up front, boss middle/rear
-          this.assignFrontFormation(posse, pl.x, pl.y);
+          // Role-based AI: rushers charge, shooters hold band, cowards kite/flee
+          this.assignAiRoleCombat(posse, pl.x, pl.y);
           for (const u of this.members(posse)) {
+            if (u.incapacitated) continue;
             let best: Unit | null = null;
             let bd = Infinity;
             for (const mid of nearestPlayer.memberIds) {
@@ -4357,6 +4654,7 @@ export class GameWorld {
         pub.dancerKey = u.dancerKey;
         pub.revealStage = posse.dancerStages[u.id] ?? 0;
       }
+      if (u.aiRole) pub.aiRole = u.aiRole;
       if (u.posseId === posse.id) {
         pub.ownedWeapons = [...u.ownedWeapons];
         pub.ownedArmors = [...u.ownedArmors];

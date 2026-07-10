@@ -1,6 +1,6 @@
 # Loose Cannon — Master Plan (Overseer Roadmap)
 
-Last updated: 2026-07-10 (realms + memorial done)
+Last updated: 2026-07-10 (M5 combat AI roles + weapon feel)
 
 Track completion in `docs/STATUS.md`. This file is the **ordered backlog** for autonomous development. Prefer finishing higher milestones before lower ones unless a dependency forces otherwise.
 
@@ -43,7 +43,7 @@ A fun, playable **local multiplayer** crime sandbox: recruit a posse, run jobs, 
 - [x] Reputation gates for shop stock
 - [x] District map UI (**free roam** — rep is advisory for outdoor walk; gates remain for gear/jobs)
 - [x] **Memorial wall** for dead named goons (Cannon Fodder beat)
-- [ ] Goon stats feel distinct (aim / muscle / guts / speed clearly change outcomes + UI readability) — **next primary**
+- [x] Goon stats feel distinct (aim / muscle / guts / speed clearly change outcomes + UI readability)
 - [ ] Optional: crash-pad stash UX polish / stash tutorial tip
 
 ### M3.5 — Realms (segregated instances) — **done**
@@ -68,11 +68,12 @@ Full design: [realms.md](./realms.md). Friend groups on one beta/in-memory serve
 
 ### M5 — Combat & AI depth
 
-- [ ] Cover / line-of-sight or range readability improvements
-- [ ] Enemy AI roles (shooter, rusher, flee)
-- [ ] Weapon feel pass (hit feedback, audio, ammo clarity)
-- [ ] Balance pass; note numbers in STATUS
-- [ ] Simple stuck-path recovery / click path that routes around building shells better
+- [x] Range readability (selected-unit weapon range ring; war/combat)
+- [ ] Cover / true line-of-sight blocking (optional next)
+- [x] Enemy AI roles (shooter, rusher, coward/flee)
+- [x] Weapon feel pass (hit feedback, miss whiz; audio already per-weapon)
+- [ ] Ammo clarity / balance pass; note numbers in STATUS
+- [x] Simple stuck-path recovery / click path that routes around building shells better
 
 ### M6 — Presentation & feel (Mode A)
 
@@ -117,11 +118,10 @@ Each overseer cycle implements **one** primary milestone item (or a tightly rela
 
 ### Priority order for long unattended loops
 
-1. **M3 goon stats feel** (if still incomplete)
-2. **M5 combat/AI feel** or **pathing around shells**
-3. **M6 more missions** / presentation polish
-4. **M4 parties** only when solo loop is solid (parties live inside a realm)
-5. Never M8 / Mode B unless human asks
+1. **M6 more missions** / presentation polish
+2. **M5 remainder** (cover/LoS, balance note) if combat still feels flat
+3. **M4 parties** only when solo loop is solid (parties live inside a realm)
+4. Never M8 / Mode B unless human asks
 
 ### Guardrails
 

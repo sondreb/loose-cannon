@@ -8,7 +8,11 @@ export type MissionId =
   | "protection_corner"
   | "smash_stash"
   | "collect_debt"
-  | "warehouse_raid";
+  | "warehouse_raid"
+  | "still_not_guns"
+  | "parking_tax"
+  | "chop_shop_raid"
+  | "rail_rats";
 
 export type MissionObjectiveKind =
   | "hold"
@@ -38,6 +42,8 @@ export interface MissionInstanceDef {
   enemyCount: number;
   /** Threat tier for spawned hostiles (1–4) */
   enemyThreat: number;
+  /** Flavor prefix for hostile names (e.g. "Bay", "Chop") */
+  enemyLabel?: string;
 }
 
 export interface MissionDef {
@@ -143,6 +149,93 @@ export const MISSIONS: Record<MissionId, MissionDef> = {
     hintX: 14,
     hintY: 54,
   },
+  still_not_guns: {
+    id: "still_not_guns",
+    title: "Still Not Guns",
+    blurb:
+      "War Fringe crate, same joke, new shipping label: 'Still not guns.' Rita wants it cracked. You're the can opener.",
+    difficulty: 1,
+    rewardCash: 300,
+    rewardRep: 2,
+    objectives: [
+      {
+        id: "crack_crate2",
+        label: "Smash the war-fringe crate",
+        kind: "interact_prop",
+        propId: "cr2",
+        range: 2.4,
+      },
+    ],
+    hintX: 58,
+    hintY: 50,
+  },
+  parking_tax: {
+    id: "parking_tax",
+    title: "Parking Racket",
+    blurb:
+      "Hold the south lot for a spell. Smile at the asphalt. Collect dues from the void. If someone ventilates you, call it market research.",
+    difficulty: 2,
+    rewardCash: 400,
+    rewardRep: 3,
+    objectives: [
+      {
+        id: "hold_lot",
+        label: "Hold Parking Racket (~15s)",
+        kind: "hold",
+        propId: "p3",
+        holdSeconds: 15,
+        range: 2.5,
+      },
+    ],
+    hintX: 50,
+    hintY: 66,
+  },
+  chop_shop_raid: {
+    id: "chop_shop_raid",
+    title: "Chop Shop Sweep",
+    blurb:
+      "Private job. Chop Shop freeloaders locked the bay. Clear the floor, then extract like the wheels still belong to someone. Casualties: expected. Heart rate: optional.",
+    difficulty: 2,
+    rewardCash: 520,
+    rewardRep: 5,
+    instance: {
+      templateBuildingId: "garage",
+      enemyCount: 2,
+      enemyThreat: 2,
+      enemyLabel: "Chop",
+    },
+    objectives: [
+      {
+        id: "clear_floor",
+        label: "Neutralize hostiles in the shop",
+        kind: "clear_hostiles",
+      },
+      {
+        id: "extract",
+        label: "Extract at the exit door",
+        kind: "extract",
+      },
+    ],
+  },
+  rail_rats: {
+    id: "rail_rats",
+    title: "Rail Rat Removal",
+    blurb:
+      "The Rail Rats nested on the fringe tracks. Drop their boss. The rest will scatter like cockroaches with better jackets.",
+    difficulty: 2,
+    rewardCash: 420,
+    rewardRep: 4,
+    objectives: [
+      {
+        id: "drop_rats",
+        label: "Drop the Rail Rats boss",
+        kind: "kill_unit",
+        targetPosseId: "ai_rats",
+      },
+    ],
+    hintX: 42,
+    hintY: 48,
+  },
 };
 
 export const MISSION_ORDER: MissionId[] = [
@@ -150,6 +243,10 @@ export const MISSION_ORDER: MissionId[] = [
   "warehouse_raid",
   "protection_corner",
   "collect_debt",
+  "still_not_guns",
+  "parking_tax",
+  "chop_shop_raid",
+  "rail_rats",
 ];
 
 export function listMissionOffers(): Array<{

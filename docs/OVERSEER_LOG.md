@@ -19,6 +19,41 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-10 — cycle 11 (M5 enemy AI roles + weapon feel)
+- Focus: Shooter / rusher / coward AI + range ring + hit/miss readability
+- Done:
+  - Shared: `AiCombatRole`, `preferredEngageRange`, `assignAiPosseRoles`, labels
+  - Protocol: optional `unit.aiRole` on snapshot
+  - Server: role-flavored gear on street AI + warehouse hostiles; `assignAiRoleCombat` (hold band / charge / flee when low HP); aggro log role mix
+  - Client: HOLD/RUSH/FLEE badges; selected-unit iso weapon range ring; miss whiz tracer; heavier heavy-gun hit FX
+  - Smoke: asserts bay hostiles all have `aiRole`
+- Verify: `npm run build` OK; `npm run smoke` → SMOKE_OK (bay AI roles shooter,rusher)
+- Next: **M6 more missions** (2+ new jobs) or M5 cover/LoS / balance note
+- Blocked: none
+
+### 2026-07-10 — cycle 10 (M5 path around building shells)
+- Focus: Click-move routes around façades; stuck repath (no more straight-line shell glue)
+- Done:
+  - Shared: `pathfind.ts` octile A*, no corner-cut, axis-aligned simplify; exported from index
+  - Server: unit `path` + `stuckTicks`; `setUnitNav` / `parkUnit`; long orders pathfind; escort short-hops skip A*
+  - Step: follow waypoints; repath on jam; skip stuck waypoint; hard park as last resort
+  - Smoke: single-click spawn → bar door (direct path assertion)
+- Verify: `npm run build` OK; `npm run smoke` → SMOKE_OK (direct path 8.50, 15.20)
+- Next: **M5 combat/AI feel** (hit feedback / enemy roles / weapon feel) or **M6 more missions**
+- Blocked: none
+
+### 2026-07-10 — cycle 9 (M3 goon stats feel)
+- Focus: Aim / Muscle / Guts / Speed feel distinct in combat + UI
+- Done:
+  - Shared: `combat.ts` formulas (hit, crit, power, melee muscle, guts toughness, speed move + fire CD); `streetRole`, recruit archetypes, tooltips helpers
+  - Constants: retuned COMBAT so stats swing outcomes harder
+  - Server: uses shared formulas; fire CD scales with Speed; hire archetypes with role dialogue/log; train log shows A/G/M/S
+  - Client: role badges, combat preview line, stat effect tooltips; crew editor legend; prediction uses unit Speed
+  - Shop upgrade copy describes real effects
+- Verify: `npm run build` OK; `npm run smoke` → SMOKE_OK (hire log shows archetype e.g. smartass)
+- Next: **M5 pathing around shells** or combat/AI feel; then more missions
+- Blocked: none
+
 ### 2026-07-10 — cycle 8 (M3.5 realms + memorial status fix)
 - Focus: Memorial was already live (docs stale); implement M3.5 segregated realms
 - Done:

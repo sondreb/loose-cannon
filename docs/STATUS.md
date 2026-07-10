@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-10 (realms + memorial confirmed)  
+Last updated: 2026-07-10 (M5 combat AI roles + weapon feel)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -27,6 +27,11 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | District map (M) | Done | Free roam; hot zones advisory |
 | **Memorial wall** | **Done** | Father Trouble / V key; epitaphs on goon death |
 | **Realms** (segregated instances) | **Done** | Multi-`GameWorld`; login + `?realm=`; HUD INVITE |
+| **Goon stats feel** | **Done** | Aim/Guts/Muscle/Speed combat + role UI + hire archetypes |
+| **Path around shells** | **Done** | Shared grid A* + stuck repath; long click-move routes façades |
+| **Enemy AI roles** | **Done** | Shooter / rusher / coward; role gear + engage bands; HUD badges |
+| **Weapon range readability** | **Done** | Selected-unit iso range ring (war / combat) |
+| **Hit / miss feedback** | **Done** | Miss whiz tracers; heavier shotgun/minigun/tommy hit FX |
 | Parties / co-op | Not started | M4 (within a realm) |
 | Automated overseer scaffolding | Done | AGENTS + scripts/overseer |
 
@@ -80,19 +85,42 @@ Rep still gates **shop stock** and some content; map shows HOT / recommended rep
 - Hotkey **V**; notify toast on death
 - Boss leader death does not create a memorial entry (respawn path)
 
+### Goon stats (live)
+
+- Shared `combat.ts`: hit/crit/power/toughness/move/fire-rate formulas + `streetRole` / hire archetypes  
+- **Aim** → hit % + crit; **Muscle** → damage + armor pierce (melee bonus); **Guts** → dodge + damage taken; **Speed** → move tiles/s + fire cooldown  
+- Bar hires pick archetype (sharpshooter / bruiser / survivor / runner / smartass / street) with distinct stats + starter weapon flavor  
+- Client: role badge, combat preview line (`Hit ~% · Crit · Pwr · t/s`), stat tooltips; prediction uses unit Speed  
+- Shop training copy describes real effects; train log shows new A/G/M/S  
+
+### Pathing (live)
+
+- Shared `pathfind.ts`: octile A* on walkable tiles, no corner-cutting, axis-aligned simplify  
+- Server `setUnitNav` on long click-move / formation hops: intermediate waypoints → slide still for WASD  
+- Stuck recovery: repath every ~8 ticks of no progress; skip jammed waypoint; hard-stop after long jam  
+- Smoke: single-click spawn → bar door (no multi-hop waypoints)
+
+### Combat AI & feel (live)
+
+- Shared `AiCombatRole`: `shooter` | `rusher` | `coward` + preferred engage ranges  
+- Street AI + warehouse hostiles: role mix on spawn; rushers close (melee/shotgun), shooters hold mid band, cowards kite / flee when low HP  
+- Snapshot `unit.aiRole`; client badges **HOLD / RUSH / FLEE**; aggro log notes role mix  
+- Selected-unit weapon **range ring** outdoors in war zone or while fighting  
+- Miss: gray whiz tracer + sparks + “miss” float; heavy weapons stronger hit blood/impact/shake  
+- Smoke: bay hostiles must all carry `aiRole`
+
 ## Next for overseer (priority)
 
-1. **Goon stats feel** — combat + UI so Aim/Muscle/Guts/Speed clearly matter  
-2. **Pathing / combat feel** — better routes around shells; hit feedback  
-3. **More missions** — 2+ new jobs  
-4. **M4 parties** after solo loop feels solid (scoped per realm)  
-5. **Never** Mode B (Postgres/auth/k8s) unless human asks  
+1. **M6 more missions** — 2+ new outdoor or instance jobs  
+2. **M5 remainder** — true cover/LoS, balance numbers note, ammo clarity if needed  
+3. **M4 parties** after solo loop feels solid (scoped per realm)  
+4. **Never** Mode B (Postgres/auth/k8s) unless human asks  
 
 ## Known bugs / polish debt
 
 | Item | Severity | Notes |
 |------|----------|-------|
-| Straight-line pathing into buildings | Medium | Server slides; still no full A* |
+| Indoor / combat micro-path | Low | Short hops still straight-line + slide |
 | Smoke needs live server | Ops | `npm run smoke` → `ws://127.0.0.1:3001` |
 | Safe-zone fire spam logs | Low | No crash |
 | Disconnect = wipe | Low | Mode A design |

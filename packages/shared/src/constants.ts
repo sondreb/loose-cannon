@@ -20,19 +20,31 @@ export const FIGHT_CHANCE = 0.45;
  */
 export const SAFE_Y_MAX = 38;
 
-/** Combat tuning — upgrades & weapons should clearly matter */
+/**
+ * Combat tuning — goon stats must feel distinct:
+ * Aim = hit/crit, Muscle = power/pierce (melee loves it),
+ * Guts = dodge + toughness, Speed = move + fire rate.
+ */
 export const COMBAT = {
-  baseHit: 0.38,
-  aimHitPerPoint: 0.045,
-  gutsDodgePerPoint: 0.012,
+  baseHit: 0.36,
+  aimHitPerPoint: 0.048,
+  gutsDodgePerPoint: 0.022,
   rangeHitPenalty: 0.022,
-  aimDamagePerPoint: 0.05,
-  muscleDamagePerPoint: 0.04,
-  muscleArmorPierce: 0.015,
-  damageVarianceMin: 0.8,
-  damageVarianceMax: 1.25,
+  aimDamagePerPoint: 0.035,
+  muscleDamagePerPoint: 0.055,
+  muscleArmorPierce: 0.02,
+  /** Extra muscle power on pipe / switchblade */
+  meleeMuscleBonus: 0.075,
+  /** Guts reduces incoming damage (toughness) */
+  gutsDamageReduce: 0.014,
+  /** Speed vs baseline 5: fireCooldown *= (1 − delta × this) */
+  speedFireCdPerPoint: 0.028,
+  /** Move: MOVE_SPEED * (0.7 + speed * this) */
+  speedMovePerPoint: 0.06,
+  damageVarianceMin: 0.85,
+  damageVarianceMax: 1.2,
   critBase: 0.04,
-  critPerAim: 0.018,
+  critPerAim: 0.022,
   critMultiplier: 1.55,
   aiHitPenalty: 0.12,
   aiDamageFactor: 0.78,

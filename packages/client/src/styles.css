@@ -715,6 +715,82 @@ img.photo {
   margin-top: 0.15rem;
 }
 
+.badge.role {
+  font-size: 0.58rem;
+  letter-spacing: 0.04em;
+  padding: 0.05rem 0.28rem;
+  border: 1px solid #4a5a40;
+  background: #1a2818;
+  color: #9fdf8f;
+  font-weight: 800;
+}
+
+.badge.role-sharpshooter {
+  border-color: #5a6a8a;
+  background: #182028;
+  color: #8ec0ff;
+}
+
+.badge.role-bruiser {
+  border-color: #8a4a3a;
+  background: #281818;
+  color: #f0a080;
+}
+
+.badge.role-survivor {
+  border-color: #6a5a2a;
+  background: #282018;
+  color: #e0c060;
+}
+
+.badge.role-runner {
+  border-color: #3a6a6a;
+  background: #142428;
+  color: #70d0d0;
+}
+
+.badge.role-brain {
+  border-color: #5a4a7a;
+  background: #1c1830;
+  color: #c0a0ff;
+}
+
+.badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  align-items: center;
+  margin: 0.15rem 0;
+}
+
+.combat-preview {
+  font-size: 0.58rem;
+  color: #8a9a8a;
+  line-height: 1.25;
+  margin-top: 0.15rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.combat-preview.gear,
+.combat-preview.crew {
+  white-space: normal;
+  color: #a0b8a0;
+  font-weight: 600;
+  margin: 0.25rem 0;
+}
+
+.stat-role-blurb {
+  margin: 0.15rem 0 0.35rem;
+}
+
+.stat-legend {
+  margin-top: 0.45rem;
+  line-height: 1.35;
+}
+
 .mini-stats {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

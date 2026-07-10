@@ -1,9 +1,12 @@
 import {
+  aiRoleLabel,
   INTERACT_RANGE,
-  MOVE_SPEED,
+  isSafeWorldPos,
+  moveSpeedTilesPerSec,
   SAFE_Y_MAX,
   TILE_H,
   TILE_W,
+  WEAPONS,
   type BuildingPublic,
   type CombatFxEvent,
   type PropPublic,
@@ -135,8 +138,8 @@ export type HoverTarget =
   | null;
 
 const FLOOR_PX = 18;
-/** Client prediction base; matches server formula with default speed stat 5 */
-const PRED_SPEED = MOVE_SPEED * (0.7 + 5 * 0.06);
+/** Fallback when unit stats missing — matches baseline speed 5 */
+const PRED_SPEED_DEFAULT = moveSpeedTilesPerSec(5);
 const MIN_ZOOM = 0.65;
 const MAX_ZOOM = 1.4;
 /** Interiors can zoom in tighter so the whole room fills the view */
@@ -521,7 +524,9 @@ export class WorldView {
     }
 
     if (e.kind === "hit") {
-      const n = e.crit ? 12 : 7;
+      const heavy =
+        e.weapon === "shotgun" || e.weapon === "minigun" || e.weapon === "tommy";
+      const n = e.crit ? 14 : heavy ? 10 : 7;
       for (let i = 0; i < n; i++) {
         this.fx.push({
           kind: "blood",
@@ -529,17 +534,17 @@ export class WorldView {
           y: e.y1,
           life: 0.4 + Math.random() * 0.3,
           max: 0.7,
-          vx: (Math.random() - 0.5) * (e.crit ? 5 : 3),
-          vy: (Math.random() - 0.5) * (e.crit ? 5 : 3) - 0.6,
-          r: 2.5 + Math.random() * (e.crit ? 6 : 3.5),
+          vx: (Math.random() - 0.5) * (e.crit ? 5.5 : heavy ? 4 : 3),
+          vy: (Math.random() - 0.5) * (e.crit ? 5.5 : heavy ? 4 : 3) - 0.6,
+          r: 2.5 + Math.random() * (e.crit ? 6.5 : heavy ? 4.5 : 3.5),
         });
       }
       this.fx.push({
         kind: "impact",
         x: e.x1,
         y: e.y1,
-        life: e.crit ? 0.32 : 0.2,
-        max: e.crit ? 0.32 : 0.2,
+        life: e.crit ? 0.36 : heavy ? 0.26 : 0.2,
+        max: e.crit ? 0.36 : heavy ? 0.26 : 0.2,
         crit: !!e.crit,
       });
       if (e.dmg != null && e.dmg > 0) {
@@ -547,45 +552,61 @@ export class WorldView {
           kind: "dmgText",
           x: e.x1,
           y: e.y1,
-          life: 0.85,
-          max: 0.85,
+          life: e.crit ? 1.05 : 0.9,
+          max: e.crit ? 1.05 : 0.9,
           text: e.crit ? `CRIT ${e.dmg}` : `-${e.dmg}`,
           crit: !!e.crit,
         });
       }
       if (e.weapon === "pipe" || e.weapon === "switchblade") {
-        for (let i = 0; i < 6; i++) {
+        for (let i = 0; i < 8; i++) {
           this.fx.push({
             kind: "spark",
             x: e.x1,
             y: e.y1,
-            life: 0.22,
-            max: 0.22,
-            vx: (Math.random() - 0.5) * 5,
-            vy: (Math.random() - 0.5) * 5,
+            life: 0.24,
+            max: 0.24,
+            vx: (Math.random() - 0.5) * 6,
+            vy: (Math.random() - 0.5) * 6,
           });
         }
+      }
+      // Extra kick on big guns
+      if (near < 10 && (e.crit || heavy)) {
+        this.shake = Math.min(1.4, this.shake + (e.crit ? 0.15 : 0.08));
       }
     }
 
     if (e.kind === "miss") {
-      for (let i = 0; i < 5; i++) {
+      // Whiz line past the target so misses read as near-misses, not silence
+      this.fx.push({
+        kind: "tracer",
+        x0: e.x0 + Math.cos(ang) * 0.4,
+        y0: e.y0 + Math.sin(ang) * 0.4,
+        x1: e.x1,
+        y1: e.y1,
+        life: 0.14,
+        max: 0.14,
+        color: 0xa8b0c0,
+        wide: false,
+      });
+      for (let i = 0; i < 6; i++) {
         this.fx.push({
           kind: "spark",
           x: e.x1,
           y: e.y1,
-          life: 0.2 + Math.random() * 0.12,
-          max: 0.32,
-          vx: (Math.random() - 0.5) * 4,
-          vy: (Math.random() - 0.5) * 4,
+          life: 0.22 + Math.random() * 0.12,
+          max: 0.34,
+          vx: (Math.random() - 0.5) * 5,
+          vy: (Math.random() - 0.5) * 5,
         });
       }
       this.fx.push({
         kind: "dmgText",
         x: e.x1,
         y: e.y1,
-        life: 0.5,
-        max: 0.5,
+        life: 0.55,
+        max: 0.55,
         text: "miss",
         crit: false,
       });
@@ -780,11 +801,12 @@ export class WorldView {
 
   private stepPrediction(dt: number): void {
     if (!this.lastSnap || !this.localPosseId) return;
-    const speed = PRED_SPEED;
     for (const u of this.lastSnap.units) {
       if (u.posseId !== this.localPosseId || !u.alive) continue;
       const v = this.visuals.get(u.id);
       if (!v || !v.predicted) continue;
+      // Match server: Speed stat drives tiles/sec (runners feel snappier)
+      const speed = moveSpeedTilesPerSec(u.stats?.speed ?? 5);
 
       if (v.predMode === "dir" && (v.predDirX !== 0 || v.predDirY !== 0)) {
         v.x += v.predDirX * speed * dt;
@@ -841,7 +863,7 @@ export class WorldView {
       const dist = Math.hypot(dx, dy);
       if (dist > 0.001) {
         // Cap step so we never jump a huge gap in one frame
-        const maxStep = PRED_SPEED * dt * 1.4;
+        const maxStep = PRED_SPEED_DEFAULT * dt * 1.4;
         if (dist > maxStep * 4) {
           // still walk toward rather than teleport
           v.x += (dx / dist) * maxStep * 2;
@@ -2040,6 +2062,26 @@ export class WorldView {
       g.stroke({ color: 0xffe080, width: 1.2, alpha: 0.35 });
     }
 
+    // Weapon range ring — selected unit when fighting or outdoors in war zone
+    if (
+      mine &&
+      u.id === snap.you.selectedUnitId &&
+      u.alive &&
+      !isNpc
+    ) {
+      const inCombat =
+        !!posse?.hostile ||
+        snap.you.action === "ENGAGING" ||
+        snap.you.action === "ASSASSINATE" ||
+        (snap.mission?.instanced ?? false);
+      const warOutdoor =
+        !snap.you.insideBuildingId &&
+        !isSafeWorldPos(u.x, u.y, snap.you.insideBuildingId);
+      if (inCombat || warOutdoor) {
+        this.drawWeaponRangeRing(g, vis.x, vis.y, u.weapon, inCombat);
+      }
+    }
+
     // ——— Painted combat-scene sprite when available ———
     const tex = unitTexture({
       id: u.id,
@@ -2211,7 +2253,35 @@ export class WorldView {
     lab.y = sy - bh - 32;
     used.add(u.id);
 
-    if (!mine && !isNpc && (threat >= 2 || u.armor !== "none")) {
+    // AI combat role badge (RUSH / HOLD / FLEE) when hostile
+    if (!mine && !isNpc && u.aiRole && (posse?.hostile || threat >= 1)) {
+      const rid = u.id + ":role";
+      const rtxt = aiRoleLabel(u.aiRole);
+      let rl = this.labelPool.get(rid);
+      if (!rl) {
+        rl = new Text({
+          text: rtxt,
+          style: {
+            fontSize: 9,
+            fill: 0xff8060,
+            fontWeight: "800",
+            fontFamily: "system-ui,sans-serif",
+            stroke: { color: 0x1a0808, width: 3 },
+          },
+        });
+        this.labelPool.set(rid, rl);
+        this.labels.addChild(rl);
+      }
+      rl.visible = true;
+      if (rl.text !== rtxt) rl.text = rtxt;
+      rl.style.fill =
+        u.aiRole === "rusher" ? 0xff6040 : u.aiRole === "coward" ? 0xffcc66 : 0xffa090;
+      rl.x = sx - rl.width / 2;
+      rl.y = sy - bh - 44;
+      used.add(rid);
+    }
+
+    if (!mine && !isNpc && (threat >= 2 || u.armor !== "none" || u.aiRole)) {
       const gid = u.id + ":g";
       const gtxt = `${u.weapon}${u.armor !== "none" ? " · " + u.armor : ""}`;
       let gl = this.labelPool.get(gid);
@@ -2237,6 +2307,42 @@ export class WorldView {
       g.closePath();
       g.fill({ color: 0xffcc33 });
     }
+  }
+
+  /** Iso-approx range circle so players can read engage distance. */
+  private drawWeaponRangeRing(
+    g: Graphics,
+    wx: number,
+    wy: number,
+    weapon: WeaponId,
+    hot: boolean,
+  ): void {
+    const range = WEAPONS[weapon]?.range ?? 4;
+    // Approximate isometric ellipse from world-radius samples
+    const steps = 28;
+    const pts: Array<{ sx: number; sy: number }> = [];
+    for (let i = 0; i <= steps; i++) {
+      const a = (i / steps) * Math.PI * 2;
+      const p = worldToScreen(wx + Math.cos(a) * range, wy + Math.sin(a) * range);
+      pts.push(p);
+    }
+    if (pts.length < 2) return;
+    g.moveTo(pts[0]!.sx, pts[0]!.sy);
+    for (let i = 1; i < pts.length; i++) {
+      g.lineTo(pts[i]!.sx, pts[i]!.sy);
+    }
+    g.closePath();
+    const col =
+      weapon === "shotgun" || weapon === "pipe" || weapon === "switchblade"
+        ? 0xff8060
+        : weapon === "minigun" || weapon === "tommy"
+          ? 0xffc040
+          : 0x80d0ff;
+    g.stroke({
+      color: col,
+      width: hot ? 1.6 : 1.1,
+      alpha: hot ? 0.42 + Math.sin(this.time * 5) * 0.08 : 0.22,
+    });
   }
 
   private drawWeapon(

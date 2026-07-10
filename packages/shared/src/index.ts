@@ -1,4 +1,5 @@
 export * from "./constants.js";
+export * from "./combat.js";
 export * from "./protocol.js";
 export * from "./weapons.js";
 export * from "./mapData.js";
@@ -8,4 +9,5 @@ export * from "./progression.js";
 export * from "./districts.js";
 export * from "./memorial.js";
 export * from "./realms.js";
+export * from "./pathfind.js";
 export * from "./voiceLines.js";
