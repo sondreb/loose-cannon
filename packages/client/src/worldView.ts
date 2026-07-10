@@ -246,12 +246,12 @@ export class WorldView {
     return screenToWorld(sx, sy, this.camX, this.camY);
   }
 
-  pickUnit(clientX: number, clientY: number): string | null {
+  pickUnit(clientX: number, clientY: number, radius = 1.2): string | null {
     const snap = this.lastSnap;
     if (!snap) return null;
     const w = this.screenToWorld(clientX, clientY);
     let best: UnitPublic | null = null;
-    let bestD = 0.7;
+    let bestD = radius;
     for (const u of snap.units) {
       if (!u.alive) continue;
       const d = Math.hypot(u.x - w.x, u.y - w.y);

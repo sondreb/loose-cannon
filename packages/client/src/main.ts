@@ -52,6 +52,9 @@ const chatLog = $("chatLog");
 const chatForm = $("chatForm") as HTMLFormElement;
 const chatInput = $("chatInput") as HTMLInputElement;
 const objective = $("objective");
+const actionBanner = $("actionBanner");
+const actionStatus = $("actionStatus");
+const actionDetail = $("actionDetail");
 const dialogueModal = $("dialogueModal");
 const dlgName = $("dlgName");
 const dlgText = $("dlgText");
@@ -644,12 +647,28 @@ function onShopClick(ev: MouseEvent): void {
   }
 }
 
+function updateActionBanner(s: WorldSnapshot): void {
+  const action = s.you.action || "IDLE";
+  const detail = s.you.actionDetail;
+  actionStatus.textContent = action;
+  actionDetail.textContent = detail ?? "";
+  actionBanner.classList.remove("assault", "moving", "idle");
+  if (action === "ASSASSINATE" || action === "ENGAGING" || action === "ALERT") {
+    actionBanner.classList.add("assault");
+  } else if (action === "GOING" || action === "MOVING") {
+    actionBanner.classList.add("moving");
+  } else {
+    actionBanner.classList.add("idle");
+  }
+}
+
 function onSnapshot(s: WorldSnapshot): void {
   snap = s;
   view.applySnapshot(s);
   renderPosse();
   renderDialogue();
   renderShop();
+  updateActionBanner(s);
   if (s.you.respawnIn != null && s.you.respawnIn > 0) {
     respawnOverlay.classList.remove("hidden");
     respawnCount.textContent = Math.ceil(s.you.respawnIn).toString();
@@ -660,7 +679,7 @@ function onSnapshot(s: WorldSnapshot): void {
     const b = s.buildings.find((bb) => bb.id === s.you.insideBuildingId);
     objective.textContent = b ? `INSIDE: ${b.name.toUpperCase()} — E to exit near door` : "INSIDE";
   } else {
-    objective.textContent = "SKIDROW — WASD/click move · E: doors/NPCs · RMB: fire";
+    objective.textContent = "SKIDROW — LMB move · RMB attack (chase) · E interact";
   }
 }
 
@@ -807,16 +826,19 @@ function bindInput(): void {
       const w = view.screenToWorld(e.clientX, e.clientY);
       socket.send({ type: "intent.move", x: w.x, y: w.y });
     } else if (e.button === 2) {
-      const unitId = view.pickUnit(e.clientX, e.clientY);
+      // RMB: attack-move — pick enemy with generous radius, or fire at ground point
       const w = view.screenToWorld(e.clientX, e.clientY);
-      if (unitId) {
-        const u = snap.units.find((x) => x.id === unitId);
-        if (u && u.posseId !== snap.you.posseId) {
-          socket.send({ type: "intent.fire", targetId: unitId });
-          return;
-        }
+      let best: { id: string; d: number } | null = null;
+      for (const u of snap.units) {
+        if (!u.alive || u.posseId === snap.you.posseId) continue;
+        const d = Math.hypot(u.x - w.x, u.y - w.y);
+        if (d < 2.8 && (!best || d < best.d)) best = { id: u.id, d };
       }
-      socket.send({ type: "intent.fire", x: w.x, y: w.y });
+      if (best) {
+        socket.send({ type: "intent.fire", targetId: best.id });
+      } else {
+        socket.send({ type: "intent.fire", x: w.x, y: w.y });
+      }
     }
   });
 

@@ -10,7 +10,27 @@ export const INTERACT_RANGE = 2.2;
 export const CHAT_RANGE = 8;
 export const POSSE_DETECT_RANGE = 6;
 export const POSSE_AGGRO_RANGE = 4;
-export const FIGHT_CHANCE = 0.55;
+export const FIGHT_CHANCE = 0.45;
+
+/** Combat tuning — upgrades & weapons should clearly matter */
+export const COMBAT = {
+  baseHit: 0.38,
+  aimHitPerPoint: 0.045,
+  gutsDodgePerPoint: 0.012,
+  rangeHitPenalty: 0.022,
+  aimDamagePerPoint: 0.05,
+  muscleDamagePerPoint: 0.04,
+  muscleArmorPierce: 0.015,
+  damageVarianceMin: 0.8,
+  damageVarianceMax: 1.25,
+  critBase: 0.04,
+  critPerAim: 0.018,
+  critMultiplier: 1.55,
+  /** AI shooters are less lethal so player upgrades feel good */
+  aiHitPenalty: 0.12,
+  aiDamageFactor: 0.78,
+  playerHitBonus: 0.04,
+} as const;
 
 export const MAX_ACTIVE_GOONS = 4;
 export const MAX_CHAT_LEN = 160;

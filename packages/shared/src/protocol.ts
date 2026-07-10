@@ -102,6 +102,9 @@ export interface WorldSnapshot {
     insideBuildingId: string | null;
     /** Seconds remaining until respawn; null if alive */
     respawnIn: number | null;
+    /** Syndicate-style order banner: IDLE, GOING, ASSASSINATE, etc. */
+    action: string;
+    actionDetail: string | null;
   };
   units: UnitPublic[];
   posses: PossePublic[];

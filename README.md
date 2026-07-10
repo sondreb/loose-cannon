@@ -18,7 +18,7 @@ npm run dev
 |-------|--------|
 | **WASD / arrow keys** | Free movement (screen-aligned; diagonals work) |
 | Left click | Click-to-move / select your unit |
-| Right click | Fire (pistol / machine gun / etc.) at NPCs, rivals, players |
+| Right click | **Attack-move** — chase target if out of range, then fire |
 | E | Interact (doors, NPCs, shop counter) |
 | 1–4 | Select posse member |
 | 5–0 / - | Quick-equip weapons (Syndicate-style slots) |

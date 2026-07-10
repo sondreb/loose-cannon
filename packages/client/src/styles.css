@@ -806,6 +806,55 @@ body {
   z-index: 5;
 }
 
+/* Syndicate-style order strip */
+#actionBanner {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 8px;
+  z-index: 6;
+  display: flex;
+  align-items: baseline;
+  gap: 0.65rem;
+  background: linear-gradient(180deg, #1a1408ee, #0e0c08ee);
+  border: 2px solid #f0a030;
+  box-shadow: 0 0 16px #f0a03044, inset 0 0 20px #0008;
+  padding: 0.35rem 1.1rem;
+  min-width: 200px;
+  justify-content: center;
+  pointer-events: none;
+}
+
+#actionStatus {
+  font-size: 1.05rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  color: #ffcc33;
+  text-shadow: 0 0 8px #f0a03066;
+}
+
+#actionBanner.assault #actionStatus {
+  color: #ff6040;
+  text-shadow: 0 0 10px #e0404088;
+}
+
+#actionBanner.moving #actionStatus {
+  color: #80c0ff;
+  text-shadow: 0 0 8px #4080ff55;
+}
+
+#actionBanner.idle #actionStatus {
+  color: #aaa;
+  text-shadow: none;
+}
+
+.action-detail {
+  font-size: 0.78rem;
+  color: #c8c0b0;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
 #eventLog {
   position: absolute;
   top: 40px;

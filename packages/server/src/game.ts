@@ -1,6 +1,7 @@
 import {
   ARMORS,
   CHAT_RANGE,
+  COMBAT,
   DEFAULT_CASH,
   DEFAULT_HEALTH,
   FIGHT_CHANCE,
@@ -91,6 +92,10 @@ interface Posse {
   fallenArmors: Set<ArmorId>;
   /** Prevent double-looting the same wipe */
   lootedThisWipe: boolean;
+  /** Right-click attack-move: chase & fire until target dies or orders change */
+  attackTargetId: string | null;
+  /** last click-move destination label */
+  moveLabel: string | null;
 }
 
 interface CharacterSession {
@@ -179,6 +184,8 @@ export class GameWorld {
         fallenWeapons: new Set(),
         fallenArmors: new Set(),
         lootedThisWipe: false,
+        attackTargetId: null,
+        moveLabel: null,
       });
       this.units.set(unitId, {
         id: unitId,
@@ -245,6 +252,8 @@ export class GameWorld {
       fallenWeapons: new Set(),
       fallenArmors: new Set(),
       lootedThisWipe: false,
+      attackTargetId: null,
+      moveLabel: null,
     });
 
     const make = (
@@ -344,6 +353,8 @@ export class GameWorld {
       fallenWeapons: new Set(),
       fallenArmors: new Set(),
       lootedThisWipe: false,
+      attackTargetId: null,
+      moveLabel: null,
     };
     this.posses.set(posseId, posse);
 
@@ -536,6 +547,8 @@ export class GameWorld {
     if (posse.dialogue || posse.shop) return;
     const leader = this.leader(posse);
     if (!leader || !leader.alive) return;
+    posse.attackTargetId = null;
+    posse.moveLabel = "GOING";
     const ids = unitIds?.length ? unitIds.filter((id) => posse.memberIds.includes(id)) : posse.memberIds;
     // Clamp target near walkable
     const tx = clamp(x, 0.3, this.map.width - 0.3);
@@ -566,6 +579,11 @@ export class GameWorld {
     const ndx = len > 0.001 ? dx / len : 0;
     const ndy = len > 0.001 ? dy / len : 0;
 
+    if (len >= 0.001) {
+      posse.attackTargetId = null;
+      posse.moveLabel = "MOVING";
+    }
+
     for (const u of this.members(posse)) {
       if (len < 0.001) {
         u.moveMode = "idle";
@@ -573,6 +591,7 @@ export class GameWorld {
         u.dirY = 0;
         u.tx = u.x;
         u.ty = u.y;
+        if (!posse.attackTargetId) posse.moveLabel = null;
       } else {
         u.moveMode = "dir";
         u.dirX = ndx;
@@ -585,12 +604,38 @@ export class GameWorld {
   }
 
   private cmdStop(posse: Posse): void {
+    posse.attackTargetId = null;
+    posse.moveLabel = null;
     for (const u of this.members(posse)) {
       u.moveMode = "idle";
       u.dirX = 0;
       u.dirY = 0;
       u.tx = u.x;
       u.ty = u.y;
+    }
+  }
+
+  /** Issue attack-move on a hostile (or any non-ally) unit — chase until in range then fire. */
+  private cmdAttackMove(posse: Posse, target: Unit): void {
+    posse.attackTargetId = target.id;
+    posse.moveLabel = null;
+    posse.hostile = true;
+    posse.combatUntil = this.tick + TICK_HZ * 20;
+    const tp = this.posses.get(target.posseId);
+    if (tp) {
+      tp.hostile = true;
+      tp.combatUntil = this.tick + TICK_HZ * 20;
+    }
+    let i = 0;
+    for (const u of this.members(posse)) {
+      const ang = (i / Math.max(1, posse.memberIds.length)) * Math.PI * 2;
+      const spread = 0.55;
+      u.moveMode = "target";
+      u.dirX = 0;
+      u.dirY = 0;
+      u.tx = target.x + Math.cos(ang) * spread;
+      u.ty = target.y + Math.sin(ang) * spread;
+      i++;
     }
   }
 
@@ -628,16 +673,20 @@ export class GameWorld {
     const shooter =
       this.units.get(posse.selectedUnitId) ??
       this.leader(posse);
-    if (!shooter || !shooter.alive || shooter.fireCd > 0) return;
+    if (!shooter || !shooter.alive) return;
 
     let target: Unit | undefined;
     if (targetId) target = this.units.get(targetId);
     if (!target && x !== undefined && y !== undefined) {
-      // nearest living enemy near point
+      // nearest living enemy near point (generous pick radius for RMB)
       let best: Unit | undefined;
-      let bestD = 1.5;
+      let bestD = 2.2;
       for (const u of this.units.values()) {
         if (!u.alive || u.posseId === posse.id) continue;
+        // same layer only
+        const up = this.posses.get(u.posseId);
+        const ub = up?.insideBuildingId ?? u.buildingId;
+        if (ub !== posse.insideBuildingId) continue;
         const d = dist(u.x, u.y, x, y);
         if (d < bestD) {
           bestD = d;
@@ -649,49 +698,76 @@ export class GameWorld {
     if (!target || !target.alive) return;
     if (target.posseId === posse.id) return;
 
+    // Always commit attack-move: chase if needed, fire when in range
+    this.cmdAttackMove(posse, target);
     const w = WEAPONS[shooter.weapon];
     const d = dist(shooter.x, shooter.y, target.x, target.y);
-    if (d > w.range + 0.4) {
-      this.log(session, "Out of range.");
-      return;
+    if (d <= w.range + 0.35) {
+      this.resolveShot(shooter, target, session);
+    } else {
+      this.log(session, `ASSASSINATE ${target.name} — closing in…`);
     }
-
-    // Enter mutual hostility
-    const tp = this.posses.get(target.posseId);
-    if (tp) {
-      tp.hostile = true;
-      tp.combatUntil = this.tick + TICK_HZ * 12;
-    }
-    posse.hostile = true;
-    posse.combatUntil = this.tick + TICK_HZ * 12;
-
-    this.resolveShot(shooter, target, session);
   }
 
   private resolveShot(shooter: Unit, target: Unit, session?: CharacterSession): void {
     if (shooter.fireCd > 0 || !shooter.alive || !target.alive) return;
     const w = WEAPONS[shooter.weapon];
     const d = dist(shooter.x, shooter.y, target.x, target.y);
-    if (d > w.range + 0.5) return;
+    if (d > w.range + 0.55) return;
 
     shooter.fireCd = w.fireCooldown;
     shooter.facing = facingFromDelta(target.x - shooter.x, target.y - shooter.y);
 
-    const aimBonus = shooter.stats.aim * 0.03;
-    const hitChance = clamp(0.55 + aimBonus - d * 0.04, 0.2, 0.95);
+    const isAi =
+      shooter.kind === "ai_boss" || shooter.kind === "ai_goon" || shooter.kind === "npc";
+    const aim = shooter.stats.aim;
+    const muscle = shooter.stats.muscle;
+    const guts = target.stats.guts;
+
+    // Hit chance: aim dominates, guts dodges a bit, range hurts
+    let hitChance =
+      COMBAT.baseHit +
+      aim * COMBAT.aimHitPerPoint -
+      guts * COMBAT.gutsDodgePerPoint -
+      d * COMBAT.rangeHitPenalty;
+    if (isAi) hitChance -= COMBAT.aiHitPenalty;
+    else hitChance += COMBAT.playerHitBonus;
+    hitChance = clamp(hitChance, 0.1, 0.94);
+
     if (Math.random() > hitChance) {
-      if (session) this.log(session, `${shooter.name} missed ${target.name}.`);
+      if (session && !isAi) this.log(session, `${shooter.name} missed ${target.name}.`);
       return;
     }
 
-    const armor = ARMORS[target.armor];
-    const dmg = Math.max(
-      1,
-      Math.round(w.damage * (1 - armor.damageReduce) * (0.85 + Math.random() * 0.3)),
+    // Damage: weapon base × (aim + muscle power) × variance × optional crit − armor
+    const power =
+      1 + aim * COMBAT.aimDamagePerPoint + muscle * COMBAT.muscleDamagePerPoint;
+    const variance =
+      COMBAT.damageVarianceMin +
+      Math.random() * (COMBAT.damageVarianceMax - COMBAT.damageVarianceMin);
+    const critChance = clamp(
+      COMBAT.critBase + aim * COMBAT.critPerAim,
+      0.03,
+      0.4,
     );
+    const crit = Math.random() < critChance;
+    const armor = ARMORS[target.armor];
+    const pierce = clamp(muscle * COMBAT.muscleArmorPierce, 0, 0.35);
+    const armorFactor = 1 - armor.damageReduce * (1 - pierce);
+
+    let dmg = w.damage * power * variance * armorFactor;
+    if (crit) dmg *= COMBAT.critMultiplier;
+    if (isAi) dmg *= COMBAT.aiDamageFactor;
+    dmg = Math.max(1, Math.round(dmg));
+
     target.health -= dmg;
     target.lastHitByPosseId = shooter.posseId;
-    if (session) this.log(session, `${shooter.name} hit ${target.name} for ${dmg}.`);
+    if (session && !isAi) {
+      this.log(
+        session,
+        `${shooter.name} ${crit ? "CRIT " : ""}hit ${target.name} for ${dmg}${crit ? "!" : "."}`,
+      );
+    }
 
     if (target.health <= 0) {
       target.health = 0;
@@ -702,8 +778,98 @@ export class GameWorld {
       target.dirX = 0;
       target.dirY = 0;
       if (session) this.log(session, `${target.name} is down!`);
+      // Clear attack orders that pointed at them
+      for (const p of this.posses.values()) {
+        if (p.attackTargetId === target.id) {
+          p.attackTargetId = null;
+          p.moveLabel = null;
+        }
+      }
       this.onUnitDown(target, shooter.posseId);
     }
+  }
+
+  /** Per-tick: chase attack targets and auto-fire when in range */
+  private updateAttackOrders(): void {
+    for (const posse of this.posses.values()) {
+      if (!posse.attackTargetId) continue;
+      const target = this.units.get(posse.attackTargetId);
+      if (!target || !target.alive) {
+        posse.attackTargetId = null;
+        continue;
+      }
+      // Wrong layer (entered building) — cancel
+      if ((target.buildingId ?? null) !== (posse.insideBuildingId ?? null)) {
+        const tp = this.posses.get(target.posseId);
+        if ((tp?.insideBuildingId ?? null) !== posse.insideBuildingId) {
+          posse.attackTargetId = null;
+          continue;
+        }
+      }
+
+      let i = 0;
+      for (const id of posse.memberIds) {
+        const u = this.units.get(id);
+        if (!u || !u.alive) continue;
+        const w = WEAPONS[u.weapon];
+        const d = dist(u.x, u.y, target.x, target.y);
+        const engageRange = Math.max(1.1, w.range * 0.82);
+
+        if (d > engageRange) {
+          // Close distance — keep re-issuing target near the enemy
+          const ang = (i / Math.max(1, posse.memberIds.length)) * Math.PI * 2;
+          u.moveMode = "target";
+          u.dirX = 0;
+          u.dirY = 0;
+          u.tx = target.x + Math.cos(ang) * 0.5;
+          u.ty = target.y + Math.sin(ang) * 0.5;
+        } else {
+          // Hold and fire
+          u.moveMode = "idle";
+          u.tx = u.x;
+          u.ty = u.y;
+          const session = posse.isPlayer
+            ? [...this.sessions.values()].find((s) => s.posseId === posse.id)
+            : undefined;
+          this.resolveShot(u, target, session);
+        }
+        i++;
+      }
+    }
+  }
+
+  private computeAction(posse: Posse): { action: string; actionDetail: string | null } {
+    const leader = this.leader(posse);
+    if (!leader) return { action: "IDLE", actionDetail: null };
+    if (!leader.alive) return { action: "DOWN", actionDetail: "Awaiting respawn" };
+    if (posse.shop) return { action: "SHOPPING", actionDetail: posse.shop.shopName };
+    if (posse.dialogue) return { action: "PERSUADE", actionDetail: posse.dialogue.npcName };
+
+    if (posse.attackTargetId) {
+      const t = this.units.get(posse.attackTargetId);
+      if (t?.alive) {
+        const d = dist(leader.x, leader.y, t.x, t.y);
+        const range = WEAPONS[leader.weapon].range;
+        if (d > range * 0.85) {
+          return { action: "ASSASSINATE", actionDetail: `Closing on ${t.name}` };
+        }
+        return { action: "ENGAGING", actionDetail: t.name };
+      }
+    }
+
+    if (leader.moveMode === "dir") return { action: "MOVING", actionDetail: null };
+    if (leader.moveMode === "target") {
+      const d = dist(leader.x, leader.y, leader.tx, leader.ty);
+      if (d > 0.15) return { action: "GOING", actionDetail: null };
+    }
+    if (posse.hostile && posse.combatUntil > this.tick) {
+      return { action: "ALERT", actionDetail: "Weapons free" };
+    }
+    if (posse.insideBuildingId) {
+      const b = this.map.buildings.find((bb) => bb.id === posse.insideBuildingId);
+      return { action: "SCANNING", actionDetail: b?.name ?? "Interior" };
+    }
+    return { action: "IDLE", actionDetail: null };
   }
 
   private onUnitDown(unit: Unit, killerPosseId: string | null): void {
@@ -1477,6 +1643,9 @@ export class GameWorld {
       }
     }
 
+    // Player attack-move / continuous engage
+    this.updateAttackOrders();
+
     // AI posse behavior
     for (const posse of this.posses.values()) {
       if (posse.isPlayer) continue;
@@ -1739,6 +1908,10 @@ export class GameWorld {
           const lead = this.leader(posse);
           if (!lead || lead.alive) return null;
           return Math.max(0, lead.respawnT ?? RESPAWN_DELAY_SEC);
+        })(),
+        ...(() => {
+          const a = this.computeAction(posse);
+          return { action: a.action, actionDetail: a.actionDetail };
         })(),
       },
       units,
