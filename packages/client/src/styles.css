@@ -1247,18 +1247,17 @@ img.photo {
   transform: translateY(-4px);
 }
 
-/* Desktop: session chat top-right. Mobile overrides to bottom bar. */
+/* Desktop: proximity chat bottom (left of help). Mobile → bottom bar. */
 #chatBox {
   position: absolute;
-  top: 52px;
-  right: 14px;
-  left: auto;
-  bottom: auto;
-  width: min(320px, calc(100vw - 300px));
-  max-height: min(42vh, 320px);
-  display: flex;
-  flex-direction: column;
-  z-index: 9;
+  left: 292px;
+  bottom: 14px;
+  top: auto;
+  right: auto;
+  width: min(420px, calc(100% - 320px));
+  max-height: none;
+  display: block;
+  z-index: 6;
   background: rgba(10, 10, 16, 0.55);
   backdrop-filter: blur(16px) saturate(140%);
   -webkit-backdrop-filter: blur(16px) saturate(140%);
@@ -1270,18 +1269,15 @@ img.photo {
 
 #chatBox #chatBody {
   min-height: 0;
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
+  display: block;
 }
 
 .chat-head {
-  display: flex;
+  display: none; /* desktop: always open; mobile shows toggle */
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
   margin-bottom: 0.25rem;
-  flex: 0 0 auto;
 }
 
 .chat-title {
@@ -1300,9 +1296,8 @@ img.photo {
 }
 
 #chatLog {
-  flex: 1 1 auto;
-  min-height: 56px;
-  max-height: 140px;
+  height: 72px;
+  max-height: 72px;
   overflow-y: auto;
   font-size: 0.78rem;
   margin-bottom: 0.3rem;
@@ -2136,13 +2131,15 @@ img.photo {
   margin: 0;
 }
 
+/* Desktop: mission / session stack top-right. Mobile keeps centered under HUD. */
 .mission-hud {
   position: absolute;
-  top: calc(var(--mobile-hud-top, 52px) + 42px);
-  left: 50%;
-  transform: translateX(-50%);
+  top: 52px;
+  right: 14px;
+  left: auto;
+  transform: none;
   z-index: 8;
-  width: min(420px, calc(100% - 24px));
+  width: min(340px, 34vw);
   background: rgba(10, 14, 22, 0.78);
   backdrop-filter: blur(14px) saturate(140%);
   -webkit-backdrop-filter: blur(14px) saturate(140%);
@@ -2236,12 +2233,15 @@ img.photo {
   margin: 0;
 }
 
+/* Desktop: first-session coach top-right (under MAP). Mobile → bottom. */
 .tutorial-hud {
   position: absolute;
-  left: 14px;
-  bottom: 14px;
+  top: 52px;
+  right: 14px;
+  left: auto;
+  bottom: auto;
   z-index: 9;
-  width: min(340px, calc(100% - 28px));
+  width: min(340px, 34vw);
   background: rgba(12, 18, 28, 0.88);
   backdrop-filter: blur(14px) saturate(140%);
   -webkit-backdrop-filter: blur(14px) saturate(140%);
@@ -2250,6 +2250,15 @@ img.photo {
   padding: 0.65rem 0.75rem 0.7rem;
   box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
   pointer-events: auto;
+}
+
+/* When both tutorial + mission are up, stack mission under the coach */
+body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
+  top: auto;
+  bottom: auto;
+  /* fall below a typical coach card */
+  margin-top: 0;
+  top: 220px;
 }
 
 .tutorial-hud-top {
@@ -2293,10 +2302,23 @@ img.photo {
 
 @media (max-width: 900px) {
   .tutorial-hud {
+    top: auto;
     left: 8px;
     right: 8px;
     width: auto;
     bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .mission-hud {
+    top: calc(var(--mobile-hud-top, 52px) + 42px);
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    width: min(420px, calc(100% - 24px));
+  }
+
+  body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
+    top: calc(var(--mobile-hud-top, 52px) + 42px);
   }
 }
 
@@ -2678,7 +2700,7 @@ img.photo {
     padding: 0.45rem 0.5rem;
   }
 
-/* Desktop: MAP sits left of the chat column; mobile uses absolute top-right */
+/* MAP top-right (session/mission stack sits just below) */
 .minimap-btn {
   position: absolute;
   top: 12px;
@@ -2695,14 +2717,6 @@ img.photo {
   border-radius: 10px;
   cursor: pointer;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
-}
-
-@media (min-width: 901px) {
-  .minimap-btn {
-    /* clear the chat panel (~320 + 14 + gap) */
-    right: calc(14px + min(320px, calc(100vw - 300px)) + 10px);
-    top: 52px;
-  }
 }
 
 .minimap-btn:hover {
