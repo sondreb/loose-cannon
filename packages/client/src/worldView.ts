@@ -1067,11 +1067,11 @@ export class WorldView {
         g.ellipse(sx + ((seed % 5) - 2), sy + 11, 5, 2);
         g.fill({ color: 0xffffff, alpha: 0.04 });
       }
-      // Center dashed lane (cream downtown, blood-dark war)
-      if ((x + y) % 2 === 0) {
-        const mark = war > 0.35 ? 0x7a2838 : 0xe8e0c8;
-        g.rect(sx - 6, sy + 9, 12, 1.8);
-        g.fill({ color: mark, alpha: war > 0.35 ? 0.4 : 0.32 });
+      // Subtle center dashed lane (muted — never bleach the whole tile)
+      if ((x + y) % 3 === 0) {
+        const mark = war > 0.35 ? 0x6a2830 : 0x6a6878;
+        g.rect(sx - 4, sy + 9, 8, 1.2);
+        g.fill({ color: mark, alpha: 0.28 });
       }
       // Cracks
       if (seed % 8 === 0) {
@@ -1080,16 +1080,17 @@ export class WorldView {
         g.lineTo(sx + 10, sy + 10);
         g.stroke({ color: 0x0a0810, width: 1.2, alpha: 0.4 });
       }
-      // Crosswalk at intersections (road neighbors on both axes)
+      // Crosswalk: only true 4-way / T hubs, thin dim stripes (no white diamonds)
       const roadN = this.tileType(x, y - 1) === "road";
       const roadS = this.tileType(x, y + 1) === "road";
       const roadE = this.tileType(x + 1, y) === "road";
       const roadW = this.tileType(x - 1, y) === "road";
-      const cross = (roadN || roadS) && (roadE || roadW);
-      if (cross && (seed % 2 === 0 || (x + y) % 3 === 0)) {
-        for (let i = -2; i <= 2; i++) {
-          g.rect(sx - 10, sy + 8 + i * 3, 20, 2);
-          g.fill({ color: 0xf0ece0, alpha: 0.38 });
+      const axes = (roadN || roadS ? 1 : 0) + (roadE || roadW ? 1 : 0);
+      const arms = (roadN ? 1 : 0) + (roadS ? 1 : 0) + (roadE ? 1 : 0) + (roadW ? 1 : 0);
+      if (axes === 2 && arms >= 3 && seed % 5 === 0) {
+        for (let i = -1; i <= 1; i++) {
+          g.rect(sx - 7, sy + 9 + i * 3.5, 14, 1.4);
+          g.fill({ color: 0x7a7888, alpha: 0.22 });
         }
       }
       // Blood spatter in war zone
