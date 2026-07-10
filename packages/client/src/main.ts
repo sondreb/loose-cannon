@@ -839,6 +839,7 @@ function fireInteract(): void {
   if (!socket) return;
   keys.up = keys.down = keys.left = keys.right = false;
   keyMoving = false;
+  pendingInteract = null;
   view?.clearLocalPrediction();
   socket.send({ type: "intent.dir", dx: 0, dy: 0 });
   socket.send({ type: "intent.stop" });
@@ -1051,7 +1052,14 @@ function bindInput(): void {
 
       const building = view.pickBuilding(e.clientX, e.clientY);
       if (building) {
-        clickInteractAt(building.doorX + 0.5, building.doorY + 0.5);
+        // Outdoors → walk to entrance; indoors → walk to exit
+        if (s.you.insideBuildingId) {
+          const ex = building.exitX ?? building.doorX;
+          const ey = building.exitY ?? building.doorY;
+          clickInteractAt(ex + 0.5, ey + 0.5);
+        } else {
+          clickInteractAt(building.doorX + 0.5, building.doorY + 0.5);
+        }
         return;
       }
 

@@ -128,6 +128,8 @@ const FLOOR_PX = 18;
 const PRED_SPEED = MOVE_SPEED;
 const MIN_ZOOM = 0.65;
 const MAX_ZOOM = 1.4;
+/** Interiors can zoom in tighter so the whole room fills the view */
+const MAX_INTERIOR_ZOOM = 2.15;
 const ZOOM_STEP = 0.08;
 
 export class WorldView {
@@ -170,6 +172,10 @@ export class WorldView {
   private mapZoomCell = -1;
   private mapRedrawPending = false;
   private buildingLabelPool: Text[] = [];
+  /** Remember outdoor zoom when entering a building */
+  private outdoorZoomTarget = 1;
+  private wasInside = false;
+  private interiorZoomLocked = false;
 
   constructor(private canvas: HTMLCanvasElement) {
     this.app = new Application();
@@ -179,7 +185,7 @@ export class WorldView {
     await this.app.init({
       canvas: this.canvas,
       resizeTo: window,
-      background: 0x1a2018,
+      background: 0x0c0a0e,
       antialias: false,
       resolution: Math.min(window.devicePixelRatio || 1, 1),
       autoDensity: true,
@@ -591,19 +597,48 @@ export class WorldView {
   applySnapshot(snap: WorldSnapshot): void {
     if (snap.floors) this.cachedFloors = snap.floors;
     if (snap.blocked) this.cachedBlocked = snap.blocked;
+
+    // Layer change (enter/exit building) — teleport visuals, never walk across the map
+    const prevInside = this.lastSnap?.you.insideBuildingId ?? null;
+    const nextInside = snap.you.insideBuildingId ?? null;
+    const layerChanged = prevInside !== nextInside;
+
     this.lastSnap = snap;
     this.localPosseId = snap.you.posseId;
 
     if (snap.fx?.length) this.applyCombatFx(snap.fx);
+
+    if (layerChanged) {
+      // Drop all local prediction so we don't keep sliding
+      this.moveMarker = null;
+      for (const v of this.visuals.values()) {
+        v.predicted = false;
+        v.predMode = "none";
+        v.predDirX = 0;
+        v.predDirY = 0;
+        v.moving = false;
+      }
+    }
 
     const me =
       snap.units.find(
         (u) => u.posseId === snap.you.posseId && (u.isPlayerLeader || u.kind === "player"),
       ) ?? snap.units.find((u) => u.posseId === snap.you.posseId);
     if (me) {
-      const v = this.visuals.get(me.id);
-      this.followX = v?.predicted ? v.x : me.x;
-      this.followY = v?.predicted ? v.y : me.y;
+      if (layerChanged) {
+        this.followX = me.x;
+        this.followY = me.y;
+        // Hard-snap camera too so the room appears immediately
+        const { sx, sy } = worldToScreen(me.x, me.y);
+        const w = this.app.renderer.width;
+        const h = this.app.renderer.height;
+        this.camX = sx - w / (2 * this.zoom);
+        this.camY = sy - h / (2 * this.zoom);
+      } else {
+        const v = this.visuals.get(me.id);
+        this.followX = v?.predicted ? v.x : me.x;
+        this.followY = v?.predicted ? v.y : me.y;
+      }
     }
 
     const seen = new Set<string>();
@@ -627,6 +662,20 @@ export class WorldView {
           lastServerY: u.y,
         };
         this.visuals.set(u.id, v);
+      } else if (layerChanged) {
+        // Instant spawn at interior / exterior — no interpolate path
+        v.x = u.x;
+        v.y = u.y;
+        v.tx = u.x;
+        v.ty = u.y;
+        v.lastServerX = u.x;
+        v.lastServerY = u.y;
+        v.predicted = false;
+        v.predMode = "none";
+        v.predDirX = 0;
+        v.predDirY = 0;
+        v.moving = false;
+        v.facing = u.facing;
       } else {
         v.lastServerX = u.x;
         v.lastServerY = u.y;
@@ -804,55 +853,110 @@ export class WorldView {
     }
   }
 
+  private getInteriorBuilding(snap: WorldSnapshot): BuildingPublic | null {
+    const id = snap.you.insideBuildingId;
+    if (!id) return null;
+    return snap.buildings.find((b) => b.id === id) ?? null;
+  }
+
+  private interiorBounds(
+    b: BuildingPublic,
+  ): { x0: number; y0: number; x1: number; y1: number } | null {
+    if (b.ix0 == null || b.iy0 == null || b.ix1 == null || b.iy1 == null) return null;
+    return { x0: b.ix0, y0: b.iy0, x1: b.ix1, y1: b.iy1 };
+  }
+
   private drawMapViewport(snap: WorldSnapshot): void {
     const g = this.tileGfx;
     g.clear();
-    const inside = snap.you.insideBuildingId;
+    const insideB = this.getInteriorBuilding(snap);
+    const bounds = insideB ? this.interiorBounds(insideB) : null;
     const { sx: camSx, sy: camSy } = worldToScreen(this.followX, this.followY);
-    const halfW = (this.app.renderer.width / this.zoom) * 0.65 + TILE_W * 10;
-    const halfH = (this.app.renderer.height / this.zoom) * 0.65 + TILE_H * 12;
+    const halfW = (this.app.renderer.width / this.zoom) * 0.7 + TILE_W * 12;
+    const halfH = (this.app.renderer.height / this.zoom) * 0.7 + TILE_H * 14;
 
-    // Split base fill: PvE green-grey vs war scorched
-    if (!inside) {
-      const wf = warFactor(this.followY);
-      const base = lerpColor(0x2e3a24, 0x2a1814, wf);
-      g.rect(camSx - halfW, camSy - halfH, halfW * 2, halfH * 2);
-      g.fill({ color: base });
+    // ——— Indoor: full-room view, outdoors completely hidden ———
+    if (insideB && bounds) {
+      // Opaque backdrop so no outdoor world peeks through
+      g.rect(camSx - halfW * 1.2, camSy - halfH * 1.2, halfW * 2.4, halfH * 2.4);
+      g.fill({ color: 0x0c0a0e });
+
+      const pad = 1;
+      const x0 = bounds.x0 - pad;
+      const y0 = bounds.y0 - pad;
+      const x1 = bounds.x1 + pad;
+      const y1 = bounds.y1 + pad;
+
+      const inRoom = (x: number, y: number) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
+
+      // Soft carpet under the whole room footprint
+      for (let y = bounds.y0; y <= bounds.y1; y++) {
+        for (let x = bounds.x0; x <= bounds.x1; x++) {
+          this.drawGroundTile(g, x, y, "floor", true);
+        }
+      }
+
+      for (const f of this.cachedFloors ?? []) {
+        if (!inRoom(f.x, f.y)) continue;
+        if (f.type === "grass" || f.type === "road" || f.type === "sidewalk" || f.type === "parking")
+          continue;
+        this.drawGroundTile(g, f.x, f.y, f.type, true);
+      }
+      for (const b of this.cachedBlocked ?? []) {
+        if (!inRoom(b.x, b.y)) continue;
+        this.drawGroundTile(g, b.x, b.y, b.type, true);
+      }
+
+      // Exit door glow
+      if (insideB.exitX != null && insideB.exitY != null) {
+        const door = worldToScreen(insideB.exitX + 0.5, insideB.exitY + 0.5);
+        g.circle(door.sx, door.sy + 2, 14);
+        g.stroke({ color: 0x60c080, width: 2, alpha: 0.55 });
+        g.circle(door.sx, door.sy + 2, 5);
+        g.fill({ color: 0x40a060, alpha: 0.35 });
+      }
+      return;
     }
+
+    // ——— Outdoor city ———
+    const wf = warFactor(this.followY);
+    const base = lerpColor(0x2e3a24, 0x2a1814, wf);
+    g.rect(camSx - halfW, camSy - halfH, halfW * 2, halfH * 2);
+    g.fill({ color: base });
 
     const inView = (x: number, y: number): boolean => {
       const p = worldToScreen(x, y);
       return Math.abs(p.sx - camSx) < halfW && Math.abs(p.sy - camSy) < halfH;
     };
 
-    if (!inside) {
-      for (const f of this.cachedFloors ?? []) {
-        if (f.type !== "grass") continue;
-        if ((f.x + f.y * 3) % 7 !== 0) continue;
-        if (!inView(f.x, f.y)) continue;
-        this.drawGroundTile(g, f.x, f.y, "grass");
-      }
-      // War-zone scars
-      for (const f of this.cachedFloors ?? []) {
-        if (f.y < SAFE_Y_MAX) continue;
-        if ((f.x * 5 + f.y * 11) % 13 !== 0) continue;
-        if (!inView(f.x, f.y)) continue;
-        const p = worldToScreen(f.x + 0.5, f.y + 0.5);
-        g.circle(p.sx, p.sy + 4, 5 + ((f.x + f.y) % 4));
-        g.fill({ color: 0x1a100c, alpha: 0.45 });
-      }
+    for (const f of this.cachedFloors ?? []) {
+      if (f.type !== "grass") continue;
+      if ((f.x + f.y * 3) % 7 !== 0) continue;
+      if (!inView(f.x, f.y)) continue;
+      this.drawGroundTile(g, f.x, f.y, "grass");
+    }
+    for (const f of this.cachedFloors ?? []) {
+      if (f.y < SAFE_Y_MAX) continue;
+      if ((f.x * 5 + f.y * 11) % 13 !== 0) continue;
+      if (!inView(f.x, f.y)) continue;
+      const p = worldToScreen(f.x + 0.5, f.y + 0.5);
+      g.circle(p.sx, p.sy + 4, 5 + ((f.x + f.y) % 4));
+      g.fill({ color: 0x1a100c, alpha: 0.45 });
     }
 
     for (const f of this.cachedFloors ?? []) {
-      if (f.type === "grass" && !inside) continue;
-      if (!inside && f.type === "floor") continue;
+      if (f.type === "grass") continue;
+      if (f.type === "floor") continue; // interiors live off-map; never draw outdoors
       if (!inView(f.x, f.y)) continue;
       this.drawGroundTile(g, f.x, f.y, f.type);
     }
     for (const b of this.cachedBlocked ?? []) {
       if (!inView(b.x, b.y)) continue;
-      if (b.type === "void" && !inside) continue;
-      if (b.type === "wall" && !inside) {
+      if (b.type === "void") continue;
+      if (b.type === "wall") {
+        // Don't draw far-off interior wall shells as outdoor sidewalks
+        // Only sidewalk-ify walls that sit near outdoor walkables is complex —
+        // skip pure wall blocks that aren't near camera outdoor roads... keep simple:
         this.drawGroundTile(g, b.x, b.y, "sidewalk");
         continue;
       }
@@ -860,19 +964,24 @@ export class WorldView {
     }
   }
 
-  private drawGroundTile(g: Graphics, x: number, y: number, type: string): void {
+  private drawGroundTile(g: Graphics, x: number, y: number, type: string, indoor = false): void {
     const { sx, sy } = worldToScreen(x, y);
     const hw = TILE_W / 2;
     const hh = TILE_H / 2;
-    const war = warFactor(y + 0.5);
+    const war = indoor ? 0 : warFactor(y + 0.5);
 
     let color = 0x3d4a2c;
     if (type === "road") color = lerpColor(0x3a3a46, 0x2a2220, war);
     else if (type === "sidewalk") color = lerpColor(0x6e685f, 0x4a3a34, war);
     else if (type === "parking") color = lerpColor(0x32323c, 0x282018, war);
-    else if (type === "wall") color = 0x2c2622;
-    else if (type === "floor") color = 0x4a4038;
-    else if (type === "door") color = 0x9a6230;
+    else if (type === "wall") color = indoor ? 0x2a221c : 0x2c2622;
+    else if (type === "floor")
+      color = indoor
+        ? (x + y) % 2 === 0
+          ? 0x4a3c32
+          : 0x42362c
+        : 0x4a4038;
+    else if (type === "door") color = indoor ? 0xb07030 : 0x9a6230;
     else if (type === "bar") color = 0x6a3030;
     else if (type === "shop") color = 0x30506a;
     else if (type === "hospital") color = 0x405868;
@@ -908,7 +1017,12 @@ export class WorldView {
     for (const t of this.buildingLabelPool) t.destroy();
     this.buildingLabelPool = [];
     this.overlayLayer.removeChildren();
-    if (snap.you.insideBuildingId) return;
+
+    // Full indoor room presentation — no exterior skyline
+    if (snap.you.insideBuildingId) {
+      this.drawInteriorChrome(snap);
+      return;
+    }
 
     this.drawZoneDivider(g);
 
@@ -934,6 +1048,63 @@ export class WorldView {
       title.y = sy - h - 28;
       this.overlayLayer.addChild(title);
       this.buildingLabelPool.push(title);
+    }
+  }
+
+  /** Room name, exit cue, and a soft frame so the interior feels like its own scene. */
+  private drawInteriorChrome(snap: WorldSnapshot): void {
+    const b = this.getInteriorBuilding(snap);
+    if (!b) return;
+    const bounds = this.interiorBounds(b);
+    if (!bounds) return;
+
+    const cx = (bounds.x0 + bounds.x1 + 1) / 2;
+    const cy = (bounds.y0 + bounds.y1 + 1) / 2;
+    const mid = worldToScreen(cx, cy);
+
+    const title = new Text({
+      text: b.name.toUpperCase(),
+      style: {
+        fontSize: 16,
+        fill: 0xffe0a0,
+        fontWeight: "800",
+        fontFamily: "system-ui, sans-serif",
+      },
+    });
+    title.x = mid.sx - title.width / 2;
+    title.y = mid.sy - 80;
+    this.overlayLayer.addChild(title);
+    this.buildingLabelPool.push(title);
+
+    const sub = new Text({
+      text: b.blurb ?? "E near exit · click door to leave",
+      style: {
+        fontSize: 11,
+        fill: 0xa89880,
+        fontWeight: "600",
+        fontFamily: "system-ui, sans-serif",
+      },
+    });
+    sub.x = mid.sx - sub.width / 2;
+    sub.y = mid.sy - 60;
+    this.overlayLayer.addChild(sub);
+    this.buildingLabelPool.push(sub);
+
+    if (b.exitX != null && b.exitY != null) {
+      const door = worldToScreen(b.exitX + 0.5, b.exitY + 0.5);
+      const exit = new Text({
+        text: "EXIT",
+        style: {
+          fontSize: 12,
+          fill: 0x70d090,
+          fontWeight: "800",
+          fontFamily: "system-ui, sans-serif",
+        },
+      });
+      exit.x = door.sx - exit.width / 2;
+      exit.y = door.sy - 28;
+      this.overlayLayer.addChild(exit);
+      this.buildingLabelPool.push(exit);
     }
   }
 
@@ -1549,6 +1720,45 @@ export class WorldView {
   }
 
   private updateCamera(dt: number): void {
+    const snap = this.lastSnap;
+    const insideB = snap ? this.getInteriorBuilding(snap) : null;
+    const bounds = insideB ? this.interiorBounds(insideB) : null;
+    const indoors = !!(insideB && bounds);
+
+    // Enter / leave interior: lock zoom to fit the room, restore outdoor zoom on exit
+    if (indoors && !this.wasInside) {
+      this.outdoorZoomTarget = this.zoomTarget;
+      this.interiorZoomLocked = true;
+      const bw = bounds!.x1 - bounds!.x0 + 3;
+      const bh = bounds!.y1 - bounds!.y0 + 3;
+      // Iso footprint roughly scales with (w+h)
+      const span = Math.max(bw, bh) + Math.min(bw, bh) * 0.5;
+      const fit = Math.min(MAX_INTERIOR_ZOOM, Math.max(1.1, 14 / Math.max(6, span)));
+      this.zoomTarget = Math.min(MAX_INTERIOR_ZOOM, Math.max(MIN_ZOOM, fit));
+      this.mapRedrawPending = true;
+    } else if (!indoors && this.wasInside) {
+      this.interiorZoomLocked = false;
+      this.zoomTarget = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, this.outdoorZoomTarget));
+      this.mapRedrawPending = true;
+    }
+    this.wasInside = indoors;
+
+    // Indoors: frame the whole room (soft-track player so small rooms stay centered)
+    if (indoors && bounds) {
+      const rcx = (bounds.x0 + bounds.x1 + 1) / 2;
+      const rcy = (bounds.y0 + bounds.y1 + 1) / 2;
+      this.followX = rcx * 0.72 + this.followX * 0.28;
+      this.followY = rcy * 0.72 + this.followY * 0.28;
+      // Keep indoor fit stable so the room fills the view
+      if (this.interiorZoomLocked) {
+        const bw = bounds.x1 - bounds.x0 + 3;
+        const bh = bounds.y1 - bounds.y0 + 3;
+        const span = Math.max(bw, bh) + Math.min(bw, bh) * 0.5;
+        const fit = Math.min(MAX_INTERIOR_ZOOM, Math.max(1.1, 14 / Math.max(6, span)));
+        this.zoomTarget = Math.min(MAX_INTERIOR_ZOOM, Math.max(MIN_ZOOM, fit));
+      }
+    }
+
     // Smooth zoom
     this.zoom += (this.zoomTarget - this.zoom) * Math.min(1, 12 * dt);
     if (Math.abs(this.zoom - this.zoomTarget) < 0.001) this.zoom = this.zoomTarget;
@@ -1615,8 +1825,19 @@ export class WorldView {
 
   pickBuilding(clientX: number, clientY: number): BuildingPublic | null {
     const snap = this.lastSnap;
-    if (!snap || snap.you.insideBuildingId) return null;
+    if (!snap) return null;
     const w = this.screenToWorld(clientX, clientY);
+
+    // Indoors: click the EXIT door tile to leave
+    if (snap.you.insideBuildingId) {
+      const b = this.getInteriorBuilding(snap);
+      if (b?.exitX != null && b.exitY != null) {
+        const d = Math.hypot(b.exitX + 0.5 - w.x, b.exitY + 0.5 - w.y);
+        if (d < 1.8) return b;
+      }
+      return null;
+    }
+
     let best: BuildingPublic | null = null;
     let bestD = 2.2;
     for (const b of snap.buildings) {

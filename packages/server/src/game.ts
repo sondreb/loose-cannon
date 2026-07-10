@@ -163,7 +163,7 @@ export class GameWorld {
   chat: ChatLine[] = [];
   chatSeq = 0;
   private uid = 0;
-  mapRevision = 6;
+  mapRevision = 7;
   /** Prop interaction cooldowns: propId -> tick available */
   propReadyAt = new Map<string, number>();
   /** Combat VFX queued this tick, attached to snapshots then cleared */
@@ -1810,6 +1810,9 @@ export class GameWorld {
 
   private enterBuilding(posse: Posse, buildingId: string | null): void {
     const members = this.members(posse);
+    // Cancel movement / attack so nobody pathfinds into the teleport
+    posse.attackTargetId = null;
+    posse.moveLabel = null;
     if (!buildingId) {
       const prev = this.map.buildings.find((b) => b.id === posse.insideBuildingId);
       posse.insideBuildingId = null;
@@ -1824,6 +1827,9 @@ export class GameWorld {
         u.y = sy + Math.floor(i / 2) * 0.4;
         u.tx = u.x;
         u.ty = u.y;
+        u.dirX = 0;
+        u.dirY = 0;
+        u.moveMode = "idle";
         i++;
       }
       return;
@@ -1840,6 +1846,9 @@ export class GameWorld {
       u.y = b.spawnY - Math.floor(i / 2) * 0.35;
       u.tx = u.x;
       u.ty = u.y;
+      u.dirX = 0;
+      u.dirY = 0;
+      u.moveMode = "idle";
       i++;
     }
   }
@@ -2697,6 +2706,12 @@ export class GameWorld {
         ey0: b.ey0,
         ex1: b.ex1,
         ey1: b.ey1,
+        ix0: b.ix0,
+        iy0: b.iy0,
+        ix1: b.ix1,
+        iy1: b.iy1,
+        exitX: b.exitX,
+        exitY: b.exitY,
         stories: b.stories,
         wallColor: b.wallColor,
         roofColor: b.roofColor,

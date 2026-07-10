@@ -74,6 +74,13 @@ export interface BuildingPublic {
   ey0?: number;
   ex1?: number;
   ey1?: number;
+  /** Interior tile bounds (inclusive) — client uses these for full indoor view */
+  ix0?: number;
+  iy0?: number;
+  ix1?: number;
+  iy1?: number;
+  exitX?: number;
+  exitY?: number;
   stories?: number;
   wallColor?: number;
   roofColor?: number;
