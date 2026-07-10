@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-10 (M6 day/night + district lighting)  
+Last updated: 2026-07-10 (M6 directional goons + walk bob)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -35,6 +35,7 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | **Cover / LoS** | **Done** | Walls/void block shots; soft cover near walls; BLOCKED FX |
 | **More missions (M6)** | **Done** | +4 jobs: still_not_guns, parking_tax, chop_shop_raid, rail_rats |
 | **Day/night + district light** | **Done** | ~6 min cycle; sky/overlay/neon/rain; district tints; HUD phase |
+| **Directional goons / walk bob** | **Done** | Iso screen flip; two-beat bob + lean; speed cadence; idle server facing |
 | Parties / co-op | Not started | M4 (within a realm) |
 | Automated overseer scaffolding | Done | AGENTS + scripts/overseer |
 
@@ -141,9 +142,18 @@ Rep still gates **shop stock** and some content; map shows HOT / recommended rep
 - HUD: cash/rep row badge **DAWN / DAY / DUSK / NIGHT**  
 - Smoke: asserts `dayPhase` ∈ {dawn,day,dusk,night}
 
+### Directional goons / walk bob (live)
+
+- Client `unitAnim.ts`: octant facing helpers matching server; **iso screen flip** (PNG faces right → mirror when aiming left of screen)  
+- Two-beat walk: bob, sway, rock lean, squash/stretch, shadow plant; cadence scales with Speed  
+- Idle: soft breath + **server facing** (combat aim holds when stopped)  
+- Painted sprites: flip + rotation lean + mild bob (feet stay planted); dancers keep hip sway only  
+- Procedural fallback: leg stride, body/head lean, weapons aim along iso facing vector  
+- Still one art sheet per goon (no full 8-dir PNGs) — readable street motion without new assets  
+
 ## Next for overseer (priority)
 
-1. **M6 presentation polish** — directional goon sprites / walk bob, HUD/mobile readability, mobile touch  
+1. **M6 presentation polish** — HUD/event-log readability, mobile touch polish  
 2. **M5 remainder** — ammo clarity / balance numbers note if combat still muddy  
 3. **M4 parties** after solo loop feels solid (scoped per realm)  
 4. **Never** Mode B (Postgres/auth/k8s) unless human asks  
@@ -157,7 +167,7 @@ Rep still gates **shop stock** and some content; map shows HOT / recommended rep
 | Safe-zone fire spam logs | Low | No crash |
 | Disconnect = wipe | Low | Mode A design |
 | Two instance templates | Design | warehouse + garage; more in M7 |
-| Goon sprites one facing | Low | Flip + procedural fallback; next M6 item |
+| Goon sprites single art facing | Low | L/R iso flip + lean/bob; full 8-dir art sheets still optional later |
 
 ## Still deferred (Mode B)
 

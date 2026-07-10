@@ -30,6 +30,14 @@ import {
   unitTexture,
   UNIT_SPRITE_H,
 } from "./sprites.js";
+import {
+  facingFlip,
+  facingFromDelta,
+  facingLean,
+  facingToDir,
+  walkCycle,
+  walkPhaseRate,
+} from "./unitAnim.js";
 
 type FxParticle =
   | { kind: "muzzle"; x: number; y: number; life: number; max: number; ang: number; big: boolean }
@@ -939,12 +947,13 @@ export class WorldView {
       // Match server: Speed stat drives tiles/sec (runners feel snappier)
       const speed = moveSpeedTilesPerSec(u.stats?.speed ?? 5);
 
+      const spdStat = u.stats?.speed ?? 5;
       if (v.predMode === "dir" && (v.predDirX !== 0 || v.predDirY !== 0)) {
         v.x += v.predDirX * speed * dt;
         v.y += v.predDirY * speed * dt;
-        v.facing = Math.round((Math.atan2(v.predDirY, v.predDirX) + Math.PI) / (Math.PI / 4)) % 8;
-        v.phase += dt * 10;
+        v.facing = facingFromDelta(v.predDirX, v.predDirY);
         v.moving = true;
+        v.phase += dt * walkPhaseRate(spdStat, true);
       } else if (v.predMode === "click") {
         const dx = v.tx - v.x;
         const dy = v.ty - v.y;
@@ -953,13 +962,14 @@ export class WorldView {
           const step = Math.min(d, speed * dt);
           v.x += (dx / d) * step;
           v.y += (dy / d) * step;
-          v.facing = Math.round((Math.atan2(dy, dx) + Math.PI) / (Math.PI / 4)) % 8;
-          v.phase += dt * 10;
+          v.facing = facingFromDelta(dx, dy);
           v.moving = true;
+          v.phase += dt * walkPhaseRate(spdStat, true);
         } else {
           v.x = v.tx;
           v.y = v.ty;
           v.moving = false;
+          v.phase += dt * walkPhaseRate(spdStat, false);
           // Hold prediction until server arrives nearby, then hand off to interpolation
           const err = Math.hypot(v.x - v.lastServerX, v.y - v.lastServerY);
           if (err < 0.35) {
@@ -992,6 +1002,7 @@ export class WorldView {
       const dx = u.x - v.x;
       const dy = u.y - v.y;
       const dist = Math.hypot(dx, dy);
+      const spdStat = u.stats?.speed ?? 5;
       if (dist > 0.001) {
         // Cap step so we never jump a huge gap in one frame
         const maxStep = PRED_SPEED_DEFAULT * dt * 1.4;
@@ -1005,11 +1016,16 @@ export class WorldView {
         }
         v.moving = dist > 0.04;
         if (dist > 0.03) {
-          v.facing = Math.round((Math.atan2(dy, dx) + Math.PI) / (Math.PI / 4)) % 8;
-          v.phase += dt * 9;
+          v.facing = facingFromDelta(dx, dy);
+        } else {
+          // Idle: trust server (combat aim / last order facing)
+          v.facing = u.facing;
         }
+        v.phase += dt * walkPhaseRate(spdStat, v.moving);
       } else {
         v.moving = false;
+        v.facing = u.facing;
+        v.phase += dt * walkPhaseRate(spdStat, false);
       }
     }
     // Camera follows even when interpolating
@@ -1035,16 +1051,21 @@ export class WorldView {
       const dx = u.x - v.x;
       const dy = u.y - v.y;
       const dist = Math.hypot(dx, dy);
+      const spdStat = u.stats?.speed ?? 5;
       if (dist > 0.001) {
         v.x += dx * k;
         v.y += dy * k;
         v.moving = dist > 0.05;
         if (dist > 0.03) {
-          v.facing = Math.round((Math.atan2(dy, dx) + Math.PI) / (Math.PI / 4)) % 8;
-          v.phase += dt * 9;
+          v.facing = facingFromDelta(dx, dy);
+        } else {
+          v.facing = u.facing;
         }
+        v.phase += dt * walkPhaseRate(spdStat, v.moving);
       } else {
         v.moving = false;
+        v.facing = u.facing;
+        v.phase += dt * walkPhaseRate(spdStat, false);
       }
     }
   }
@@ -2153,12 +2174,6 @@ export class WorldView {
       lastServerX: u.x,
       lastServerY: u.y,
     };
-    // Small walk bob only — large bob made sprites look airborne
-    const bob = vis.moving ? Math.sin(vis.phase) * 0.9 : 0;
-    const sway = vis.moving ? Math.sin(vis.phase * 0.5) * 0.9 : 0;
-    const { sx, sy: baseSy } = worldToScreen(vis.x, vis.y);
-    const sy = baseSy + bob;
-
     const posse = snap.posses.find((p) => p.id === u.posseId);
     const color = posse?.color ?? 0xaaaaaa;
     const mine = u.posseId === snap.you.posseId;
@@ -2166,10 +2181,26 @@ export class WorldView {
     const threat = threatPips(u);
     const isNpc = u.kind === "npc";
     const female = u.gender === "female";
+    const isDancer = u.npcRole === "dancer" || !!u.dancerKey;
 
-    // Soft contact shadow (wet ground) — sit under feet at tile contact
-    g.ellipse(sx, baseSy + 6, 11 + bulk, 4.2);
-    g.fill({ color: 0x000000, alpha: 0.5 });
+    // Directional walk cycle (screen flip + two-beat bob; keep feet planted)
+    const speedNorm = moveSpeedTilesPerSec(u.stats?.speed ?? 5) / moveSpeedTilesPerSec(5);
+    const walk = walkCycle(vis.phase, vis.moving && !isDancer, speedNorm);
+    const bob = walk.bobY;
+    const sway = walk.swayX;
+    const flip = facingFlip(vis.facing);
+    const lean = facingLean(vis.facing, vis.moving && !isDancer) + (isDancer ? 0 : walk.rock);
+    const { sx, sy: baseSy } = worldToScreen(vis.x, vis.y);
+    const sy = baseSy + bob;
+
+    // Soft contact shadow (wet ground) — squash on foot plant
+    g.ellipse(
+      sx + sway * 0.15,
+      baseSy + 6,
+      (11 + bulk) * walk.shadowW,
+      4.2 * walk.shadowH,
+    );
+    g.fill({ color: 0x000000, alpha: 0.48 + (1 - walk.shadowH) * 0.12 });
 
     if (!u.alive) {
       // Hide sprite if any
@@ -2183,8 +2214,6 @@ export class WorldView {
       g.fill({ color: shade(color, 0.5), alpha: 0.5 });
       return;
     }
-
-    const isDancer = u.npcRole === "dancer" || !!u.dancerKey;
 
     // Team / threat rings under feet (aligned with contact shadow)
     if (isNpc && !mine && !isDancer) {
@@ -2253,14 +2282,16 @@ export class WorldView {
       spr.anchor.set(0.5, 0.98);
       const targetH = isDancer ? DANCER_SPRITE_H : UNIT_SPRITE_H;
       const scale = targetH / Math.max(1, tex.height);
-      // Face left when facing west-ish
-      const flip = vis.facing >= 3 && vis.facing <= 6 ? -1 : 1;
-      // Dancers: slight idle sway / hip roll (keep feet planted — no vertical bob)
+      // Dancers: slight idle sway / hip roll (keep feet planted — no walk bob)
       const danceSway = isDancer ? Math.sin(this.time * 2.8 + u.x) * 2.2 : 0;
-      spr.scale.set(flip * scale, scale);
-      spr.x = sx + sway + danceSway;
+      const sxMul = isDancer ? 1 : walk.scaleX;
+      const syMul = isDancer ? 1 : walk.scaleY;
+      spr.scale.set(flip * scale * sxMul, scale * syMul);
+      spr.rotation = isDancer ? Math.sin(this.time * 2.8 + u.x) * 0.04 : lean * flip;
+      spr.x = sx + (isDancer ? danceSway : sway);
       // Plant feet on the iso ground point (shadow sits just under)
-      spr.y = baseSy + 7 + bob * 0.35;
+      // Mild bob on body only — full bob floats sprites off the street
+      spr.y = baseSy + 7 + (isDancer ? 0 : bob * 0.45);
       spr.visible = true;
       // Team tint: posse color wash (keep readable) × day/district atmosphere
       const lightTint = this.look.entityTint;
@@ -2276,21 +2307,24 @@ export class WorldView {
       const old = this.unitSprites.get(u.id);
       if (old) old.visible = false;
 
-      // ——— Procedural detailed goon (fallback) ———
-      const leg = vis.moving ? Math.sin(vis.phase) * 3 : 0;
-      // Boots
-      g.roundRect(sx - 6.5 + sway * 0.2, baseSy + 4 + Math.max(0, leg), 5, 4, 1);
+      // ——— Procedural detailed goon (fallback) — 8-dir lean + leg stride ———
+      const bodyLean = lean * 10 * flip; // screen-px torso shift
+      const headOff = flip * 1.8 + bodyLean * 0.3;
+      const legL = walk.legL;
+      const legR = walk.legR;
+      // Boots (facing: lead foot slightly forward in screen X)
+      g.roundRect(sx - 6.5 + sway * 0.2 + flip * 0.5, baseSy + 4 + legL, 5, 4, 1);
       g.fill({ color: 0x1a1a22 });
-      g.roundRect(sx + 1.5 + sway * 0.2, baseSy + 4 + Math.max(0, -leg), 5, 4, 1);
+      g.roundRect(sx + 1.5 + sway * 0.2 + flip * 0.5, baseSy + 4 + legR, 5, 4, 1);
       g.fill({ color: 0x1a1a22 });
       // Legs
-      g.rect(sx - 5.5 + sway * 0.2, baseSy - 2 + Math.max(0, leg), 4.5, 9);
+      g.rect(sx - 5.5 + sway * 0.2 + flip * 0.4, baseSy - 2 + legL, 4.5, 9);
       g.fill({ color: 0x0a0810 });
-      g.rect(sx - 5 + sway * 0.2, baseSy - 2 + Math.max(0, leg), 3.5, 8);
+      g.rect(sx - 5 + sway * 0.2 + flip * 0.4, baseSy - 2 + legL, 3.5, 8);
       g.fill({ color: 0x2a2a38 });
-      g.rect(sx + 1.5 + sway * 0.2, baseSy - 2 + Math.max(0, -leg), 4.5, 9);
+      g.rect(sx + 1.5 + sway * 0.2 + flip * 0.4, baseSy - 2 + legR, 4.5, 9);
       g.fill({ color: 0x0a0810 });
-      g.rect(sx + 2 + sway * 0.2, baseSy - 2 + Math.max(0, -leg), 3.5, 8);
+      g.rect(sx + 2 + sway * 0.2 + flip * 0.4, baseSy - 2 + legR, 3.5, 8);
       g.fill({ color: 0x2a2a38 });
 
       const bw = 14 + bulk * 2;
@@ -2306,61 +2340,62 @@ export class WorldView {
                 ? lerpColor(shade(color, 0.9), 0xc04080, 0.25)
                 : shade(color, 0.9);
 
+      const bx = sway + bodyLean;
       // Torso outline + fill
-      g.roundRect(sx - bw / 2 - 1.5 + sway, sy - bh - 4, bw + 3, bh + 3, 3);
+      g.roundRect(sx - bw / 2 - 1.5 + bx, sy - bh - 4, bw + 3, bh + 3, 3);
       g.fill({ color: 0x0a0810 });
-      g.roundRect(sx - bw / 2 + sway, sy - bh - 3, bw, bh, 3);
+      g.roundRect(sx - bw / 2 + bx, sy - bh - 3, bw, bh, 3);
       g.fill({ color: bodyColor });
       // Jacket open / shirt
-      g.rect(sx - 2 + sway, sy - bh + 2, 4, bh - 6);
+      g.rect(sx - 2 + bx, sy - bh + 2, 4, bh - 6);
       g.fill({ color: female ? 0xc03040 : 0xe8e8e8, alpha: 0.35 });
-      g.rect(sx - bw / 2 + 2 + sway, sy - bh + 1, bw - 4, 3);
+      g.rect(sx - bw / 2 + 2 + bx, sy - bh + 1, bw - 4, 3);
       g.fill({ color: 0xffffff, alpha: 0.1 });
 
       if (mine) {
-        g.roundRect(sx - bw / 2 + sway, sy - bh - 3, bw, bh, 3);
+        g.roundRect(sx - bw / 2 + bx, sy - bh - 3, bw, bh, 3);
         g.stroke({ color: 0xffe080, width: 1.4, alpha: 0.9 });
       }
       if (isNpc) {
-        g.roundRect(sx - bw / 2 + sway, sy - bh - 3, bw, bh, 3);
+        g.roundRect(sx - bw / 2 + bx, sy - bh - 3, bw, bh, 3);
         g.stroke({ color: 0x70e0ff, width: 1.1, alpha: 0.65 });
       }
       // Bandana
       if (!mine && !isNpc) {
-        g.rect(sx - 6 + sway * 0.5, sy - bh - 10, 12, 3.5);
+        g.rect(sx - 6 + bx * 0.5 + headOff * 0.3, sy - bh - 10, 12, 3.5);
         g.fill({ color: shade(color, 1.15) });
       }
       if (posse?.hostile && !mine) {
-        g.circle(sx + bw / 2 + 3 + sway, sy - bh - 6, 4);
+        g.circle(sx + bw / 2 + 3 + bx, sy - bh - 6, 4);
         g.fill({ color: 0xff3040 });
       }
       if (bulk >= 2) {
-        g.rect(sx - bw / 2 + 2 + sway, sy - bh + 4, bw - 4, 2.5);
+        g.rect(sx - bw / 2 + 2 + bx, sy - bh + 4, bw - 4, 2.5);
         g.fill({ color: 0x9aafc0, alpha: 0.5 });
       }
 
-      // Arms
-      const armFlip = vis.facing >= 4 ? -1 : 1;
-      g.roundRect(sx - bw / 2 - 3 + sway, sy - bh + 4, 4, 10, 1);
+      // Arms — weapon-side arm slightly forward along facing
+      g.roundRect(sx - bw / 2 - 3 + bx, sy - bh + 4, 4, 10, 1);
       g.fill({ color: bodyColor });
-      g.roundRect(sx + bw / 2 - 1 + sway, sy - bh + 4, 4, 10, 1);
+      g.roundRect(sx + bw / 2 - 1 + bx, sy - bh + 4, 4, 10, 1);
       g.fill({ color: bodyColor });
 
-      // Head
-      g.circle(sx + sway * 0.5, sy - bh - 6, 6.2);
+      // Head (offset toward face direction)
+      const hx = sx + bx * 0.5 + headOff;
+      g.circle(hx, sy - bh - 6, 6.2);
       g.fill({ color: 0x0a0810 });
-      g.circle(sx + sway * 0.5, sy - bh - 6, 5.4);
+      g.circle(hx, sy - bh - 6, 5.4);
       g.fill({ color: isNpc ? 0xd0b090 : female ? 0xf0c8a8 : 0xe8c8a0 });
-      // Eyes
-      g.circle(sx - 1.5 + sway * 0.5, sy - bh - 7, 1.1);
+      // Eyes biased toward facing
+      g.circle(hx - 1.5 + flip * 0.6, sy - bh - 7, 1.1);
       g.fill({ color: 0x1a1a1a });
-      g.circle(sx + 2 + sway * 0.5, sy - bh - 7, 1.1);
+      g.circle(hx + 2 + flip * 0.6, sy - bh - 7, 1.1);
       g.fill({ color: 0x1a1a1a });
       // Hair
-      g.ellipse(sx + sway * 0.5, sy - bh - 10, 5, 2.5);
+      g.ellipse(hx, sy - bh - 10, 5, 2.5);
       g.fill({ color: female ? 0x1a1018 : 0x2a2018 });
 
-      this.drawWeapon(g, sx + sway + armFlip * 2, sy - bh / 2 - 2, u.weapon, mine, vis.facing);
+      this.drawWeapon(g, sx + bx + flip * 2, sy - bh / 2 - 2, u.weapon, mine, vis.facing);
       used.add(u.id);
     }
 
@@ -2508,40 +2543,68 @@ export class WorldView {
     mine: boolean,
     facing: number,
   ): void {
-    const flip = facing >= 4 ? -1 : 1;
+    // Aim along iso screen direction of facing (not just L/R)
+    const flip = facingFlip(facing);
+    const { dx, dy } = facingToDir(facing);
+    const scrX = (dx - dy) * 0.55;
+    const scrY = (dx + dy) * 0.28;
+    const len =
+      weapon === "minigun"
+        ? 18
+        : weapon === "shotgun" || weapon === "tommy"
+          ? 15
+          : weapon === "flamethrower" || weapon === "uzi"
+            ? 13
+            : weapon === "pipe" || weapon === "switchblade"
+              ? 11
+              : 9;
     const col = mine ? 0xe8e0d0 : 0xb0b0b0;
     const dark = 0x3a3a42;
-    const ox = sx + flip * 6;
+    const ox = sx + flip * 5;
+    const oy = sy;
+    const x1 = ox + scrX * len;
+    const y1 = oy + scrY * len;
+    const thick =
+      weapon === "minigun" ? 4 : weapon === "shotgun" || weapon === "tommy" ? 2.5 : 2;
+
     if (weapon === "pipe" || weapon === "switchblade") {
-      g.rect(ox, sy - 1, flip * 11, 2);
-      g.fill({ color: col });
+      g.moveTo(ox, oy);
+      g.lineTo(x1, y1);
+      g.stroke({ color: col, width: 2.2 });
     } else if (weapon === "pistol") {
-      g.rect(ox, sy - 1, flip * 9, 3);
-      g.fill({ color: dark });
+      g.moveTo(ox, oy);
+      g.lineTo(x1, y1);
+      g.stroke({ color: dark, width: 3 });
     } else if (weapon === "uzi" || weapon === "tommy") {
-      g.rect(ox, sy - 2, flip * 14, 3);
-      g.fill({ color: dark });
+      g.moveTo(ox, oy);
+      g.lineTo(x1, y1);
+      g.stroke({ color: dark, width: thick });
       if (weapon === "tommy") {
-        g.circle(ox + flip * 6, sy + 3, 2.5);
+        g.circle(ox + scrX * 6, oy + scrY * 6 + 3, 2.5);
         g.fill({ color: 0x4a4a4a });
       }
     } else if (weapon === "minigun") {
-      g.rect(ox, sy - 3, flip * 18, 5);
-      g.fill({ color: dark });
-      g.rect(ox + flip * 2, sy - 4, flip * 12, 2);
-      g.fill({ color: 0x6a6a72 });
-      g.circle(ox + flip * 14, sy - 1, 3.5);
+      g.moveTo(ox, oy);
+      g.lineTo(x1, y1);
+      g.stroke({ color: dark, width: 5 });
+      g.circle(x1, y1, 3.5);
       g.fill({ color: 0x5a5a62 });
-      g.circle(ox + flip * 4, sy + 3, 2);
+      g.circle(ox + scrX * 4, oy + scrY * 4 + 3, 2);
       g.fill({ color: 0x3a3a42 });
     } else if (weapon === "shotgun") {
-      g.rect(ox, sy - 1, flip * 16, 2);
-      g.fill({ color: col });
+      g.moveTo(ox, oy);
+      g.lineTo(x1, y1);
+      g.stroke({ color: col, width: 2.4 });
     } else if (weapon === "flamethrower") {
-      g.rect(ox, sy - 2, flip * 12, 3);
-      g.fill({ color: dark });
-      g.circle(ox + flip * 13, sy - 2, 3);
+      g.moveTo(ox, oy);
+      g.lineTo(x1, y1);
+      g.stroke({ color: dark, width: 3 });
+      g.circle(x1, y1 - 1, 3);
       g.fill({ color: 0xff6020, alpha: 0.8 });
+    } else {
+      g.moveTo(ox, oy);
+      g.lineTo(x1, y1);
+      g.stroke({ color: dark, width: 2.5 });
     }
   }
 

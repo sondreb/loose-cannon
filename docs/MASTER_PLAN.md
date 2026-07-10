@@ -1,6 +1,6 @@
 # Loose Cannon — Master Plan (Overseer Roadmap)
 
-Last updated: 2026-07-10 (M6 day/night + district lighting)
+Last updated: 2026-07-10 (M6 directional goons + walk bob)
 
 Track completion in `docs/STATUS.md`. This file is the **ordered backlog** for autonomous development. Prefer finishing higher milestones before lower ones unless a dependency forces otherwise.
 
@@ -84,7 +84,7 @@ Full design: [realms.md](./realms.md). Friend groups on one beta/in-memory serve
 - [x] Longer kill / wipe / loot notify toasts
 - [x] More mission templates (2–4 new outdoor or instance jobs)
 - [x] Day/night or district lighting tint (lightweight)
-- [ ] Directional goon sprites / walk bob polish
+- [x] Directional goon sprites / walk bob polish (iso flip + two-beat bob; single-sheet art)
 - [ ] Mobile touch polish (move + fire + interact reliability)
 - [ ] HUD / event-log readability pass (mobile + desktop)
 
@@ -119,7 +119,7 @@ Each overseer cycle implements **one** primary milestone item (or a tightly rela
 
 ### Priority order for long unattended loops
 
-1. **M6 presentation polish** (directional sprites, HUD/mobile, touch)
+1. **M6 presentation polish** (HUD/event-log readability, mobile touch)
 2. **M5 remainder** (ammo/balance note) if combat still feels muddy
 3. **M4 parties** only when solo loop is solid (parties live inside a realm)
 4. Never M8 / Mode B unless human asks

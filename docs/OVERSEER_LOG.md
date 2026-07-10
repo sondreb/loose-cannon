@@ -19,6 +19,18 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-10 — cycle 14 (M6 directional goons + walk bob)
+- Focus: Directional goon presentation + walk bob polish (no new sprite sheets)
+- Done:
+  - Client `unitAnim.ts`: facing octants, iso screen flip, lean, two-beat walk cycle, Speed-scaled cadence
+  - `worldView`: prediction/interp use shared facing + phase rates; idle uses server facing (combat aim)
+  - Painted sprites: correct L/R flip (art faces right), rock lean, squash/stretch, mild bob, shadow plant
+  - Procedural goons: leg stride, body/head lean toward facing, weapons along iso aim vector
+  - Dancers: keep hip sway only (no walk bob)
+- Verify: `npm run build` OK; `npm run smoke` → SMOKE_OK (clean server; prior runs had combat/chop flakes)
+- Next: **M6** HUD/event-log readability or mobile touch polish; optional M5 ammo/balance note
+- Blocked: none
+
 ### 2026-07-10 — cycle 13 (M6 day/night + district lighting)
 - Focus: Lightweight day/night cycle + per-district atmospheric tint
 - Done:
