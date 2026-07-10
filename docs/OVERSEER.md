@@ -48,23 +48,29 @@ Stay in the TUI to approve tools, or set permission mode carefully. Context pers
 
 ```powershell
 cd F:\src\github\sondreb\loose-cannon
-.\scripts\overseer\run-cycle.ps1
+# Prefer -Yolo for headless (otherwise tool prompts can hang with no TUI)
+.\scripts\overseer\run-cycle.ps1 -Yolo
 ```
 
 Flags:
 
 | Flag | Meaning |
 |------|---------|
-| `-Yolo` | Auto-approve all tools (`--always-approve`). **Use only if you trust the agent in this repo.** |
+| `-Yolo` | Auto-approve all tools (`--always-approve`). **Use only if you trust the agent in this repo.** **Required for unattended headless** — without it, permission prompts hang with empty logs. |
+| `-Bootstrap` | Force a **new** session (bootstrap prompt). Use when resume hangs. |
 | `-Continue` | Resume the most recent session for this directory (`grok -c`) |
 | `-Resume <id>` | Resume a specific session UUID |
+| `-ForceResume` | Resume even if the saved session looks bloated / mid-tool (may hang) |
 | `-MaxTurns <n>` | Cap agent turns (default 80) |
+| `-StallTimeoutSeconds <n>` | Kill grok if no stdout for N seconds (default 180; `0` disables) |
 | `-DryRun` | Print the command without running |
 
-First cycle creates a new session and writes the ID to `scripts/overseer/.session-id` (gitignored). Later:
+First cycle creates a new session and writes the ID to `scripts/overseer/.session-id` (gitignored). Later cycles resume that id **only if it looks healthy**. Bloated sessions (hundreds of chat lines) or sessions left mid-tool are **auto-bootstrapped** so headless does not hang with empty logs.
 
 ```powershell
-.\scripts\overseer\run-cycle.ps1 -Continue -Yolo
+.\scripts\overseer\run-cycle.ps1 -Yolo
+# If stuck / empty logs:
+.\scripts\overseer\run-cycle.ps1 -Bootstrap -Yolo
 ```
 
 ## Option C — Continuous loop (“set and forget”)
@@ -174,9 +180,15 @@ Keep shipping until memorial wall + goon-stats feel + at least one extra mission
 | `grok` not found | Reinstall CLI; restart shell; check PATH |
 | Auth errors | `grok login` or set `XAI_API_KEY` |
 | Wrong project | Always `cd` to repo root before running scripts |
-| Session lost | Delete `scripts/overseer/.session-id` and start a new cycle |
+| **Empty logs / hangs for minutes / no code changes** | Almost always a **bad resume**. `run-cycle` auto-bootstraps unhealthy sessions; or run `-Bootstrap -Yolo`. Delete `scripts/overseer/.session-id`. Check `scripts/overseer/logs/cycle-*.debug.log` for “session load” with huge `num_chat_messages`. |
+| Hangs on first tool | Pass **`-Yolo`** — headless has no UI for permission prompts |
+| Session lost | Delete `scripts/overseer/.session-id` and start a new cycle (`-Bootstrap`) |
 | Agent thrashing | Lower `-MaxTurns`, tighten MASTER_PLAN, use interactive `/plan` for the next big feature |
 | Cost / long runs | Use `-MaxCycles`, sleep longer, or interactive mode |
+
+### Why resume hangs
+
+Grok headless **loads the full prior chat** on `--resume`. After many overseer cycles in one session (500+ messages), resume can stall after auth with **no stdout** (`--output-format json` only flushed at exit, so logs stayed 0 bytes). Continuity for the game lives in `docs/STATUS.md` / `OVERSEER_LOG.md` — a **fresh session each time the old one bloats is correct**, not a regression.
 
 ## Human oversight checklist
 
