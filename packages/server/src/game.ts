@@ -14,6 +14,7 @@ import {
   LAY_LOW_HEAT_REDUCE,
   DANCER_MAX_STAGE,
   dancerTipCost,
+  DEFAULT_REALM_ID,
   listMissionOffers,
   layLowCost,
   MAX_ACTIVE_GOONS,
@@ -21,6 +22,7 @@ import {
   MAX_MEMORIALS,
   memorialCause,
   MISSIONS,
+  realmLabel,
   MOVE_SPEED,
   nextTutorialStep,
   POSSE_AGGRO_RANGE,
@@ -263,6 +265,8 @@ function defaultStats(partial?: Partial<UnitStats>): UnitStats {
 }
 
 export class GameWorld {
+  /** Segregated instance id (see docs/realms.md) */
+  readonly realmId: string;
   map = createSkidrowMap();
   tick = 0;
   units = new Map<string, Unit>();
@@ -280,7 +284,8 @@ export class GameWorld {
   /** Throttle district soft-kick messages: posseId -> tick */
   private districtWarnAt = new Map<string, number>();
 
-  constructor() {
+  constructor(realmId: string = DEFAULT_REALM_ID) {
+    this.realmId = realmId;
     this.seedWorld();
   }
 
@@ -527,7 +532,12 @@ export class GameWorld {
     this.posses.get(id)!.memberIds = memberIds;
   }
 
-  join(name: string, conn: ClientConn): { ok: true; characterId: string; posseId: string; token: string } | { ok: false; reason: string } {
+  join(
+    name: string,
+    conn: ClientConn,
+  ):
+    | { ok: true; characterId: string; posseId: string; token: string; realmId: string }
+    | { ok: false; reason: string } {
     const clean = name.trim().slice(0, 20).replace(/[^\w\s\-']/g, "");
     if (clean.length < 2) return { ok: false, reason: "Name too short" };
 
@@ -542,7 +552,13 @@ export class GameWorld {
       if (s.name.toLowerCase() === clean.toLowerCase() && !s.conn) {
         s.conn = conn;
         conn.characterId = s.characterId;
-        return { ok: true, characterId: s.characterId, posseId: s.posseId, token: s.token };
+        return {
+          ok: true,
+          characterId: s.characterId,
+          posseId: s.posseId,
+          token: s.token,
+          realmId: this.realmId,
+        };
       }
     }
 
@@ -664,8 +680,17 @@ export class GameWorld {
     this.tokenToChar.set(token, characterId);
     conn.characterId = characterId;
 
-    this.pushChat(null, `${clean} hit the streets.`, true);
-    return { ok: true, characterId, posseId, token };
+    const realmNote =
+      this.realmId === DEFAULT_REALM_ID
+        ? `${clean} hit the streets.`
+        : `${clean} hit the streets in realm ${this.realmId}.`;
+    this.pushChat(null, realmNote, true);
+    session.combatLog.push(
+      this.realmId === DEFAULT_REALM_ID
+        ? "Public streets — anyone can show up."
+        : `Realm "${this.realmId}" — share the same code with friends.`,
+    );
+    return { ok: true, characterId, posseId, token, realmId: this.realmId };
   }
 
   leave(characterId: string): void {
@@ -4350,6 +4375,8 @@ export class GameWorld {
         selectedUnitId: posse.selectedUnitId,
         insideBuildingId: posse.insideBuildingId,
         stashCash: posse.stashCash,
+        realmId: this.realmId,
+        realmLabel: realmLabel(this.realmId),
         respawnIn: (() => {
           const lead = this.leader(posse);
           if (!lead || lead.alive) return null;

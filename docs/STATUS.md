@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-10 (realms specified)  
+Last updated: 2026-07-10 (realms + memorial confirmed)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -25,8 +25,8 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | Job board / missions / tutorial | Done | |
 | Heat + rep shop gates | Done | |
 | District map (M) | Done | Free roam; hot zones advisory |
-| Memorial wall | **Not started** | M3 next content |
-| **Realms** (segregated instances) | **Specified** | [realms.md](./realms.md) — login + `?realm=`; multi-world in-memory |
+| **Memorial wall** | **Done** | Father Trouble / V key; epitaphs on goon death |
+| **Realms** (segregated instances) | **Done** | Multi-`GameWorld`; login + `?realm=`; HUD INVITE |
 | Parties / co-op | Not started | M4 (within a realm) |
 | Automated overseer scaffolding | Done | AGENTS + scripts/overseer |
 
@@ -63,15 +63,30 @@ Rep still gates **shop stock** and some content; map shows HOT / recommended rep
 - Profiles: `/art/club/profiles/portrait-{a,b,c}-{0,1,2}.jpg` (clothed, GitHub-safe)
 - Voice: `public/voice/dancer_*.mp3`
 
+### Realms (live)
+
+- Empty realm field → **`public`**
+- Normalize: lowercase, `[a-z0-9_-]{1,32}`
+- Login field + URL `?realm=` / `?name=` prefill
+- HUD **REALM · …** + **INVITE** copies share link
+- Server: `Map<realmId, GameWorld>`; empty named realms destroyed on last leave
+- `/health` → `{ ok, realms, players, byRealm }`
+- Smoke asserts isolation (`smoke-alpha` vs public) + invalid realm reject
+
+### Memorial (live)
+
+- Named goon deaths → `memorials[]` (epitaph + cause, max 32)
+- Father Trouble (church) → “Visit the memorial wall”
+- Hotkey **V**; notify toast on death
+- Boss leader death does not create a memorial entry (respawn path)
+
 ## Next for overseer (priority)
 
-1. **Memorial wall** (M3) — dead named goons, church/Father Trouble or Crash Pad wall  
-2. **Realms** (M3.5) — implement [realms.md](./realms.md): multi-`RealmWorld`, login field, `?realm=` invite links, beta in-memory  
-3. **Goon stats feel** — combat + UI so Aim/Muscle/Guts/Speed clearly matter  
-4. **Pathing / combat feel** — better routes around shells; hit feedback  
-5. **More missions** — 2+ new jobs  
-6. **M4 parties** after solo loop feels solid (scoped per realm)  
-7. **Never** Mode B (Postgres/auth/k8s) unless human asks  
+1. **Goon stats feel** — combat + UI so Aim/Muscle/Guts/Speed clearly matter  
+2. **Pathing / combat feel** — better routes around shells; hit feedback  
+3. **More missions** — 2+ new jobs  
+4. **M4 parties** after solo loop feels solid (scoped per realm)  
+5. **Never** Mode B (Postgres/auth/k8s) unless human asks  
 
 ## Known bugs / polish debt
 
@@ -95,6 +110,7 @@ Rep still gates **shop stock** and some content; map shows HOT / recommended rep
 npm install
 npm run dev
 # client http://localhost:5173  server ws://localhost:3001
+# optional: http://localhost:5173/?realm=friday-night
 ```
 
 ```bash

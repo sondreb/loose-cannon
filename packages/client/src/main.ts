@@ -1,7 +1,9 @@
 import {
   ARMORS,
+  DEFAULT_REALM_ID,
   heatBand,
   INTERACT_RANGE,
+  realmLabel,
   SHOP_ARMOR_ORDER,
   SHOP_UPGRADE_ORDER,
   SHOP_WEAPON_ORDER,
@@ -34,8 +36,11 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const loginEl = $("login");
 const gameEl = $("game");
 const nameInput = $("nameInput") as HTMLInputElement;
+const realmInput = $("realmInput") as HTMLInputElement;
 const joinBtn = $("joinBtn");
 const loginError = $("loginError");
+const realmHudLabel = $("realmHudLabel");
+const realmInviteBtn = $("realmInviteBtn");
 const canvas = $("canvas") as HTMLCanvasElement;
 const posseList = $("posseList");
 const cashRep = $("cashRep");
@@ -192,6 +197,10 @@ const mobChat = document.getElementById("mobChat") as HTMLButtonElement | null;
 
 let snap: WorldSnapshot | null = null;
 let myName = "";
+/** Realm string sent at auth (raw input; server normalizes) */
+let myRealmInput = "";
+/** Confirmed realm from auth.ok / snapshot */
+let myRealmId = DEFAULT_REALM_ID;
 let view: WorldView;
 let socket: GameSocket;
 let chatFocused = false;
@@ -561,6 +570,7 @@ function renderPosse(): void {
       ? ` <span class="stash-cash" title="Crash Pad stash — safe on wipe">⌂$${stash}</span>`
       : ""
   } <span class="rep">Rep ${snap.you.rep}</span> <span class="heat heat-${band}" title="Street heat — cool off at the bar">Heat ${h}</span>`;
+  updateRealmHud(snap.you.realmId ?? myRealmId);
   const units = myUnits();
   const key = units
     .map(
@@ -1799,6 +1809,40 @@ function keyboardMoveLoop(): void {
   applyKeyboardSteer(false);
 }
 
+function updateRealmHud(realmId: string): void {
+  myRealmId = realmId || DEFAULT_REALM_ID;
+  if (realmHudLabel) {
+    realmHudLabel.textContent = `REALM · ${realmLabel(myRealmId)}`;
+  }
+}
+
+function inviteLinkForRealm(realmId: string): string {
+  const url = new URL(location.href);
+  url.search = "";
+  url.hash = "";
+  if (realmId && realmId !== DEFAULT_REALM_ID) {
+    url.searchParams.set("realm", realmId);
+  }
+  return url.toString();
+}
+
+async function copyInviteLink(): Promise<void> {
+  const link = inviteLinkForRealm(myRealmId);
+  try {
+    await navigator.clipboard.writeText(link);
+    pushEvent(`Invite link copied (${realmLabel(myRealmId)}).`);
+    if (realmInviteBtn) {
+      const prev = realmInviteBtn.textContent;
+      realmInviteBtn.textContent = "COPIED";
+      window.setTimeout(() => {
+        if (realmInviteBtn) realmInviteBtn.textContent = prev || "INVITE";
+      }, 1600);
+    }
+  } catch {
+    pushEvent(`Invite: ${link}`);
+  }
+}
+
 async function startGame(): Promise<void> {
   loginEl.classList.add("hidden");
   gameEl.classList.remove("hidden");
@@ -1807,9 +1851,15 @@ async function startGame(): Promise<void> {
   await view.init();
 
   socket = new GameSocket({
-    onAuthOk: () => {
+    onAuthOk: (_characterId, _posseId, realmId) => {
       sfx.play("ui");
-      pushEvent("You're on the street. Dumpsters, corners, gyms — crime is a lifestyle.");
+      updateRealmHud(realmId);
+      const label = realmLabel(realmId);
+      pushEvent(
+        realmId === DEFAULT_REALM_ID
+          ? "You're on the public streets. Dumpsters, corners, gyms — crime is a lifestyle."
+          : `You're on the streets in realm "${label}". Share INVITE so friends land here.`,
+      );
       window.dispatchEvent(new Event("resize"));
     },
     onAuthFail: (reason) => {
@@ -1830,7 +1880,7 @@ async function startGame(): Promise<void> {
     },
   });
 
-  socket.connect(myName);
+  socket.connect(myName, myRealmInput || undefined);
   bindInput();
   // Phones: chat starts hidden so it never covers the map / zone pill
   if (isMobileLayout()) setChatCollapsed(true);
@@ -2317,6 +2367,7 @@ function finishOnboardStep(): void {
 
 joinBtn.addEventListener("click", () => {
   myName = nameInput.value.trim() || "Thug";
+  myRealmInput = realmInput?.value.trim() ?? "";
   loginError.textContent = "";
   let seen = false;
   try {
@@ -2348,6 +2399,23 @@ onboardSkip?.addEventListener("click", () => closeOnboard(true));
 nameInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") joinBtn.click();
 });
+realmInput?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") joinBtn.click();
+});
+realmInviteBtn?.addEventListener("click", () => {
+  void copyInviteLink();
+});
+
+// Prefill login from ?realm= / ?name= (shareable invite links)
+try {
+  const params = new URLSearchParams(location.search);
+  const qName = params.get("name");
+  const qRealm = params.get("realm");
+  if (qName && nameInput) nameInput.value = qName.slice(0, 20);
+  if (qRealm && realmInput) realmInput.value = qRealm.slice(0, 32);
+} catch {
+  /* ignore */
+}
 
 // Event log: show on hover, fade when idle
 eventLog.addEventListener("mouseenter", () => {

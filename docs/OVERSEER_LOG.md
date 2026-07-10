@@ -19,6 +19,18 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-10 — cycle 8 (M3.5 realms + memorial status fix)
+- Focus: Memorial was already live (docs stale); implement M3.5 segregated realms
+- Done:
+  - Shared: `realms.ts` (normalize/default/`realmLabel`); protocol `auth.realm?`, `auth.ok.realmId`, `you.realmId`
+  - Server: multi-`GameWorld` host in `index.ts`; route auth/handle/leave by realm; prune empty named realms; `/health` byRealm
+  - Client: login Realm field; `?realm=` / `?name=` prefill; HUD REALM + INVITE copy link
+  - Smoke: default `public`, isolation `smoke-alpha` vs public, invalid realm reject
+  - STATUS/MASTER_PLAN: memorial + realms marked done
+- Verify: `npm run build` OK; `npm run smoke` → SMOKE_OK
+- Next: **Goon stats feel** (Aim/Muscle/Guts/Speed outcomes + UI)
+- Blocked: none
+
 ### 2026-07-10 — realms specification
 - Focus: Spec segregated multiplayer “realms” for friend groups without auth
 - Done:

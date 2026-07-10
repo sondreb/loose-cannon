@@ -38,6 +38,9 @@ const name = "Walker" + Math.floor(Math.random() * 999);
 ws.send(JSON.stringify({ type: "auth", name, protocolVersion: 1 }));
 await wait(400);
 if (!last) fail("no snapshot after auth");
+if (last.you?.realmId !== "public") {
+  fail(`expected default realm public, got ${last.you?.realmId}`);
+}
 if (last.tutorial?.step !== "go_bar") {
   fail(`expected tutorial go_bar, got ${last.tutorial?.step}`);
 }
@@ -46,7 +49,14 @@ if (!Array.isArray(last.memorials)) fail("expected memorials array");
 if (last.memorials.length !== 0) fail("expected empty memorial wall at start");
 const lockedDeep = last.districts.find((d) => d.id === "war_deep");
 if (!lockedDeep || lockedDeep.unlocked) fail("war_deep should start locked at rep 0");
-console.log("tutorial start", last.tutorial?.step, "districts", last.districts.length);
+console.log(
+  "tutorial start",
+  last.tutorial?.step,
+  "districts",
+  last.districts.length,
+  "realm",
+  last.you.realmId,
+);
 
 /** @returns {Promise<object|undefined>} */
 async function goTo(x, y, seconds = 16) {
@@ -257,7 +267,7 @@ await wait(200);
 ws.send(JSON.stringify({ type: "intent.exit" }));
 await wait(400);
 
-// Reconnect
+// Reconnect (same name, public realm — Mode A removes posse on disconnect)
 ws.close();
 await wait(300);
 const ws2 = new WebSocket("ws://127.0.0.1:3001");
@@ -274,8 +284,77 @@ await new Promise((res, rej) => {
 ws2.send(JSON.stringify({ type: "auth", name, protocolVersion: 1 }));
 await wait(500);
 if (!last2?.you) fail("reconnect");
-console.log("reconnect ok");
+if (last2.you.realmId !== "public") fail("reconnect should land in public");
+console.log("reconnect ok realm", last2.you.realmId);
+
+// --- Realms isolation: private realm must not see public player ---
+const publicName = name;
+const isoName = "Iso" + Math.floor(Math.random() * 999);
+const wsIso = new WebSocket("ws://127.0.0.1:3001");
+let lastIso = null;
+wsIso.on("message", (d) => {
+  const msg = JSON.parse(String(d));
+  if (msg.type === "snapshot") lastIso = msg.data;
+  if (msg.type === "auth.fail") {
+    console.error(msg);
+    process.exit(1);
+  }
+});
+await new Promise((res, rej) => {
+  wsIso.on("open", res);
+  wsIso.on("error", rej);
+});
+wsIso.send(
+  JSON.stringify({
+    type: "auth",
+    name: isoName,
+    protocolVersion: 1,
+    realm: "smoke-alpha",
+  }),
+);
+await wait(500);
+if (!lastIso?.you) fail("no snapshot in private realm");
+if (lastIso.you.realmId !== "smoke-alpha") {
+  fail(`expected realm smoke-alpha, got ${lastIso.you.realmId}`);
+}
+const isoPlayers = (lastIso.units || []).filter((u) => u.kind === "player");
+if (isoPlayers.some((u) => u.name === publicName)) {
+  fail("private realm should not see public player");
+}
+if (!isoPlayers.some((u) => u.name === isoName)) {
+  fail("private realm should see own player");
+}
+// Public snapshot still must not include isolated player
+await wait(200);
+const publicPlayers = (last2.units || []).filter((u) => u.kind === "player");
+if (publicPlayers.some((u) => u.name === isoName)) {
+  fail("public realm should not see private-realm player");
+}
+// Invalid realm rejected
+const wsBad = new WebSocket("ws://127.0.0.1:3001");
+let badFail = null;
+wsBad.on("message", (d) => {
+  const msg = JSON.parse(String(d));
+  if (msg.type === "auth.fail") badFail = msg.reason;
+});
+await new Promise((res, rej) => {
+  wsBad.on("open", res);
+  wsBad.on("error", rej);
+});
+wsBad.send(
+  JSON.stringify({
+    type: "auth",
+    name: "BadRealm",
+    protocolVersion: 1,
+    realm: "no spaces!",
+  }),
+);
+await wait(300);
+if (!badFail) fail("expected auth.fail for invalid realm");
+console.log("realm isolation ok", lastIso.you.realmId, "invalid realm rejected");
 
 console.log("SMOKE_OK");
 ws2.close();
+wsIso.close();
+wsBad.close();
 process.exit(0);

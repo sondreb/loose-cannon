@@ -6,7 +6,7 @@ import {
 } from "@loose-cannon/shared";
 
 export type NetHandlers = {
-  onAuthOk: (characterId: string, posseId: string) => void;
+  onAuthOk: (characterId: string, posseId: string, realmId: string) => void;
   onAuthFail: (reason: string) => void;
   onSnapshot: (snap: WorldSnapshot) => void;
   onEvent: (text: string) => void;
@@ -24,11 +24,18 @@ export class GameSocket {
     this.handlers = handlers;
   }
 
-  connect(name: string): void {
+  connect(name: string, realm?: string): void {
     const url = resolveWsUrl();
     this.ws = new WebSocket(url);
     this.ws.addEventListener("open", () => {
-      this.send({ type: "auth", name, protocolVersion: PROTOCOL_VERSION });
+      const payload: ClientMessage = {
+        type: "auth",
+        name,
+        protocolVersion: PROTOCOL_VERSION,
+      };
+      const r = realm?.trim();
+      if (r) payload.realm = r;
+      this.send(payload);
     });
     this.ws.addEventListener("message", (ev) => {
       let msg: ServerMessage;
@@ -39,7 +46,7 @@ export class GameSocket {
       }
       switch (msg.type) {
         case "auth.ok":
-          this.handlers.onAuthOk(msg.characterId, msg.posseId);
+          this.handlers.onAuthOk(msg.characterId, msg.posseId, msg.realmId);
           break;
         case "auth.fail":
           this.handlers.onAuthFail(msg.reason);

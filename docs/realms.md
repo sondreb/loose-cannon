@@ -1,6 +1,6 @@
 # Realms — Segregated World Instances
 
-**Status:** Specified (not fully implemented) · **Mode:** A (in-memory) and beta  
+**Status:** Implemented (2026-07-10) · **Mode:** A (in-memory) and beta  
 **Related:** [architecture.md](./architecture.md) · [MASTER_PLAN.md](./MASTER_PLAN.md) · [STATUS.md](./STATUS.md)
 
 ## 1. Goal
@@ -197,14 +197,14 @@ Document in beta README / STATUS that “private” means **segregated instance*
 
 ## 8. Acceptance criteria
 
-- [ ] Two browsers join **empty** realm → see each other in the public streets.  
-- [ ] Browser A joins `realm=alpha`, browser B joins `realm=beta` → neither appears in the other’s world; combat/chat isolated.  
-- [ ] `?realm=alpha` prefills login; join lands in `alpha`.  
-- [ ] Name collision only within the same realm.  
-- [ ] Mission instances and AI in `alpha` do not affect `beta`.  
-- [ ] Works on local `npm run dev` and Azure beta (in-memory).  
-- [ ] `npm run build` + smoke updated for multi-realm (or at least default `public`).  
-- [ ] STATUS / MASTER_PLAN checkboxes updated when shipped.
+- [x] Two browsers join **empty** realm → see each other in the public streets.  
+- [x] Browser A joins `realm=alpha`, browser B joins `realm=beta` → neither appears in the other’s world; combat/chat isolated.  
+- [x] `?realm=alpha` prefills login; join lands in `alpha`.  
+- [x] Name collision only within the same realm.  
+- [x] Mission instances and AI in `alpha` do not affect `beta`.  
+- [x] Works on local `npm run dev` and Azure beta (in-memory).  
+- [x] `npm run build` + smoke updated for multi-realm (or at least default `public`).  
+- [x] STATUS / MASTER_PLAN checkboxes updated when shipped.
 
 ## 9. Implementation sketch (for implementers)
 

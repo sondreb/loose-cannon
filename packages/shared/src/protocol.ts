@@ -275,6 +275,10 @@ export interface WorldSnapshot {
     districtUnlocked: boolean;
     /** Cash locked in Crash Pad stash (safe from wipe) */
     stashCash: number;
+    /** Segregated world id (default `public`) */
+    realmId: string;
+    /** Display label for HUD (usually same as realmId) */
+    realmLabel?: string;
   };
   /** City districts for map UI (rep unlocks) */
   districts: DistrictPublic[];
@@ -310,7 +314,7 @@ export interface WorldSnapshot {
 
 /** Client -> Server */
 export type ClientMessage =
-  | { type: "auth"; name: string; protocolVersion: number }
+  | { type: "auth"; name: string; protocolVersion: number; realm?: string }
   | { type: "intent.move"; x: number; y: number; unitIds?: string[] }
   /** Continuous free movement in world space (normalized or zero to stop). */
   | { type: "intent.dir"; dx: number; dy: number }
@@ -357,7 +361,7 @@ export interface NotifyLootUpgrade {
 }
 
 export type ServerMessage =
-  | { type: "auth.ok"; characterId: string; posseId: string; token: string }
+  | { type: "auth.ok"; characterId: string; posseId: string; token: string; realmId: string }
   | { type: "auth.fail"; reason: string }
   | { type: "snapshot"; data: WorldSnapshot }
   | { type: "event"; text: string }

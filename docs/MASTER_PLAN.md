@@ -1,6 +1,6 @@
 # Loose Cannon — Master Plan (Overseer Roadmap)
 
-Last updated: 2026-07-10 (realms specified)
+Last updated: 2026-07-10 (realms + memorial done)
 
 Track completion in `docs/STATUS.md`. This file is the **ordered backlog** for autonomous development. Prefer finishing higher milestones before lower ones unless a dependency forces otherwise.
 
@@ -42,22 +42,22 @@ A fun, playable **local multiplayer** crime sandbox: recruit a posse, run jobs, 
 - [x] Heat meter + decay + Vince lay-low + shop markup
 - [x] Reputation gates for shop stock
 - [x] District map UI (**free roam** — rep is advisory for outdoor walk; gates remain for gear/jobs)
-- [ ] **Memorial wall** for dead named goons (Cannon Fodder beat) — **next primary**
-- [ ] Goon stats feel distinct (aim / muscle / guts / speed clearly change outcomes + UI readability)
+- [x] **Memorial wall** for dead named goons (Cannon Fodder beat)
+- [ ] Goon stats feel distinct (aim / muscle / guts / speed clearly change outcomes + UI readability) — **next primary**
 - [ ] Optional: crash-pad stash UX polish / stash tutorial tip
 
-### M3.5 — Realms (segregated instances) — **specified**
+### M3.5 — Realms (segregated instances) — **done**
 
-Full design: [realms.md](./realms.md). Required for friend groups on one beta/in-memory server without auth.
+Full design: [realms.md](./realms.md). Friend groups on one beta/in-memory server without auth.
 
-- [ ] **Protocol:** `auth.realm?`, `auth.ok.realmId`, snapshot `you.realmId`
-- [ ] **Server:** multi-`RealmWorld` map; isolate units/combat/chat/AI/missions per realm
-- [ ] **Default realm** `public` when field empty; normalize id (lowercase, `[a-z0-9_-]{1,32}`)
-- [ ] **Client login:** optional Realm field; prefill from `?realm=` / `?name=`
-- [ ] **Invite link** copy (`?realm=code`); HUD shows current realm
-- [ ] Name uniqueness **per realm**; empty realms idle-TTL or wipe on process restart
-- [ ] Works on local Mode A **and** Azure beta (same in-memory multi-world process)
-- [ ] Smoke / health: multi-realm isolation or at least public path green
+- [x] **Protocol:** `auth.realm?`, `auth.ok.realmId`, snapshot `you.realmId`
+- [x] **Server:** multi-`GameWorld` map; isolate units/combat/chat/AI/missions per realm
+- [x] **Default realm** `public` when field empty; normalize id (lowercase, `[a-z0-9_-]{1,32}`)
+- [x] **Client login:** optional Realm field; prefill from `?realm=` / `?name=`
+- [x] **Invite link** copy (`?realm=code`); HUD shows current realm
+- [x] Name uniqueness **per realm**; empty named realms destroyed on last leave; process restart wipes all
+- [x] Works on local Mode A **and** Azure beta (same in-memory multi-world process)
+- [x] Smoke / health: multi-realm isolation + `/health` `byRealm`
 
 ### M4 — Local multiplayer social (P4 light)
 
@@ -117,13 +117,11 @@ Each overseer cycle implements **one** primary milestone item (or a tightly rela
 
 ### Priority order for long unattended loops
 
-1. **M3 memorial wall** (if still incomplete)
-2. **M3.5 realms** — high value for beta friend groups; full spec in `docs/realms.md`
-3. **M3 goon stats feel**
-4. **M5 combat/AI feel** or **pathing around shells**
-5. **M6 more missions** / presentation polish
-6. **M4 parties** only when solo loop is solid (parties live inside a realm)
-7. Never M8 / Mode B unless human asks
+1. **M3 goon stats feel** (if still incomplete)
+2. **M5 combat/AI feel** or **pathing around shells**
+3. **M6 more missions** / presentation polish
+4. **M4 parties** only when solo loop is solid (parties live inside a realm)
+5. Never M8 / Mode B unless human asks
 
 ### Guardrails
 

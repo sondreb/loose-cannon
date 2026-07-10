@@ -2898,6 +2898,12 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
     right: 14px;
   }
 
+  .realm-hud {
+    top: 56px;
+    right: 14px;
+    font-size: 0.62rem;
+  }
+
   #chatForm input {
     font-size: 16px; /* prevents iOS zoom on focus */
     padding: 0.45rem 0.5rem;
@@ -2907,6 +2913,42 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
     display: none !important;
   }
 } /* end @media (max-width: 900px) primary mobile block */
+
+/* Realm badge + invite (left of MAP) */
+.realm-hud {
+  position: absolute;
+  top: 12px;
+  right: 72px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(10, 14, 22, 0.78);
+  border: 1px solid rgba(120, 180, 255, 0.35);
+  color: #9ec8ff;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  font-size: 0.68rem;
+  padding: 0.3rem 0.45rem 0.3rem 0.65rem;
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+  max-width: min(280px, 42vw);
+}
+
+.realm-hud #realmHudLabel {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 11rem;
+}
+
+.realm-hud .tiny-btn {
+  flex-shrink: 0;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  padding: 0.2rem 0.4rem;
+}
 
 /* MAP top-right (session/mission stack sits just below) */
 .minimap-btn {

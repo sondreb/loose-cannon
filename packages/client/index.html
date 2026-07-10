@@ -42,6 +42,16 @@
             <span>Display name</span>
             <input id="nameInput" maxlength="20" placeholder="e.g. Nikki" autocomplete="off" />
           </label>
+          <label class="login-field">
+            <span>Realm <span class="muted tiny">(optional — private city for friends)</span></span>
+            <input
+              id="realmInput"
+              maxlength="32"
+              placeholder="Leave blank for public streets"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </label>
           <button id="joinBtn" type="button" class="login-cta">Hit the Streets</button>
           <button id="howToPlayBtn" type="button" class="login-secondary">How to Play</button>
           <p id="loginError" class="error"></p>
@@ -144,6 +154,10 @@
           <div id="objective">SKIDROW — walk, talk, buy, survive</div>
         </div>
 
+        <div id="realmHud" class="realm-hud" title="Segregated city instance — share the code with friends">
+          <span id="realmHudLabel">REALM · public</span>
+          <button type="button" id="realmInviteBtn" class="tiny-btn" title="Copy invite link">INVITE</button>
+        </div>
         <button type="button" id="minimap" class="minimap-btn" title="City map (M)">MAP</button>
 
         <!-- City district map -->
