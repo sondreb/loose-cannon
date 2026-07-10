@@ -1,16 +1,17 @@
 :root {
-  --bg: #07080c;
-  --panel: rgba(22, 22, 30, 0.72);
-  --panel-solid: #16161e;
-  --glass: rgba(255, 255, 255, 0.06);
-  --glass-border: rgba(255, 255, 255, 0.12);
-  --glass-highlight: rgba(255, 255, 255, 0.18);
-  --border: rgba(240, 160, 48, 0.55);
-  --text: #f2efe8;
-  --muted: #9a948a;
-  --accent: #ffcc33;
-  --danger: #ff5a4a;
-  --ok: #34c759;
+  /* Combat-scene night UI chrome */
+  --bg: #0c0a14;
+  --panel: rgba(18, 14, 28, 0.78);
+  --panel-solid: #14101c;
+  --glass: rgba(255, 80, 180, 0.05);
+  --glass-border: rgba(100, 180, 255, 0.14);
+  --glass-highlight: rgba(255, 120, 220, 0.12);
+  --border: rgba(255, 80, 180, 0.45);
+  --text: #f0eaf5;
+  --muted: #9a90a8;
+  --accent: #ff66cc;
+  --danger: #ff5a6a;
+  --ok: #40e0a0;
   --blur: 12px;
   --scroll-size: 5px;
   --scroll-track: transparent;

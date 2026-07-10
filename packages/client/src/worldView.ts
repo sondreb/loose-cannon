@@ -144,6 +144,7 @@ export class WorldView {
   private entityGfx = new Graphics();
   private hoverGfx = new Graphics();
   private fxGfx = new Graphics();
+  private rainGfx = new Graphics();
   private labels = new Container();
   private overlayLayer = new Container();
   private camX = 0;
@@ -185,7 +186,8 @@ export class WorldView {
     await this.app.init({
       canvas: this.canvas,
       resizeTo: window,
-      background: 0x0c0a0e,
+      // Combat-scene night purple
+      background: 0x12101c,
       antialias: false,
       resolution: Math.min(window.devicePixelRatio || 1, 1),
       autoDensity: true,
@@ -198,6 +200,7 @@ export class WorldView {
       this.buildingLayer,
       this.propGfx,
       this.entityLayer,
+      this.rainGfx,
       this.overlayLayer,
     );
     this.mapLayer.addChild(this.tileGfx);
@@ -221,6 +224,7 @@ export class WorldView {
       if (this.lastSnap) {
         this.drawEntities(this.lastSnap);
         this.drawHoverOverlay(this.lastSnap);
+        this.drawWeather(this.lastSnap);
       }
     });
   }
@@ -877,9 +881,9 @@ export class WorldView {
 
     // ——— Indoor: full-room view, outdoors completely hidden ———
     if (insideB && bounds) {
-      // Opaque backdrop so no outdoor world peeks through
+      // Opaque night backdrop
       g.rect(camSx - halfW * 1.2, camSy - halfH * 1.2, halfW * 2.4, halfH * 2.4);
-      g.fill({ color: 0x0c0a0e });
+      g.fill({ color: 0x12101c });
 
       const pad = 1;
       const x0 = bounds.x0 - pad;
@@ -911,16 +915,17 @@ export class WorldView {
       if (insideB.exitX != null && insideB.exitY != null) {
         const door = worldToScreen(insideB.exitX + 0.5, insideB.exitY + 0.5);
         g.circle(door.sx, door.sy + 2, 14);
-        g.stroke({ color: 0x60c080, width: 2, alpha: 0.55 });
+        g.stroke({ color: 0xff60c0, width: 2, alpha: 0.5 });
         g.circle(door.sx, door.sy + 2, 5);
-        g.fill({ color: 0x40a060, alpha: 0.35 });
+        g.fill({ color: 0xff40aa, alpha: 0.3 });
       }
       return;
     }
 
-    // ——— Outdoor city ———
+    // ——— Outdoor city: combat-scene rainy night ———
     const wf = warFactor(this.followY);
-    const base = lerpColor(0x2e3a24, 0x2a1814, wf);
+    // Deep indigo night → bloodier purple-black in war zone
+    const base = lerpColor(0x14122a, 0x1a0c14, wf);
     g.rect(camSx - halfW, camSy - halfH, halfW * 2, halfH * 2);
     g.fill({ color: base });
 
@@ -935,13 +940,14 @@ export class WorldView {
       if (!inView(f.x, f.y)) continue;
       this.drawGroundTile(g, f.x, f.y, "grass");
     }
+    // War-zone crater / oil stains
     for (const f of this.cachedFloors ?? []) {
       if (f.y < SAFE_Y_MAX) continue;
       if ((f.x * 5 + f.y * 11) % 13 !== 0) continue;
       if (!inView(f.x, f.y)) continue;
       const p = worldToScreen(f.x + 0.5, f.y + 0.5);
       g.circle(p.sx, p.sy + 4, 5 + ((f.x + f.y) % 4));
-      g.fill({ color: 0x1a100c, alpha: 0.45 });
+      g.fill({ color: 0x0a0608, alpha: 0.55 });
     }
 
     for (const f of this.cachedFloors ?? []) {
@@ -954,9 +960,6 @@ export class WorldView {
       if (!inView(b.x, b.y)) continue;
       if (b.type === "void") continue;
       if (b.type === "wall") {
-        // Don't draw far-off interior wall shells as outdoor sidewalks
-        // Only sidewalk-ify walls that sit near outdoor walkables is complex —
-        // skip pure wall blocks that aren't near camera outdoor roads... keep simple:
         this.drawGroundTile(g, b.x, b.y, "sidewalk");
         continue;
       }
@@ -969,45 +972,134 @@ export class WorldView {
     const hw = TILE_W / 2;
     const hh = TILE_H / 2;
     const war = indoor ? 0 : warFactor(y + 0.5);
+    const seed = (x * 17 + y * 31) >>> 0;
 
-    let color = 0x3d4a2c;
-    if (type === "road") color = lerpColor(0x3a3a46, 0x2a2220, war);
-    else if (type === "sidewalk") color = lerpColor(0x6e685f, 0x4a3a34, war);
-    else if (type === "parking") color = lerpColor(0x32323c, 0x282018, war);
-    else if (type === "wall") color = indoor ? 0x2a221c : 0x2c2622;
+    // Combat-scene wet-night palette (cool asphalt, purple sidewalks)
+    let color = 0x2a2840;
+    if (type === "road") {
+      const wet = (seed % 5) === 0 ? 0x2c2a48 : 0x242238;
+      color = lerpColor(wet, 0x1c1418, war);
+    } else if (type === "sidewalk") {
+      color = lerpColor((seed % 3) === 0 ? 0x4a4658 : 0x3e3a4c, 0x3a2830, war);
+    } else if (type === "parking") color = lerpColor(0x2a2840, 0x221820, war);
+    else if (type === "wall") color = indoor ? 0x2a221c : 0x2c2638;
     else if (type === "floor")
       color = indoor
         ? (x + y) % 2 === 0
-          ? 0x4a3c32
-          : 0x42362c
-        : 0x4a4038;
+          ? 0x3a2e38
+          : 0x322830
+        : 0x342c38;
     else if (type === "door") color = indoor ? 0xb07030 : 0x9a6230;
-    else if (type === "bar") color = 0x6a3030;
-    else if (type === "shop") color = 0x30506a;
-    else if (type === "hospital") color = 0x405868;
-    else if (type === "gym") color = 0x4a4030;
-    else if (type === "void") color = 0x0c0c10;
+    else if (type === "bar") color = 0x5a2848;
+    else if (type === "shop") color = 0x283858;
+    else if (type === "hospital") color = 0x304858;
+    else if (type === "gym") color = 0x3a3430;
+    else if (type === "void") color = 0x0a0812;
     else if (type === "grass") {
-      const base = (x + y * 3) % 5 === 0 ? 0x42522e : 0x3a4a2a;
-      color = lerpColor(base, 0x2a2418, war);
+      // Night alleys / vacant lots — cool dark, not sunny green
+      const base = (x + y * 3) % 5 === 0 ? 0x1e2430 : 0x181e28;
+      color = lerpColor(base, 0x1a1014, war);
     }
 
     g.poly([sx, sy, sx + hw, sy + hh, sx, sy + TILE_H, sx - hw, sy + hh]);
     g.fill({ color });
 
-    if (type === "road" && (x + y) % 3 === 0) {
-      // PvE: yellow lane marks; war: broken / blood-stained
-      const mark = war > 0.35 ? 0x6a3030 : 0xc9a227;
-      g.rect(sx - 6, sy + 8, 12, 2);
-      g.fill({ color: mark, alpha: 0.35 + war * 0.2 });
+    // Wet road sheen + lane paint (combat-scene crosswalk energy)
+    if (type === "road") {
+      // Specular wet highlight
+      if (seed % 4 === 0) {
+        g.poly([
+          sx - 4,
+          sy + 6,
+          sx + 8,
+          sy + 10,
+          sx + 4,
+          sy + 14,
+          sx - 8,
+          sy + 10,
+        ]);
+        g.fill({ color: 0x6a80c0, alpha: 0.08 + (seed % 3) * 0.02 });
+      }
+      // Neon-tinted puddles (magenta / cyan)
+      if (seed % 7 === 0) {
+        const neon = seed % 2 === 0 ? 0xc040a0 : 0x40c0e0;
+        g.ellipse(sx + ((seed % 5) - 2), sy + 10, 7, 3.5);
+        g.fill({ color: neon, alpha: 0.12 });
+      }
+      // White dashed lane / yellow war blood marks
+      if ((x + y) % 3 === 0) {
+        const mark = war > 0.35 ? 0x8a3040 : 0xe8e0c0;
+        g.rect(sx - 5, sy + 8, 10, 1.5);
+        g.fill({ color: mark, alpha: war > 0.35 ? 0.45 : 0.28 });
+      }
+      // Cracks
+      if (seed % 11 === 0) {
+        g.moveTo(sx - 6, sy + 6);
+        g.lineTo(sx + 2, sy + 12);
+        g.lineTo(sx + 8, sy + 10);
+        g.stroke({ color: 0x0a0810, width: 1, alpha: 0.35 });
+      }
+      // Blood spatter in war zone
+      if (war > 0.4 && seed % 9 === 0) {
+        g.ellipse(sx + 3, sy + 9, 4, 2);
+        g.fill({ color: 0x6a1820, alpha: 0.4 });
+      }
     }
-    if (type === "sidewalk" && war > 0.2 && (x + y) % 4 === 0) {
-      g.rect(sx - 4, sy + 6, 8, 3);
-      g.fill({ color: 0x1a1210, alpha: 0.35 });
+    if (type === "sidewalk") {
+      // Curb edge
+      g.rect(sx - 8, sy + 12, 16, 1);
+      g.fill({ color: 0x1a1828, alpha: 0.35 });
+      if (seed % 5 === 0) {
+        // Graffiti dab
+        const graf = [0xff40aa, 0x40e0ff, 0xa0ff40, 0xffc040][seed % 4]!;
+        g.rect(sx - 5, sy + 4, 6, 4);
+        g.fill({ color: graf, alpha: 0.22 });
+      }
+      if (war > 0.2 && (x + y) % 4 === 0) {
+        g.rect(sx - 4, sy + 6, 8, 3);
+        g.fill({ color: 0x1a1210, alpha: 0.35 });
+      }
     }
     if (type === "door") {
       g.roundRect(sx - 5, sy + 2, 10, 12, 1);
       g.fill({ color: 0x5a3018 });
+    }
+  }
+
+  /** Rain + wet sparkles — combat-scene atmosphere, every frame. */
+  private drawWeather(snap: WorldSnapshot): void {
+    const g = this.rainGfx;
+    g.clear();
+    if (snap.you.insideBuildingId) return;
+
+    const { sx: camSx, sy: camSy } = worldToScreen(this.followX, this.followY);
+    const w = this.app.renderer.width / this.zoom;
+    const h = this.app.renderer.height / this.zoom;
+    const t = this.time;
+
+    // Diagonal rain streaks (stable pseudo-random field)
+    const count = 70;
+    for (let i = 0; i < count; i++) {
+      const h1 = ((i * 1103515245 + 12345) >>> 0) / 0xffffffff;
+      const h2 = ((i * 1664525 + 1013904223) >>> 0) / 0xffffffff;
+      const drift = ((t * 180 + h1 * 400) % (h + 80)) - 40;
+      const px = camSx - w * 0.55 + h2 * w * 1.1 + Math.sin(t + i) * 8;
+      const py = camSy - h * 0.55 + drift;
+      const len = 10 + (i % 5) * 3;
+      g.moveTo(px, py);
+      g.lineTo(px + 3, py + len);
+      g.stroke({ color: 0xc8d8ff, width: 1, alpha: 0.12 + (i % 3) * 0.04 });
+    }
+
+    // Ground wet glints near camera
+    for (let i = 0; i < 12; i++) {
+      const h1 = ((i * 2654435761) >>> 0) / 0xffffffff;
+      const h2 = ((i * 2246822519) >>> 0) / 0xffffffff;
+      const gx = camSx + (h1 - 0.5) * w * 0.7;
+      const gy = camSy + (h2 - 0.5) * h * 0.5 + 20;
+      const pulse = 0.04 + Math.sin(t * 3 + i) * 0.02;
+      g.ellipse(gx, gy, 10 + (i % 4), 3);
+      g.fill({ color: i % 2 === 0 ? 0xff60d0 : 0x60e0ff, alpha: pulse });
     }
   }
 
@@ -1151,12 +1243,21 @@ export class WorldView {
     const y1 = b.ey1!;
     const stories = b.stories ?? 2;
     const h = stories * FLOOR_PX;
-    let wall = b.wallColor ?? 0x3a3430;
-    let roof = b.roofColor ?? 0x1a1816;
-    const accent = b.accentColor ?? 0xc9a227;
+    // Cool brick night walls (combat-scene)
+    let wall = b.wallColor ?? 0x2e2a38;
+    wall = lerpColor(wall, 0x2a2438, 0.55);
+    let roof = b.roofColor ?? 0x14101c;
+    let accent = b.accentColor ?? 0xff40aa;
+    // Kind-based neon accent
+    if (b.kind === "bar" || b.kind === "club") accent = 0xff40c8;
+    else if (b.kind === "shop") accent = 0x40e0ff;
+    else if (b.kind === "hospital") accent = 0x60ffb0;
+    else if (b.kind === "gym") accent = 0xffc040;
+    else if (b.kind === "safehouse") accent = 0x60c080;
+    else if (b.kind === "church") accent = 0xc0a0ff;
     if (war > 0.15) {
-      wall = lerpColor(wall, 0x2a2018, war);
-      roof = lerpColor(roof, 0x14100c, war);
+      wall = lerpColor(wall, 0x221018, war);
+      roof = lerpColor(roof, 0x10080c, war);
     }
 
     const c00 = worldToScreen(x0, y0);
@@ -1172,12 +1273,17 @@ export class WorldView {
     g.poly([c00.sx, c00.sy, c01.sx, c01.sy, t01.sx, t01.sy, t00.sx, t00.sy]);
     g.fill({ color: shade(wall, 0.72) });
     g.poly([c00.sx, c00.sy, c10.sx, c10.sy, t10.sx, t10.sy, t00.sx, t00.sy]);
-    g.fill({ color: shade(wall, 0.9) });
+    g.fill({ color: shade(wall, 0.95) });
     g.poly([c01.sx, c01.sy, c11.sx, c11.sy, t11.sx, t11.sy, t01.sx, t01.sy]);
-    g.fill({ color: shade(wall, 0.65), alpha: 0.9 });
+    g.fill({ color: shade(wall, 0.62), alpha: 0.95 });
     g.poly([c10.sx, c10.sy, c11.sx, c11.sy, t11.sx, t11.sy, t10.sx, t10.sy]);
-    g.fill({ color: shade(wall, 0.8), alpha: 0.9 });
+    g.fill({ color: shade(wall, 0.8), alpha: 0.95 });
 
+    // Black outline (cartoon combat-scene)
+    g.poly([c00.sx, c00.sy, c10.sx, c10.sy, t10.sx, t10.sy, t00.sx, t00.sy]);
+    g.stroke({ color: 0x0a0812, width: 1.2, alpha: 0.55 });
+
+    const neonPalette = [0xff40aa, 0x40e0ff, 0x60ff90, 0xffc040, 0xc060ff];
     for (let f = 0; f < stories; f++) {
       const fy = 1 - (f + 0.55) / stories;
       for (let i = 1; i <= 2; i++) {
@@ -1186,14 +1292,19 @@ export class WorldView {
         const by = c00.sy + (c10.sy - c00.sy) * t;
         const broken = war > 0.25 && (b.id.charCodeAt(0) + f + i) % 3 === 0;
         const lit = !broken && (b.id.charCodeAt(0) + f + i) % 2 === 0;
+        const winNeon = neonPalette[(b.id.charCodeAt(0) + f + i) % neonPalette.length]!;
         g.rect(bx - 3, by - h * fy - 4, 6, 5);
         if (broken) {
           g.fill({ color: 0x0a0808, alpha: 0.85 });
-          // jagged edge
           g.rect(bx - 1, by - h * fy - 2, 3, 2);
           g.fill({ color: 0x3a2010, alpha: 0.6 });
+        } else if (lit) {
+          // Glowing neon window + soft bloom
+          g.fill({ color: winNeon, alpha: 0.9 });
+          g.circle(bx, by - h * fy - 1, 5);
+          g.fill({ color: winNeon, alpha: 0.12 });
         } else {
-          g.fill({ color: lit ? accent : 0x1a2030, alpha: lit ? 0.8 : 0.45 });
+          g.fill({ color: 0x12101c, alpha: 0.7 });
         }
       }
     }
@@ -1201,22 +1312,37 @@ export class WorldView {
     g.poly([t00.sx, t00.sy, t10.sx, t10.sy, t11.sx, t11.sy, t01.sx, t01.sy]);
     g.fill({ color: roof });
     if (war > 0.4) {
-      // damaged roof corner
       g.poly([t10.sx, t10.sy, t11.sx, t11.sy, (t10.sx + t11.sx) / 2, t10.sy + 6]);
       g.fill({ color: 0x0c0a08, alpha: 0.7 });
     } else {
       g.poly([t00.sx, t00.sy, t10.sx, t10.sy, t11.sx, t11.sy, t01.sx, t01.sy]);
-      g.stroke({ color: shade(accent, 0.7), width: 1, alpha: 0.45 });
+      g.stroke({ color: shade(accent, 0.85), width: 1.2, alpha: 0.55 });
+    }
+
+    // Vertical neon sign on street face (like LIQUOR / LOANS)
+    {
+      const midX = (c00.sx + c10.sx) / 2;
+      const midY = (c00.sy + c10.sy) / 2;
+      const signH = Math.min(h * 0.55, 28);
+      g.roundRect(midX - 18, midY - h * 0.75, 8, signH, 1);
+      g.fill({ color: 0x0a0810, alpha: 0.85 });
+      g.roundRect(midX - 17, midY - h * 0.75 + 1, 6, signH - 2, 1);
+      g.fill({ color: accent, alpha: 0.75 });
+      // Soft glow
+      g.circle(midX - 14, midY - h * 0.55, 10);
+      g.fill({ color: accent, alpha: 0.1 });
     }
 
     const door = worldToScreen(b.doorX + 0.5, b.doorY + 0.5);
     g.roundRect(door.sx - 6, door.sy - 14, 12, 16, 1);
-    g.fill({ color: 0x1a1008 });
+    g.fill({ color: 0x0a0810 });
     g.roundRect(door.sx - 5, door.sy - 13, 10, 14, 1);
-    g.fill({ color: shade(wall, 0.45) });
-    // Door glow — interactive cue
-    g.circle(door.sx, door.sy - 4, 8);
-    g.stroke({ color: 0xffcc66, width: 1, alpha: 0.25 });
+    g.fill({ color: shade(wall, 0.4) });
+    // Neon door glow
+    g.circle(door.sx, door.sy - 4, 9);
+    g.stroke({ color: accent, width: 1.5, alpha: 0.4 });
+    g.circle(door.sx, door.sy - 4, 14);
+    g.stroke({ color: accent, width: 1, alpha: 0.12 });
   }
 
   private drawProps(props: PropPublic[]): void {
@@ -1225,37 +1351,60 @@ export class WorldView {
     for (const p of props) {
       const { sx, sy } = worldToScreen(p.x, p.y);
       const war = warFactor(p.y);
+      // Shadow
+      g.ellipse(sx, sy + 6, 10, 3.5);
+      g.fill({ color: 0x000000, alpha: 0.35 });
+
       if (p.kind === "dumpster") {
         g.roundRect(sx - 14, sy - 12, 28, 18, 2);
-        g.fill({ color: lerpColor(0x2a4a32, 0x2a3020, war) });
+        g.fill({ color: lerpColor(0x2a6a3a, 0x2a3020, war) });
+        g.roundRect(sx - 14, sy - 12, 28, 18, 2);
+        g.stroke({ color: 0x0a0a10, width: 1, alpha: 0.6 });
         g.rect(sx - 12, sy - 14, 24, 4);
-        g.fill({ color: 0x1a2a1a, alpha: 0.8 });
+        g.fill({ color: 0x1a3a22, alpha: 0.9 });
+        // Lid hinge highlight
+        g.rect(sx - 10, sy - 10, 8, 2);
+        g.fill({ color: 0x40a060, alpha: 0.35 });
       } else if (p.kind === "car") {
-        // wrecked in war zone
+        const body = war > 0.3 ? 0x3a4858 : 0xe8c020; // yellow taxi vibe outdoors
         g.roundRect(sx - 16, sy - 10, 32, 16, 4);
-        g.fill({ color: war > 0.3 ? 0x3a2820 : 0x5a2828 });
+        g.fill({ color: body });
+        g.roundRect(sx - 16, sy - 10, 32, 16, 4);
+        g.stroke({ color: 0x0a0810, width: 1.2, alpha: 0.7 });
+        // Windows
+        g.rect(sx - 6, sy - 12, 14, 6);
+        g.fill({ color: war > 0.3 ? 0x1a1010 : 0x305070, alpha: 0.85 });
         if (war > 0.3) {
-          g.rect(sx - 8, sy - 14, 10, 6);
-          g.fill({ color: 0x2a1810, alpha: 0.7 });
+          g.rect(sx - 4, sy - 10, 4, 3);
+          g.fill({ color: 0xff6020, alpha: 0.5 }); // fire/damage
         }
-        g.circle(sx - 10, sy + 6, 3);
+        g.circle(sx - 10, sy + 6, 3.5);
         g.fill({ color: 0x1a1a1a });
-        g.circle(sx + 10, sy + 6, 3);
+        g.circle(sx + 10, sy + 6, 3.5);
         g.fill({ color: 0x1a1a1a });
       } else if (p.kind === "protection") {
         g.circle(sx, sy, 9);
-        g.stroke({ color: 0xf0a030, width: 2, alpha: 0.55 });
+        g.stroke({ color: 0xff40aa, width: 2, alpha: 0.55 });
         g.circle(sx, sy, 3);
-        g.fill({ color: 0xffcc33, alpha: 0.5 });
+        g.fill({ color: 0xff80cc, alpha: 0.5 });
       } else if (p.kind === "crate") {
         g.rect(sx - 9, sy - 10, 18, 16);
         g.fill({ color: 0x6a5030 });
+        g.rect(sx - 9, sy - 10, 18, 16);
+        g.stroke({ color: 0x0a0810, width: 1, alpha: 0.5 });
       } else if (p.kind === "neon") {
-        g.roundRect(sx - 12, sy - 18, 24, 10, 2);
-        g.fill({ color: war > 0.4 ? 0x603040 : 0xff40aa, alpha: war > 0.4 ? 0.4 : 0.7 });
+        const neon = war > 0.4 ? 0x804060 : 0xff40aa;
+        g.roundRect(sx - 14, sy - 22, 28, 12, 2);
+        g.fill({ color: 0x0a0810, alpha: 0.85 });
+        g.roundRect(sx - 12, sy - 20, 24, 8, 2);
+        g.fill({ color: neon, alpha: 0.85 });
+        g.circle(sx, sy - 16, 14);
+        g.fill({ color: neon, alpha: 0.12 });
       } else if (p.kind === "hydrant") {
         g.roundRect(sx - 4, sy - 12, 8, 14, 1);
-        g.fill({ color: 0xc04030 });
+        g.fill({ color: 0xe04030 });
+        g.roundRect(sx - 4, sy - 12, 8, 14, 1);
+        g.stroke({ color: 0x0a0810, width: 1, alpha: 0.5 });
       }
     }
   }
@@ -1415,63 +1564,89 @@ export class WorldView {
     const threat = threatPips(u);
     const isNpc = u.kind === "npc";
 
-    g.ellipse(sx, baseSy + 11, 10 + bulk, 4.5);
-    g.fill({ color: 0x000000, alpha: 0.3 });
+    // Soft contact shadow (wet ground)
+    g.ellipse(sx, baseSy + 11, 11 + bulk, 4.5);
+    g.fill({ color: 0x000000, alpha: 0.4 });
 
     if (!u.alive) {
-      g.ellipse(sx, baseSy + 4, 12, 6);
-      g.fill({ color: 0x4a2020, alpha: 0.8 });
+      g.ellipse(sx, baseSy + 4, 13, 6);
+      g.fill({ color: 0x4a2020, alpha: 0.85 });
+      g.ellipse(sx - 4, baseSy + 2, 3, 1.5);
+      g.fill({ color: 0x6a1820, alpha: 0.6 });
       return;
     }
 
-    // Ambient interact ring for NPCs (subtle always-on cue)
     if (isNpc && !mine) {
       g.circle(sx, baseSy + 10, 13);
-      g.stroke({ color: 0x60b0e0, width: 1, alpha: 0.28 + Math.sin(this.time * 3 + u.x) * 0.08 });
+      g.stroke({ color: 0x60e0ff, width: 1, alpha: 0.3 + Math.sin(this.time * 3 + u.x) * 0.1 });
     }
-    // Hostile gang threat ring
     if (!mine && !isNpc && (posse?.hostile || threat >= 2)) {
       g.circle(sx, baseSy + 10, 14);
-      g.stroke({ color: 0xe04040, width: 1, alpha: 0.3 });
+      g.stroke({ color: 0xff4060, width: 1.2, alpha: 0.35 });
     }
 
     const leg = vis.moving ? Math.sin(vis.phase) * 2.5 : 0;
+    // Legs with black outline (cartoon)
+    g.rect(sx - 5.5 + sway * 0.2, baseSy - 1 + Math.max(0, leg), 4, 8);
+    g.fill({ color: 0x0a0810 });
     g.rect(sx - 5 + sway * 0.2, baseSy - 1 + Math.max(0, leg), 3, 7);
-    g.fill({ color: 0x252530 });
+    g.fill({ color: 0x2a2a38 });
+    g.rect(sx + 1.5 + sway * 0.2, baseSy - 1 + Math.max(0, -leg), 4, 8);
+    g.fill({ color: 0x0a0810 });
     g.rect(sx + 2 + sway * 0.2, baseSy - 1 + Math.max(0, -leg), 3, 7);
-    g.fill({ color: 0x252530 });
+    g.fill({ color: 0x2a2a38 });
 
-    const bw = 11 + bulk * 2;
-    const bh = 15 + bulk;
+    const bw = 12 + bulk * 2;
+    const bh = 16 + bulk;
+    const female = u.gender === "female";
     const bodyColor =
       u.armor === "plate"
-        ? 0x5a6a72
+        ? 0x5a6a78
         : u.armor === "kevlar"
-          ? 0x3a4a3a
+          ? 0x3a4a42
           : u.armor === "leather"
-            ? 0x5a4030
-            : shade(color, 0.85);
+            ? 0x4a3038
+            : female
+              ? lerpColor(shade(color, 0.9), 0xc04080, 0.25)
+              : shade(color, 0.9);
+
+    // Body outline (combat-scene thick ink)
+    g.roundRect(sx - bw / 2 - 1 + sway, sy - bh - 3, bw + 2, bh + 2, 3);
+    g.fill({ color: 0x0a0810 });
     g.roundRect(sx - bw / 2 + sway, sy - bh - 2, bw, bh, 2);
     g.fill({ color: bodyColor });
+
+    // Shirt / jacket highlight
+    g.rect(sx - bw / 2 + 2 + sway, sy - bh + 2, bw - 4, 3);
+    g.fill({ color: 0xffffff, alpha: 0.08 });
+
     if (mine) {
       g.roundRect(sx - bw / 2 + sway, sy - bh - 2, bw, bh, 2);
-      g.stroke({ color: 0xffe080, width: 1 });
+      g.stroke({ color: 0xffe080, width: 1.2, alpha: 0.9 });
     }
     if (isNpc) {
       g.roundRect(sx - bw / 2 + sway, sy - bh - 2, bw, bh, 2);
-      g.stroke({ color: 0x70c8f0, width: 1, alpha: 0.55 });
+      g.stroke({ color: 0x70e0ff, width: 1, alpha: 0.6 });
+    }
+    // Bandana / headband for hostiles (combat-scene goons)
+    if (!mine && !isNpc) {
+      g.rect(sx - 5 + sway * 0.5, sy - bh - 8, 10, 3);
+      g.fill({ color: shade(color, 1.1) });
     }
     if (posse?.hostile && !mine) {
-      g.circle(sx + bw / 2 + 2 + sway, sy - bh - 5, 3);
-      g.fill({ color: 0xff3030 });
+      g.circle(sx + bw / 2 + 2 + sway, sy - bh - 5, 3.5);
+      g.fill({ color: 0xff3040 });
     }
     if (bulk >= 2) {
       g.rect(sx - bw / 2 + 2 + sway, sy - bh + 3, bw - 4, 2);
-      g.fill({ color: 0x9aafc0, alpha: 0.4 });
+      g.fill({ color: 0x9aafc0, alpha: 0.45 });
     }
 
+    // Head + face
+    g.circle(sx + sway * 0.5, sy - bh - 5, 5.2);
+    g.fill({ color: 0x0a0810 });
     g.circle(sx + sway * 0.5, sy - bh - 5, 4.5);
-    g.fill({ color: isNpc ? 0xd0b090 : 0xe8c8a0 });
+    g.fill({ color: isNpc ? 0xd0b090 : female ? 0xf0c8a8 : 0xe8c8a0 });
 
     this.drawWeapon(g, sx + sway, sy - bh / 2 - 2, u.weapon, mine, vis.facing);
 
