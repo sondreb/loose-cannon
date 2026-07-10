@@ -112,6 +112,18 @@ export interface ShopState {
   shopName: string;
 }
 
+/** Visual combat event for one tick (muzzle, tracer, hit, etc.) */
+export interface CombatFxEvent {
+  /** shot = firearm, melee = close weapon, flame = flamethrower stream */
+  kind: "shot" | "melee" | "flame" | "hit" | "miss" | "death";
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  weapon: WeaponId;
+  crit?: boolean;
+}
+
 export interface WorldSnapshot {
   tick: number;
   you: {
@@ -143,6 +155,8 @@ export interface WorldSnapshot {
   shop: ShopState | null;
   recentChat: ChatLine[];
   combatLog: string[];
+  /** Combat VFX that occurred since last snapshot (this tick) */
+  fx?: CombatFxEvent[];
 }
 
 /** Client -> Server */

@@ -6,6 +6,9 @@
 type Sfx =
   | "gun"
   | "shotgun"
+  | "uzi"
+  | "melee"
+  | "flame"
   | "hit"
   | "miss"
   | "death"
@@ -56,6 +59,20 @@ export class SfxBus {
       case "shotgun":
         this.noiseBurst(ctx, g, t, 0.12, 0.4);
         this.tone(ctx, g, t, 90, 0.1, "sawtooth", 0.2);
+        break;
+      case "uzi":
+        this.noiseBurst(ctx, g, t, 0.035, 0.18);
+        this.tone(ctx, g, t, 240, 0.03, "square", 0.1);
+        break;
+      case "melee":
+        this.noiseBurst(ctx, g, t, 0.04, 0.12);
+        this.tone(ctx, g, t, 90, 0.06, "triangle", 0.14);
+        this.tone(ctx, g, t + 0.02, 200, 0.04, "square", 0.08);
+        break;
+      case "flame":
+        this.noiseBurst(ctx, g, t, 0.16, 0.28);
+        this.tone(ctx, g, t, 70, 0.14, "sawtooth", 0.12);
+        this.tone(ctx, g, t + 0.04, 140, 0.1, "sawtooth", 0.08);
         break;
       case "hit":
         this.tone(ctx, g, t, 120, 0.04, "square", 0.2);

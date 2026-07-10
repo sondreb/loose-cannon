@@ -7,6 +7,7 @@ import {
   UPGRADES,
   WEAPONS,
   type ArmorId,
+  type CombatFxEvent,
   type UnitPublic,
   type UpgradeId,
   type WeaponId,
@@ -100,16 +101,14 @@ function pushEvent(text: string): void {
   d.textContent = text;
   eventLog.appendChild(d);
   while (eventLog.children.length > 8) eventLog.removeChild(eventLog.firstChild!);
-  // Heuristic SFX from combat log lines
+  // Heuristic SFX from non-combat log lines (combat audio comes from fx events)
   const t = text.toLowerCase();
   if (t.includes("bought") || t.includes("equip")) sfx.play("buy");
-  else if (t.includes("crit") || t.includes("hit ")) sfx.play("hit");
-  else if (t.includes("miss")) sfx.play("miss");
-  else if (t.includes("down") || t.includes("gone") || t.includes("wiped")) sfx.play("death");
   else if (t.includes("dumpster") || t.includes("crate")) sfx.play("dumpster");
   else if (t.includes("shook") || t.includes("liberated") || t.includes("$")) sfx.play("cash");
   else if (t.includes("entered") || t.includes("left ")) sfx.play("door");
   else if (t.includes("stitch") || t.includes("coach") || t.includes("blessed")) sfx.play("ui");
+  // hit/miss/death handled by combat FX to avoid double-playing with VFX path
 }
 
 function pushChat(from: string, text: string, system?: boolean): void {
@@ -705,6 +704,8 @@ function updateZoneObjective(s: WorldSnapshot): void {
 function onSnapshot(s: WorldSnapshot): void {
   snap = s;
   view.applySnapshot(s);
+  // Combat VFX SFX (visuals applied inside WorldView.applySnapshot)
+  if (s.fx?.length) playCombatFxAudio(s.fx);
   renderPosse();
   renderDialogue();
   renderShop();
@@ -722,6 +723,33 @@ function onSnapshot(s: WorldSnapshot): void {
     if (d <= INTERACT_RANGE + 0.35) {
       pendingInteract = null;
       fireInteract();
+    }
+  }
+}
+
+function weaponFireSfx(weapon: WeaponId): void {
+  if (weapon === "shotgun") sfx.play("shotgun");
+  else if (weapon === "uzi" || weapon === "tommy") sfx.play("uzi");
+  else if (weapon === "pipe" || weapon === "switchblade") sfx.play("melee");
+  else if (weapon === "flamethrower") sfx.play("flame");
+  else sfx.play("gun");
+}
+
+function playCombatFxAudio(events: CombatFxEvent[]): void {
+  // Deduplicate rapid auto-fire SFX a bit
+  let shots = 0;
+  for (const e of events) {
+    if (e.kind === "shot" || e.kind === "melee" || e.kind === "flame") {
+      if (shots < 4) {
+        weaponFireSfx(e.weapon);
+        shots++;
+      }
+    } else if (e.kind === "hit") {
+      sfx.play(e.crit ? "hit" : "hit");
+    } else if (e.kind === "miss") {
+      sfx.play("miss");
+    } else if (e.kind === "death") {
+      sfx.play("death");
     }
   }
 }
@@ -914,15 +942,16 @@ function bindInput(): void {
   );
 
   canvas.addEventListener("mousedown", (e) => {
-    if (!snap) return;
-    if (snap.you.respawnIn != null && snap.you.respawnIn > 0) return;
-    if (snap.dialogue || snap.shop) return;
+    const s = snap;
+    if (!s) return;
+    if (s.you.respawnIn != null && s.you.respawnIn > 0) return;
+    if (s.dialogue || s.shop) return;
     if (e.button === 0) {
       // LMB: select posse / talk NPC / enter building / search prop / move
       const unitId = view.pickUnit(e.clientX, e.clientY);
       if (unitId) {
-        const u = snap.units.find((x) => x.id === unitId);
-        if (u && u.posseId === snap.you.posseId) {
+        const u = s.units.find((x) => x.id === unitId);
+        if (u && u.posseId === s.you.posseId) {
           pendingInteract = null;
           socket.send({ type: "intent.select", unitId });
           return;
@@ -933,7 +962,7 @@ function bindInput(): void {
           return;
         }
         // Click enemy: don't LMB-attack (RMB does that); just ignore or face them
-        if (u && u.posseId !== snap.you.posseId) {
+        if (u && u.posseId !== s.you.posseId) {
           return;
         }
       }
@@ -965,16 +994,27 @@ function bindInput(): void {
       // RMB: attack-move — pick enemy with generous radius, or fire at ground point
       const w = view.screenToWorld(e.clientX, e.clientY);
       let best: { id: string; d: number } | null = null;
-      for (const u of snap.units) {
-        if (!u.alive || u.posseId === snap.you.posseId) continue;
+      for (const u of s.units) {
+        if (!u.alive || u.posseId === s.you.posseId) continue;
         const d = Math.hypot(u.x - w.x, u.y - w.y);
         if (d < 2.8 && (!best || d < best.d)) best = { id: u.id, d };
       }
+      const shooter =
+        s.units.find((u) => u.id === s.you.selectedUnitId) ??
+        s.units.find((u) => u.posseId === s.you.posseId && u.alive);
+      const from = view.leaderWorldPos();
+      const weapon = (shooter?.weapon ?? "pistol") as WeaponId;
+      // Optimistic muzzle only when target is already in range — continuous fire VFX/SFX come from server
       if (best) {
-        sfx.play("gun");
+        const tgt = s.units.find((u) => u.id === best!.id);
+        if (from && tgt && shooter) {
+          const range = WEAPONS[weapon]?.range ?? 4;
+          if (Math.hypot(from.x - tgt.x, from.y - tgt.y) <= range + 0.5) {
+            view.playLocalShot(from.x, from.y, tgt.x, tgt.y, weapon);
+          }
+        }
         socket.send({ type: "intent.fire", targetId: best.id });
       } else {
-        sfx.play("gun");
         socket.send({ type: "intent.fire", x: w.x, y: w.y });
       }
     }

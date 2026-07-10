@@ -5,12 +5,34 @@ import {
   TILE_H,
   TILE_W,
   type BuildingPublic,
+  type CombatFxEvent,
   type PropPublic,
   type UnitPublic,
+  type WeaponId,
   type WorldSnapshot,
 } from "@loose-cannon/shared";
 import { Application, Container, Graphics, Text } from "pixi.js";
 import { screenToWorld as isoScreenToWorld, worldToScreen } from "./iso.js";
+
+type FxParticle =
+  | { kind: "muzzle"; x: number; y: number; life: number; max: number; ang: number; big: boolean }
+  | {
+      kind: "tracer";
+      x0: number;
+      y0: number;
+      x1: number;
+      y1: number;
+      life: number;
+      max: number;
+      color: number;
+      wide: boolean;
+    }
+  | { kind: "slash"; x0: number; y0: number; x1: number; y1: number; life: number; max: number }
+  | { kind: "blood"; x: number; y: number; life: number; max: number; vx: number; vy: number; r: number }
+  | { kind: "spark"; x: number; y: number; life: number; max: number; vx: number; vy: number }
+  | { kind: "flame"; x: number; y: number; life: number; max: number; vx: number; vy: number; r: number }
+  | { kind: "impact"; x: number; y: number; life: number; max: number; crit: boolean }
+  | { kind: "shell"; x: number; y: number; life: number; max: number; vx: number; vy: number };
 
 function armorBulk(armor: string): number {
   if (armor === "plate") return 3;
@@ -116,8 +138,7 @@ export class WorldView {
   private lastSnap: WorldSnapshot | null = null;
   private visuals = new Map<string, UnitVisual>();
   private labelPool = new Map<string, Text>();
-  private fx: Array<{ x: number; y: number; life: number; kind: "muzzle" | "blood" | "spark" }> =
-    [];
+  private fx: FxParticle[] = [];
   private moveMarker: { x: number; y: number; life: number } | null = null;
   private hover: HoverTarget = null;
   private time = 0;
@@ -259,7 +280,231 @@ export class WorldView {
   }
 
   burstFx(x: number, y: number, kind: "muzzle" | "blood" | "spark"): void {
-    this.fx.push({ x, y, life: kind === "muzzle" ? 0.1 : 0.2, kind });
+    if (kind === "muzzle") {
+      this.fx.push({
+        kind: "muzzle",
+        x,
+        y,
+        life: 0.12,
+        max: 0.12,
+        ang: 0,
+        big: false,
+      });
+    } else if (kind === "blood") {
+      for (let i = 0; i < 4; i++) {
+        this.fx.push({
+          kind: "blood",
+          x,
+          y,
+          life: 0.35,
+          max: 0.35,
+          vx: (Math.random() - 0.5) * 2.5,
+          vy: (Math.random() - 0.5) * 2.5,
+          r: 2 + Math.random() * 3,
+        });
+      }
+    } else {
+      this.fx.push({
+        kind: "spark",
+        x,
+        y,
+        life: 0.2,
+        max: 0.2,
+        vx: (Math.random() - 0.5) * 3,
+        vy: (Math.random() - 0.5) * 3,
+      });
+    }
+  }
+
+  /** Apply server combat VFX (shots, melee, hits). */
+  applyCombatFx(events: CombatFxEvent[]): void {
+    for (const e of events) this.spawnCombatFx(e);
+  }
+
+  /** Optimistic local muzzle when player issues fire. */
+  playLocalShot(fromX: number, fromY: number, toX: number, toY: number, weapon: WeaponId): void {
+    this.spawnCombatFx({
+      kind:
+        weapon === "pipe" || weapon === "switchblade"
+          ? "melee"
+          : weapon === "flamethrower"
+            ? "flame"
+            : "shot",
+      x0: fromX,
+      y0: fromY,
+      x1: toX,
+      y1: toY,
+      weapon,
+    });
+  }
+
+  private spawnCombatFx(e: CombatFxEvent): void {
+    const dx = e.x1 - e.x0;
+    const dy = e.y1 - e.y0;
+    const ang = Math.atan2(dy, dx);
+    const dist = Math.hypot(dx, dy) || 0.01;
+
+    if (e.kind === "shot" || e.kind === "flame" || e.kind === "melee") {
+      const big = e.weapon === "shotgun" || e.weapon === "tommy";
+      // Muzzle flash at shooter
+      if (e.kind !== "melee") {
+        this.fx.push({
+          kind: "muzzle",
+          x: e.x0 + Math.cos(ang) * 0.35,
+          y: e.y0 + Math.sin(ang) * 0.35,
+          life: big ? 0.14 : 0.1,
+          max: big ? 0.14 : 0.1,
+          ang,
+          big,
+        });
+        // Ejected casing
+        if (e.weapon !== "flamethrower") {
+          const side = ang + Math.PI / 2;
+          this.fx.push({
+            kind: "shell",
+            x: e.x0,
+            y: e.y0,
+            life: 0.45,
+            max: 0.45,
+            vx: Math.cos(side) * (1.2 + Math.random()) + Math.cos(ang) * -0.3,
+            vy: Math.sin(side) * (1.2 + Math.random()) + Math.sin(ang) * -0.3,
+          });
+        }
+      }
+
+      if (e.kind === "melee") {
+        // Arc slash toward target
+        this.fx.push({
+          kind: "slash",
+          x0: e.x0 + Math.cos(ang) * 0.2,
+          y0: e.y0 + Math.sin(ang) * 0.2,
+          x1: e.x0 + Math.cos(ang) * Math.min(1.4, dist),
+          y1: e.y0 + Math.sin(ang) * Math.min(1.4, dist),
+          life: 0.16,
+          max: 0.16,
+        });
+      } else if (e.kind === "flame") {
+        const n = 8 + Math.floor(dist * 2);
+        for (let i = 0; i < n; i++) {
+          const t = (i + 0.5) / n;
+          const jx = (Math.random() - 0.5) * 0.25;
+          const jy = (Math.random() - 0.5) * 0.25;
+          this.fx.push({
+            kind: "flame",
+            x: e.x0 + dx * t + jx,
+            y: e.y0 + dy * t + jy,
+            life: 0.22 + Math.random() * 0.15,
+            max: 0.35,
+            vx: Math.cos(ang) * 1.5 + (Math.random() - 0.5),
+            vy: Math.sin(ang) * 1.5 + (Math.random() - 0.5),
+            r: 3 + Math.random() * 5,
+          });
+        }
+      } else {
+        // Bullet tracer(s)
+        const pellets = e.weapon === "shotgun" ? 5 : e.weapon === "uzi" || e.weapon === "tommy" ? 2 : 1;
+        const color =
+          e.weapon === "shotgun"
+            ? 0xffe080
+            : e.weapon === "tommy" || e.weapon === "uzi"
+              ? 0xffd040
+              : 0xfff0a0;
+        for (let i = 0; i < pellets; i++) {
+          const spread = pellets > 1 ? (i - (pellets - 1) / 2) * 0.08 : 0;
+          const px = -Math.sin(ang) * spread;
+          const py = Math.cos(ang) * spread;
+          this.fx.push({
+            kind: "tracer",
+            x0: e.x0 + Math.cos(ang) * 0.4 + px,
+            y0: e.y0 + Math.sin(ang) * 0.4 + py,
+            x1: e.x1 + px * 3 + (Math.random() - 0.5) * 0.15,
+            y1: e.y1 + py * 3 + (Math.random() - 0.5) * 0.15,
+            life: e.weapon === "shotgun" ? 0.1 : 0.08,
+            max: 0.1,
+            color,
+            wide: e.weapon === "shotgun",
+          });
+        }
+      }
+    }
+
+    if (e.kind === "hit") {
+      const n = e.crit ? 10 : 5;
+      for (let i = 0; i < n; i++) {
+        this.fx.push({
+          kind: "blood",
+          x: e.x1,
+          y: e.y1,
+          life: 0.3 + Math.random() * 0.25,
+          max: 0.55,
+          vx: (Math.random() - 0.5) * (e.crit ? 4 : 2.5),
+          vy: (Math.random() - 0.5) * (e.crit ? 4 : 2.5) - 0.5,
+          r: 2 + Math.random() * (e.crit ? 5 : 3),
+        });
+      }
+      this.fx.push({
+        kind: "impact",
+        x: e.x1,
+        y: e.y1,
+        life: e.crit ? 0.22 : 0.14,
+        max: e.crit ? 0.22 : 0.14,
+        crit: !!e.crit,
+      });
+      // Melee impact sparks
+      if (e.weapon === "pipe" || e.weapon === "switchblade") {
+        for (let i = 0; i < 4; i++) {
+          this.fx.push({
+            kind: "spark",
+            x: e.x1,
+            y: e.y1,
+            life: 0.18,
+            max: 0.18,
+            vx: (Math.random() - 0.5) * 4,
+            vy: (Math.random() - 0.5) * 4,
+          });
+        }
+      }
+    }
+
+    if (e.kind === "miss") {
+      for (let i = 0; i < 3; i++) {
+        this.fx.push({
+          kind: "spark",
+          x: e.x1,
+          y: e.y1,
+          life: 0.15 + Math.random() * 0.1,
+          max: 0.25,
+          vx: (Math.random() - 0.5) * 3,
+          vy: (Math.random() - 0.5) * 3,
+        });
+      }
+    }
+
+    if (e.kind === "death") {
+      for (let i = 0; i < 14; i++) {
+        this.fx.push({
+          kind: "blood",
+          x: e.x0,
+          y: e.y0,
+          life: 0.45 + Math.random() * 0.35,
+          max: 0.8,
+          vx: (Math.random() - 0.5) * 5,
+          vy: (Math.random() - 0.5) * 5 - 0.8,
+          r: 2 + Math.random() * 5,
+        });
+      }
+      this.fx.push({
+        kind: "impact",
+        x: e.x0,
+        y: e.y0,
+        life: 0.28,
+        max: 0.28,
+        crit: true,
+      });
+    }
+
+    // Cap particles for FPS
+    if (this.fx.length > 220) this.fx.splice(0, this.fx.length - 220);
   }
 
   applySnapshot(snap: WorldSnapshot): void {
@@ -267,6 +512,8 @@ export class WorldView {
     if (snap.blocked) this.cachedBlocked = snap.blocked;
     this.lastSnap = snap;
     this.localPosseId = snap.you.posseId;
+
+    if (snap.fx?.length) this.applyCombatFx(snap.fx);
 
     const me =
       snap.units.find(
@@ -1077,21 +1324,106 @@ export class WorldView {
   }
 
   private tickFx(dt: number): void {
-    if (this.fx.length === 0) {
-      this.fxGfx.clear();
-      return;
-    }
     const g = this.fxGfx;
     g.clear();
-    const next: typeof this.fx = [];
+    if (this.fx.length === 0) return;
+
+    const next: FxParticle[] = [];
     for (const f of this.fx) {
       f.life -= dt;
       if (f.life <= 0) continue;
+
+      // Motion
+      if (f.kind === "blood" || f.kind === "spark" || f.kind === "shell" || f.kind === "flame") {
+        f.x += f.vx * dt;
+        f.y += f.vy * dt;
+        if (f.kind === "blood" || f.kind === "shell") f.vy += 3 * dt; // gravity-ish
+        if (f.kind === "flame") {
+          f.vx *= 0.92;
+          f.vy *= 0.92;
+          f.r *= 0.98;
+        }
+      }
+
       next.push(f);
-      const { sx, sy } = worldToScreen(f.x, f.y);
-      const a = Math.max(0, f.life * 5);
-      g.circle(sx + 10, sy - 10, 4);
-      g.fill({ color: f.kind === "blood" ? 0xa02020 : 0xffcc44, alpha: a });
+      const t = Math.max(0, f.life / f.max);
+      const a = Math.min(1, t * 1.4);
+
+      if (f.kind === "muzzle") {
+        const p = worldToScreen(f.x, f.y);
+        const r = (f.big ? 14 : 9) * (0.5 + t);
+        g.circle(p.sx, p.sy - 10, r);
+        g.fill({ color: 0xfff0a0, alpha: a * 0.9 });
+        g.circle(p.sx, p.sy - 10, r * 0.45);
+        g.fill({ color: 0xffffff, alpha: a });
+        // cone
+        const len = (f.big ? 22 : 14) * t;
+        const cos = Math.cos(f.ang);
+        const sin = Math.sin(f.ang);
+        // Approximate cone in screen space using iso-ish offset
+        const tip = worldToScreen(f.x + cos * 0.55, f.y + sin * 0.55);
+        g.moveTo(p.sx, p.sy - 10);
+        g.lineTo(tip.sx + sin * 6, tip.sy - 10 - cos * 3);
+        g.lineTo(tip.sx - sin * 6, tip.sy - 10 + cos * 3);
+        g.closePath();
+        g.fill({ color: 0xffaa40, alpha: a * 0.65 });
+      } else if (f.kind === "tracer") {
+        const a0 = worldToScreen(f.x0, f.y0);
+        const a1 = worldToScreen(f.x1, f.y1);
+        // Short bright segment that travels along the line (stylized)
+        const head = 1 - t; // 0→1 over life
+        const seg = f.wide ? 0.35 : 0.22;
+        const s0 = Math.max(0, head - seg);
+        const s1 = Math.min(1, head + 0.05);
+        const x0 = a0.sx + (a1.sx - a0.sx) * s0;
+        const y0 = a0.sy - 12 + (a1.sy - a0.sy) * s0;
+        const x1 = a0.sx + (a1.sx - a0.sx) * s1;
+        const y1 = a0.sy - 12 + (a1.sy - a0.sy) * s1;
+        g.moveTo(x0, y0);
+        g.lineTo(x1, y1);
+        g.stroke({ color: f.color, width: f.wide ? 3 : 1.8, alpha: a });
+        g.circle(x1, y1, f.wide ? 3 : 2);
+        g.fill({ color: 0xffffff, alpha: a * 0.9 });
+        // faint full path
+        g.moveTo(a0.sx, a0.sy - 12);
+        g.lineTo(a1.sx, a1.sy - 12);
+        g.stroke({ color: f.color, width: 1, alpha: a * 0.2 });
+      } else if (f.kind === "slash") {
+        const a0 = worldToScreen(f.x0, f.y0);
+        const a1 = worldToScreen(f.x1, f.y1);
+        g.moveTo(a0.sx, a0.sy - 8);
+        g.lineTo(a1.sx, a1.sy - 14);
+        g.stroke({ color: 0xe8e8f0, width: 3, alpha: a * 0.9 });
+        g.moveTo(a0.sx + 2, a0.sy - 4);
+        g.lineTo(a1.sx + 2, a1.sy - 10);
+        g.stroke({ color: 0x90c0ff, width: 1.5, alpha: a * 0.5 });
+      } else if (f.kind === "blood") {
+        const p = worldToScreen(f.x, f.y);
+        g.circle(p.sx, p.sy - 6, f.r * (0.6 + t * 0.4));
+        g.fill({ color: 0xa01818, alpha: a * 0.85 });
+      } else if (f.kind === "spark") {
+        const p = worldToScreen(f.x, f.y);
+        g.circle(p.sx, p.sy - 8, 2.5);
+        g.fill({ color: 0xffe080, alpha: a });
+        g.circle(p.sx + f.vx * 2, p.sy - 8 + f.vy * 2, 1.2);
+        g.fill({ color: 0xffffff, alpha: a * 0.7 });
+      } else if (f.kind === "flame") {
+        const p = worldToScreen(f.x, f.y);
+        const col = t > 0.6 ? 0xfff0a0 : t > 0.3 ? 0xff8020 : 0xc02010;
+        g.circle(p.sx, p.sy - 8, f.r * (0.7 + t * 0.5));
+        g.fill({ color: col, alpha: a * 0.75 });
+      } else if (f.kind === "impact") {
+        const p = worldToScreen(f.x, f.y);
+        const r = (f.crit ? 22 : 12) * (1 - t * 0.3);
+        g.circle(p.sx, p.sy - 8, r);
+        g.stroke({ color: f.crit ? 0xffe060 : 0xff6060, width: 2, alpha: a * 0.8 });
+        g.circle(p.sx, p.sy - 8, r * 0.4);
+        g.fill({ color: f.crit ? 0xfff0a0 : 0xff4040, alpha: a * 0.35 });
+      } else if (f.kind === "shell") {
+        const p = worldToScreen(f.x, f.y);
+        g.rect(p.sx - 1.5, p.sy - 9, 3, 2);
+        g.fill({ color: 0xc9a227, alpha: a * 0.9 });
+      }
     }
     this.fx = next;
   }

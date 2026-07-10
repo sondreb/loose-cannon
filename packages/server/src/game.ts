@@ -25,6 +25,7 @@ import {
   type ArmorId,
   type ChatLine,
   type ClientMessage,
+  type CombatFxEvent,
   type DialogueState,
   type ShopState,
   type UnitPublic,
@@ -153,9 +154,17 @@ export class GameWorld {
   mapRevision = 6;
   /** Prop interaction cooldowns: propId -> tick available */
   propReadyAt = new Map<string, number>();
+  /** Combat VFX queued this tick, attached to snapshots then cleared */
+  private combatFx: CombatFxEvent[] = [];
 
   constructor() {
     this.seedWorld();
+  }
+
+  private pushCombatFx(fx: CombatFxEvent): void {
+    this.combatFx.push(fx);
+    // Hard cap so a firefight never balloons payloads
+    if (this.combatFx.length > 48) this.combatFx.shift();
   }
 
   private nextId(prefix: string): string {
@@ -792,6 +801,19 @@ export class GameWorld {
     shooter.fireCd = w.fireCooldown;
     shooter.facing = facingFromDelta(target.x - shooter.x, target.y - shooter.y);
 
+    // Always emit attack VFX so shots/swings are visible even on miss
+    const weapon = shooter.weapon;
+    const isMelee = weapon === "pipe" || weapon === "switchblade";
+    const isFlame = weapon === "flamethrower";
+    this.pushCombatFx({
+      kind: isMelee ? "melee" : isFlame ? "flame" : "shot",
+      x0: shooter.x,
+      y0: shooter.y,
+      x1: target.x,
+      y1: target.y,
+      weapon,
+    });
+
     const isAi =
       shooter.kind === "ai_boss" || shooter.kind === "ai_goon" || shooter.kind === "npc";
     const aim = shooter.stats.aim;
@@ -809,6 +831,14 @@ export class GameWorld {
     hitChance = clamp(hitChance, 0.1, 0.94);
 
     if (Math.random() > hitChance) {
+      this.pushCombatFx({
+        kind: "miss",
+        x0: shooter.x,
+        y0: shooter.y,
+        x1: target.x + (Math.random() - 0.5) * 0.6,
+        y1: target.y + (Math.random() - 0.5) * 0.6,
+        weapon,
+      });
       if (session && !isAi) this.log(session, `${shooter.name} missed ${target.name}.`);
       return;
     }
@@ -836,6 +866,15 @@ export class GameWorld {
 
     target.health -= dmg;
     target.lastHitByPosseId = shooter.posseId;
+    this.pushCombatFx({
+      kind: "hit",
+      x0: shooter.x,
+      y0: shooter.y,
+      x1: target.x,
+      y1: target.y,
+      weapon,
+      crit,
+    });
     if (session && !isAi) {
       this.log(
         session,
@@ -851,6 +890,14 @@ export class GameWorld {
       target.moveMode = "idle";
       target.dirX = 0;
       target.dirY = 0;
+      this.pushCombatFx({
+        kind: "death",
+        x0: target.x,
+        y0: target.y,
+        x1: target.x,
+        y1: target.y,
+        weapon,
+      });
       if (session) this.log(session, `${target.name} is down!`);
       // Clear attack orders that pointed at them
       for (const p of this.posses.values()) {
@@ -2134,16 +2181,18 @@ export class GameWorld {
       }
     }
 
-    // Broadcast snapshots
+    // Broadcast snapshots (include this tick's combat FX, then clear)
     if (this.tick % 1 === 0) {
+      const fxBatch = this.combatFx.length ? [...this.combatFx] : undefined;
+      this.combatFx = [];
       for (const s of this.sessions.values()) {
         if (!s.conn) continue;
-        s.conn.send({ type: "snapshot", data: this.buildSnapshot(s) });
+        s.conn.send({ type: "snapshot", data: this.buildSnapshot(s, fxBatch) });
       }
     }
   }
 
-  private buildSnapshot(session: CharacterSession): WorldSnapshot {
+  private buildSnapshot(session: CharacterSession, fxBatch?: CombatFxEvent[]): WorldSnapshot {
     const posse = this.posses.get(session.posseId)!;
     const needMap =
       session.lastMapRevision !== this.mapRevision ||
@@ -2281,6 +2330,19 @@ export class GameWorld {
         return true;
       }).slice(-30),
       combatLog: session.combatLog.slice(-12),
+      ...(fxBatch && fxBatch.length
+        ? {
+            // Only send FX near the player's layer / outdoor proximity
+            fx: fxBatch.filter((f) => {
+              if (posse.insideBuildingId) return false;
+              const lead = this.leader(posse);
+              if (!lead) return true;
+              const mx = (f.x0 + f.x1) / 2;
+              const my = (f.y0 + f.y1) / 2;
+              return dist(lead.x, lead.y, mx, my) < 28;
+            }),
+          }
+        : {}),
     };
   }
 
