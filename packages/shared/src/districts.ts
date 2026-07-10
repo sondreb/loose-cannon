@@ -57,7 +57,8 @@ export const DISTRICTS: DistrictDef[] = [
     y0: 0,
     x1: 109,
     y1: 37,
-    minRep: 2,
+    /** Open from the start so The Titty Twister / neon strip is reachable (gear still rep-gated). */
+    minRep: 0,
     danger: "risky",
     landmark: "The Titty Twister / gun row",
   },

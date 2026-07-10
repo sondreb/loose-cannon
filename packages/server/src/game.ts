@@ -698,7 +698,7 @@ export class GameWorld {
 
     switch (msg.type) {
       case "intent.move":
-        this.cmdMove(posse, msg.x, msg.y, msg.unitIds);
+        this.cmdMove(posse, msg.x, msg.y, msg.unitIds, session);
         break;
       case "intent.dir":
         this.cmdDir(posse, msg.dx, msg.dy);
@@ -1014,7 +1014,13 @@ export class GameWorld {
     return t === "grass" || t === "road" || t === "sidewalk" || t === "parking" || t === "door";
   }
 
-  private cmdMove(posse: Posse, x: number, y: number, _unitIds?: string[]): void {
+  private cmdMove(
+    posse: Posse,
+    x: number,
+    y: number,
+    _unitIds?: string[],
+    session?: CharacterSession,
+  ): void {
     if (posse.dialogue || posse.shop || posse.stashOpen || posse.jobBoard) return;
     const leader = this.leader(posse);
     if (!leader || !leader.alive) return;
@@ -1022,14 +1028,61 @@ export class GameWorld {
     posse.moveLabel = "GOING";
     // Boss walks to the click; bodyguards take circle slots around him
     let c = this.clampWorld(x, y);
-    // Soft-block map pings into locked districts
+    // Soft-block walks into locked districts — snap target to nearest open turf
     if (!posse.insideBuildingId) {
       const dest = districtAt(c.x, c.y);
       if (!isDistrictUnlocked(dest, posse.rep)) {
+        const blocked = dest;
         c = this.clampToUnlockedDistrict(c.x, c.y, posse.rep);
+        // Prefer the closest unlocked point along the ray from leader → click
+        // so long-distance clicks don't collapse to a tiny border hop.
+        c = this.projectMoveToUnlocked(leader.x, leader.y, x, y, posse.rep) ?? c;
+        if (session) {
+          this.log(
+            session,
+            `${blocked.name} is locked (need rep ${blocked.minRep}, you have ${posse.rep}). Heading as far as the line allows.`,
+          );
+        }
       }
     }
     this.assignCircleFormation(posse, c.x, c.y, { moveBoss: true });
+  }
+
+  /**
+   * Walk the segment from (x0,y0) toward (x1,y1) and stop at the last unlocked tile.
+   * Avoids the "click far, only inch forward" feel of pure AABB clamp.
+   */
+  private projectMoveToUnlocked(
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+    rep: number,
+  ): { x: number; y: number } | null {
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const len = Math.hypot(dx, dy);
+    if (len < 0.01) return null;
+    const steps = Math.max(8, Math.ceil(len * 2));
+    let lastOk = { x: x0, y: y0 };
+    let found = false;
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      const x = x0 + dx * t;
+      const y = y0 + dy * t;
+      const c = this.clampWorld(x, y);
+      const def = districtAt(c.x, c.y);
+      if (!isDistrictUnlocked(def, rep)) break;
+      // Prefer walkable outdoor tiles when possible
+      if (this.canWalk(c.x, c.y, null)) {
+        lastOk = c;
+        found = true;
+      } else if (!found) {
+        lastOk = c;
+        found = true;
+      }
+    }
+    return found ? lastOk : null;
   }
 
   private cmdMapPing(session: CharacterSession, posse: Posse, x: number, y: number): void {
@@ -1104,9 +1157,15 @@ export class GameWorld {
       const def = districtAt(leader.x, leader.y);
       if (isDistrictUnlocked(def, posse.rep)) continue;
 
+      // Hysteresis: only kick once clearly inside locked turf (not on the 1-tile border).
+      // Border thrash made WASD/click feel like stuttering micro-steps.
+      if (!this.deepInsideDistrict(leader.x, leader.y, def, 1.25)) continue;
+
       const session = [...this.sessions.values()].find((s) => s.posseId === posse.id);
-      const safe = this.clampToUnlockedDistrict(leader.x, leader.y, posse.rep);
-      // Nudge whole posse back
+      const safe =
+        this.projectMoveToUnlocked(leader.x, leader.y, 40, 28, posse.rep) ??
+        this.clampToUnlockedDistrict(leader.x, leader.y, posse.rep);
+      // Nudge whole posse back into open turf (one clean teleport, not every-frame jitter)
       let i = 0;
       for (const u of this.members(posse)) {
         u.x = safe.x + (i % 2) * 0.35;
@@ -1130,6 +1189,21 @@ export class GameWorld {
         );
       }
     }
+  }
+
+  /** True if (x,y) is at least `margin` tiles inside the district AABB. */
+  private deepInsideDistrict(
+    x: number,
+    y: number,
+    d: { x0: number; y0: number; x1: number; y1: number },
+    margin: number,
+  ): boolean {
+    return (
+      x >= d.x0 + margin &&
+      x <= d.x1 - margin &&
+      y >= d.y0 + margin &&
+      y <= d.y1 - margin
+    );
   }
 
   /** Continuous free movement in world axes (client sends screen-aligned vectors). */
@@ -3969,10 +4043,14 @@ export class GameWorld {
         const nx = u.x + (dx / d) * step;
         const ny = u.y + (dy / d) * step;
         const moved = this.tryMoveUnit(u, nx, ny, bid);
-        if (!moved && d < 0.35) {
-          u.tx = u.x;
-          u.ty = u.y;
-          u.moveMode = "idle";
+        if (!moved) {
+          // Blocked by wall/void — give up instead of spinning forever on a dead target
+          // (caused "tiny stutter steps" when path hit building shells).
+          if (d < 0.55 || !this.canWalk(nx, ny, bid)) {
+            u.tx = u.x;
+            u.ty = u.y;
+            u.moveMode = "idle";
+          }
         }
         u.facing = facingFromDelta(dx, dy);
       } else {
