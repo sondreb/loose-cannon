@@ -2153,7 +2153,8 @@ export class WorldView {
       lastServerX: u.x,
       lastServerY: u.y,
     };
-    const bob = vis.moving ? Math.sin(vis.phase) * 1.8 : 0;
+    // Small walk bob only — large bob made sprites look airborne
+    const bob = vis.moving ? Math.sin(vis.phase) * 0.9 : 0;
     const sway = vis.moving ? Math.sin(vis.phase * 0.5) * 0.9 : 0;
     const { sx, sy: baseSy } = worldToScreen(vis.x, vis.y);
     const sy = baseSy + bob;
@@ -2166,9 +2167,9 @@ export class WorldView {
     const isNpc = u.kind === "npc";
     const female = u.gender === "female";
 
-    // Soft contact shadow (wet ground)
-    g.ellipse(sx, baseSy + 12, 12 + bulk, 5);
-    g.fill({ color: 0x000000, alpha: 0.45 });
+    // Soft contact shadow (wet ground) — sit under feet at tile contact
+    g.ellipse(sx, baseSy + 6, 11 + bulk, 4.2);
+    g.fill({ color: 0x000000, alpha: 0.5 });
 
     if (!u.alive) {
       // Hide sprite if any
@@ -2185,25 +2186,25 @@ export class WorldView {
 
     const isDancer = u.npcRole === "dancer" || !!u.dancerKey;
 
-    // Team / threat rings under feet
+    // Team / threat rings under feet (aligned with contact shadow)
     if (isNpc && !mine && !isDancer) {
-      g.circle(sx, baseSy + 11, 14);
+      g.circle(sx, baseSy + 5, 13);
       g.stroke({ color: 0x60e0ff, width: 1.2, alpha: 0.35 + Math.sin(this.time * 3 + u.x) * 0.1 });
     }
     if (isDancer) {
       // Pink stage glow under dancers
       const glow = 0.25 + Math.sin(this.time * 3 + u.x * 2) * 0.1;
-      g.ellipse(sx, baseSy + 12, 16, 6);
+      g.ellipse(sx, baseSy + 6, 15, 5);
       g.fill({ color: 0xff40aa, alpha: glow });
-      g.circle(sx, baseSy + 11, 15);
+      g.circle(sx, baseSy + 5, 14);
       g.stroke({ color: 0xff60c0, width: 1.2, alpha: 0.45 + glow });
     }
     if (!mine && !isNpc && (posse?.hostile || threat >= 2)) {
-      g.circle(sx, baseSy + 11, 15);
+      g.circle(sx, baseSy + 5, 14);
       g.stroke({ color: 0xff4060, width: 1.4, alpha: 0.4 });
     }
     if (mine) {
-      g.ellipse(sx, baseSy + 12, 13, 5);
+      g.ellipse(sx, baseSy + 6, 12, 4.5);
       g.stroke({ color: 0xffe080, width: 1.2, alpha: 0.35 });
     }
 
@@ -2243,21 +2244,23 @@ export class WorldView {
       let spr = this.unitSprites.get(u.id);
       if (!spr) {
         spr = new Sprite(tex);
-        spr.anchor.set(0.5, 0.92);
+        // Anchor near bottom of art so feet meet the tile (was 0.92 → floated)
+        spr.anchor.set(0.5, 0.98);
         this.unitSprites.set(u.id, spr);
         this.unitSpriteLayer.addChild(spr);
       }
       if (spr.texture !== tex) spr.texture = tex;
+      spr.anchor.set(0.5, 0.98);
       const targetH = isDancer ? DANCER_SPRITE_H : UNIT_SPRITE_H;
       const scale = targetH / Math.max(1, tex.height);
       // Face left when facing west-ish
       const flip = vis.facing >= 3 && vis.facing <= 6 ? -1 : 1;
-      // Dancers: slight idle sway / hip roll
+      // Dancers: slight idle sway / hip roll (keep feet planted — no vertical bob)
       const danceSway = isDancer ? Math.sin(this.time * 2.8 + u.x) * 2.2 : 0;
-      const danceBob = isDancer ? Math.abs(Math.sin(this.time * 2.2 + u.y)) * 2 : 0;
       spr.scale.set(flip * scale, scale);
       spr.x = sx + sway + danceSway;
-      spr.y = sy + 2 - danceBob;
+      // Plant feet on the iso ground point (shadow sits just under)
+      spr.y = baseSy + 7 + bob * 0.35;
       spr.visible = true;
       // Team tint: posse color wash (keep readable) × day/district atmosphere
       const lightTint = this.look.entityTint;

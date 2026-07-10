@@ -2377,9 +2377,10 @@ export class GameWorld {
     // Always stop free/click movement when opening doors, talk, or shop
     this.cmdStop(posse);
 
-    // Exit mat: wide enough for walk-then-E, but not room-wide (spawn must not false-exit).
-    // Rusty Nail spawn→exit ~2.55 — stay under that; click-to-exit walks onto the mat first.
-    const EXIT_USE_RANGE = 1.85;
+    // Exit mat: must match client walk-then-interact (~INTERACT_RANGE+0.35 ≈ 2.55).
+    // Too tight → click EXIT fires interact while still “not on mat” (safehouse reopened stash).
+    // Rusty Nail spawn→exit ~2.55; Crash Pad spawn→exit ~2.0 — keep exit slightly under room diagonal.
+    const EXIT_USE_RANGE = 2.55;
     // Client walk-then-interact fires around INTERACT_RANGE+0.35; keep server at least as loose
     // so "click Rita from spawn" (~2.24 tiles) actually opens dialogue instead of empty fail.
     const NPC_TALK_RANGE = INTERACT_RANGE + 0.55;
@@ -2457,11 +2458,23 @@ export class GameWorld {
       return;
     }
 
-    // 2b) Inside Crash Pad — open stash (away from exit mat)
+    // 2b) Leave building FIRST when near exit (before stash / NPCs).
+    // Click-to-exit walk-then-E used to open Crash Pad stash when still ~2 tiles from the door.
     if (posse.insideBuildingId) {
-      const bHere = this.map.buildings.find((bb) => bb.id === posse.insideBuildingId);
-      const onExitMat = !!bHere && exitDist(bHere.exitX, bHere.exitY) <= EXIT_USE_RANGE;
-      if (!onExitMat && (bHere?.kind === "safehouse" || bHere?.id === "safehouse")) {
+      const bLeave = this.resolveBuildingDef(posse.insideBuildingId);
+      if (bLeave && exitDist(bLeave.exitX, bLeave.exitY) <= EXIT_USE_RANGE) {
+        this.enterBuilding(posse, null);
+        this.log(session, `Left ${bLeave.name}.`);
+        return;
+      }
+    }
+
+    // 2c) Crash Pad stash — only when clearly away from the exit (not every E in the house)
+    if (posse.insideBuildingId) {
+      const bHere = this.resolveBuildingDef(posse.insideBuildingId);
+      const farFromExit =
+        !!bHere && exitDist(bHere.exitX, bHere.exitY) > EXIT_USE_RANGE + 0.35;
+      if (farFromExit && (bHere?.kind === "safehouse" || bHere?.id === "safehouse")) {
         posse.stashOpen = true;
         posse.dialogue = null;
         posse.shop = null;
@@ -2473,8 +2486,7 @@ export class GameWorld {
       }
     }
 
-    // 3) NPCs — but if the player is on the exit mat without a click-target NPC, leave instead
-    // (click-to-exit walks onto the door and sends interact without targetUnitId)
+    // 3) NPCs — skip when on exit mat without a click-target (leave already handled)
     const onExitMat =
       !!posse.insideBuildingId &&
       (() => {
@@ -2519,16 +2531,6 @@ export class GameWorld {
       posse.dialogue = dlg;
       posse.shop = null;
       return;
-    }
-
-    // 3b) Leave building — only when standing on the exit mat (tight range)
-    if (posse.insideBuildingId) {
-      const b = this.resolveBuildingDef(posse.insideBuildingId);
-      if (b && exitDist(b.exitX, b.exitY) <= EXIT_USE_RANGE) {
-        this.enterBuilding(posse, null);
-        this.log(session, `Left ${b.name}.`);
-        return;
-      }
     }
 
     // 4) Standing on special indoor tiles

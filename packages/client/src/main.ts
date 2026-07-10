@@ -2429,6 +2429,17 @@ function bindInput(): void {
       }
       return;
     }
+    // Typing in settings / confirm / any form field — never steal keys or close UI
+    const ae = document.activeElement as HTMLElement | null;
+    const typingInField =
+      !!ae &&
+      (ae.tagName === "INPUT" ||
+        ae.tagName === "TEXTAREA" ||
+        ae.isContentEditable);
+    const settingsOpen = settingsModal && !settingsModal.classList.contains("hidden");
+    if (typingInField || (settingsOpen && e.key !== "Escape")) {
+      return;
+    }
     if (setKeyFromCode(e.code, true)) {
       e.preventDefault();
       pendingInteract = null;
@@ -2457,6 +2468,10 @@ function bindInput(): void {
       fireInteract();
     }
     if (e.key === "Escape") {
+      if (settingsOpen) {
+        closeSettings();
+        return;
+      }
       if (crewEditorOpen) {
         closeCrewEditor();
         return;
@@ -2661,18 +2676,29 @@ function bindInput(): void {
   });
   settingsClose?.addEventListener("click", () => closeSettings());
   settingsModal?.addEventListener("click", (e) => {
+    // Only backdrop — not clicks on the card / inputs
     if (e.target === settingsModal) closeSettings();
+  });
+  settingsModal?.querySelector(".settings-card")?.addEventListener("click", (e) => {
+    e.stopPropagation();
   });
   settingsMusic?.addEventListener("change", () => applyAudioFromForm());
   settingsSfx?.addEventListener("change", () => applyAudioFromForm());
   settingsVoice?.addEventListener("change", () => applyAudioFromForm());
-  settingsRenameBtn?.addEventListener("click", () => submitRename());
+  settingsRenameBtn?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    submitRename();
+  });
   settingsNameInput?.addEventListener("keydown", (e) => {
+    e.stopPropagation();
     if (e.key === "Enter") {
       e.preventDefault();
       submitRename();
     }
   });
+  settingsNameInput?.addEventListener("keyup", (e) => e.stopPropagation());
+  settingsNameInput?.addEventListener("keypress", (e) => e.stopPropagation());
   settingsInviteBtn?.addEventListener("click", () => {
     void copyInviteLink(true);
   });
@@ -2683,6 +2709,17 @@ function bindInput(): void {
 
   window.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
+    // Don't fight the game keydown handler for Escape when typing
+    const ae = document.activeElement as HTMLElement | null;
+    if (ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.isContentEditable)) {
+      // Still allow Esc to close settings while focused in rename field
+      if (settingsModal && !settingsModal.classList.contains("hidden")) {
+        e.preventDefault();
+        (ae as HTMLElement).blur();
+        closeSettings();
+      }
+      return;
+    }
     if (confirmResolve) {
       e.preventDefault();
       closeConfirm(false);
