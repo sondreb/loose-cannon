@@ -27,6 +27,7 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Overseer: [OVERSEER.md](./OVERSEE
 | Glass login / modern HUD | Done | Apple-style gloss |
 | Proximity chat | Done | |
 | Dead goons removed from roster | Done | |
+| M1 harden (build + smoke) | Done | See known bugs below |
 | **Job board / fixer missions** | Not started | MASTER_PLAN M2 |
 | **Mission instances** (objectives/extract) | Not started | MASTER_PLAN M2 |
 | **Heat / rep gates** | Not started | MASTER_PLAN M3 |
@@ -35,8 +36,17 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Overseer: [OVERSEER.md](./OVERSEE
 
 ## Next for overseer (priority)
 
-1. Harden M1 if smoke/build fails; else start **M2 job board + first mission instance**.
+1. **M2 first slice:** job board UI via Rita Fix (“Got work?”) + protocol (`JobBoardState` / accept) + at least one starter mission runtime (server-authoritative rewards).
 2. Keep Mode A only (no Postgres/auth/k8s).
+
+## Known bugs / limitations (Mode A)
+
+| Item | Severity | Notes |
+|------|----------|-------|
+| Disconnect = full wipe | Low | `leave()` removes posse; rejoin is a **new** session (cash/rep reset). Orphan-reconnect path in `join` is currently unreachable. Acceptable for Mode A. |
+| Smoke needs live server | Ops | `npm run smoke` expects `ws://127.0.0.1:3001` already up (`npm run server` / `dev`). |
+| Safe-zone fire spam | Low | Firing in downtown logs “SAFE ZONE — holster it” repeatedly; no crash. |
+| AI threat on respawn | Fixed 2026-07-10 | Build broke on missing `threat` in AI wipe fallback; stored on `Posse` + map spawn. |
 
 ## Still deferred (Mode B / later)
 
@@ -55,6 +65,14 @@ npm run dev
 ```
 
 World resets when the server process restarts.
+
+### Verify
+
+```bash
+npm run build   # shared → server → client
+# with server running:
+npm run smoke   # bar hire → shop buy → reconnect; hard-fails on hub breaks
+```
 
 ### Autonomous development
 

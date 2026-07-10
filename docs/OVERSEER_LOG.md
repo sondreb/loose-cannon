@@ -19,6 +19,17 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-10 — cycle 1 (bootstrap / M1 harden)
+- Focus: M1 harden — confirm tools, fix build, harden smoke, document bugs
+- Done:
+  - Repo layout confirmed (client / server / shared monorepo)
+  - Fixed `packages/server` TS build: AI wipe respawn `threat` union (store `threat` on `Posse`)
+  - Hardened `smoke.mjs`: correct bar/shop door + dealer coords; hard-fail on hub breaks; light reconnect check
+  - Documented known Mode A limits in STATUS
+- Verify: `npm run build` OK; `npm run smoke` → SMOKE_OK (bar hire, pawn shop, reconnect)
+- Next: **M2 job board** — Rita Fix opens board; accept mission; server-side runtime + rewards (first vertical slice)
+- Blocked: none
+
 ### 2026-07-10 — setup
 - Focus: Install overseer automation (AGENTS.md, MASTER_PLAN, scripts, skill)
 - Done: Scaffold only; no gameplay code this cycle

@@ -93,6 +93,8 @@ interface Posse {
   rep: number;
   color: number;
   aggression: number;
+  /** AI threat tier (gear/cash scaling); used on wipe respawn */
+  threat: number;
   lastAggroCheck: number;
   combatUntil: number;
   selectedUnitId: string;
@@ -199,6 +201,7 @@ export class GameWorld {
         rep: 0,
         color: 0x888888,
         aggression: 0,
+        threat: 0,
         lastAggroCheck: 0,
         combatUntil: 0,
         selectedUnitId: unitId,
@@ -283,6 +286,7 @@ export class GameWorld {
       rep: 0,
       color,
       aggression,
+      threat,
       lastAggroCheck: 0,
       combatUntil: 0,
       selectedUnitId: leaderId,
@@ -432,6 +436,7 @@ export class GameWorld {
       rep: 0,
       color: 0xf0c040,
       aggression: 0.3,
+      threat: 0,
       lastAggroCheck: 0,
       combatUntil: 0,
       selectedUnitId: leaderId,
@@ -2427,23 +2432,21 @@ export class GameWorld {
           posse.respawnT -= 1;
           if (posse.respawnT <= 0) {
             for (const id of posse.memberIds) this.units.delete(id);
+            const respawnId = posse.id;
+            const respawnName = posse.name;
+            const respawnColor = posse.color;
+            const respawnAggression = posse.aggression;
+            const respawnThreat = posse.threat || 1;
+            const mapSpawn = this.map.aiPosseSpawns.find((s) => s.id === respawnId);
             this.posses.delete(posse.id);
-            const spawn = this.map.aiPosseSpawns.find((s) => s.id === posse.id) ?? {
-              id: posse.id,
-              name: posse.name,
-              x: 10 + Math.random() * 20,
-              y: 10 + Math.random() * 15,
-              color: posse.color,
-              aggression: posse.aggression,
-            };
             this.spawnAiPosse(
-              spawn.id,
-              spawn.name,
-              spawn.x,
-              spawn.y,
-              spawn.color,
-              spawn.aggression,
-              spawn.threat ?? 1,
+              respawnId,
+              respawnName,
+              mapSpawn?.x ?? 10 + Math.random() * 20,
+              mapSpawn?.y ?? 10 + Math.random() * 15,
+              respawnColor,
+              respawnAggression,
+              mapSpawn?.threat ?? respawnThreat,
             );
           }
         }

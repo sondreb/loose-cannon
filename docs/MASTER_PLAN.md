@@ -23,8 +23,8 @@ A fun, playable **local multiplayer** crime sandbox: recruit a posse, run jobs, 
 - [x] Buildings / POIs / shops / dialogue / recruit
 - [x] Combat + attack-move + wipe loot + respawn
 - [x] Posse UI, loadout, SFX, proximity chat
-- [ ] Harden: `npm run smoke` green; document known bugs in STATUS
-- [ ] Fix any critical desync / crash on reconnect during process lifetime
+- [x] Harden: `npm run smoke` green; document known bugs in STATUS
+- [x] Fix any critical desync / crash on reconnect during process lifetime
 
 ### M2 — Content spine (P3 focus)
 
