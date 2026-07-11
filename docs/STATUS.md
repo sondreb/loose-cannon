@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-11 (cycle 39 — Mode A backlog empty; health-check stop)  
+Last updated: 2026-07-11 (cycle 40 — Mode A backlog empty; health-check stop)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -369,7 +369,7 @@ Shared `gangs.ts` profiles keyed by map spawn id — server applies on spawn/res
 **Mode A near-term checklist is complete** (M0–M7 + optional packs). No incomplete MASTER_PLAN item remains short of deferred M8.
 
 1. **Stop greenfield** until a human re-opens backlog or reports a player-facing bug  
-2. Feel polish / critical bugs only if they appear (none open at cycle 39)  
+2. Feel polish / critical bugs only if they appear (none open at cycle 40)  
 3. Optional content only if a human names it (e.g. more shells, club music bed, 8-dir art, balance pass)  
 4. **Never** Mode B (Postgres/auth/k8s) unless human asks  
 
@@ -381,7 +381,7 @@ Shared `gangs.ts` profiles keyed by map spawn id — server applies on spawn/res
 | Disconnect = wipe | Low | Mode A design |
 | Five instance templates | Live | warehouse + garage + coldstore + church + gym; more optional later |
 | Goon sprites single art facing | Low | L/R iso flip + lean/bob; full 8-dir art sheets still optional later |
-| Instance smoke wipe | Ops | Rare chapel wipe still possible under unlucky RNG; cycle 39: first-run SMOKE_OK (no wipe); cycle 35 extract limp + WS open timeout still in place |
+| Instance smoke wipe | Ops | Rare chapel wipe still possible under unlucky RNG; cycle 40: first-run SMOKE_OK (no wipe); cycle 35 extract limp + WS open timeout still in place |
 
 ## Still deferred (Mode B)
 
