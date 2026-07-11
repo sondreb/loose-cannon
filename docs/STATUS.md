@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-11 (cycle 46 — Mode A backlog empty; health-check stop)  
+Last updated: 2026-07-11 (cycle 47 — smoke instance targeting; Mode A backlog empty)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -369,7 +369,7 @@ Shared `gangs.ts` profiles keyed by map spawn id — server applies on spawn/res
 **Mode A near-term checklist is complete** (M0–M7 + optional packs). No incomplete MASTER_PLAN item remains short of deferred M8.
 
 1. **Stop greenfield** until a human re-opens backlog or reports a player-facing bug  
-2. Feel polish / critical bugs only if they appear (none open at cycle 46)  
+2. Feel polish / critical bugs only if they appear (none open at cycle 47)  
 3. Optional content only if a human names it (e.g. more shells, club music bed, 8-dir art, balance pass)  
 4. **Never** Mode B (Postgres/auth/k8s) unless human asks  
 
@@ -381,7 +381,7 @@ Shared `gangs.ts` profiles keyed by map spawn id — server applies on spawn/res
 | Disconnect = wipe | Low | Mode A design |
 | Five instance templates | Live | warehouse + garage + coldstore + church + gym; more optional later |
 | Goon sprites single art facing | Low | L/R iso flip + lean/bob; full 8-dir art sheets still optional later |
-| Instance smoke wipe | Ops | Rare instance wipe under unlucky RNG; cycle 46: first run SMOKE_OK (no wipe); cycle 35 extract limp + WS open timeout still in place |
+| Instance smoke wipe | Ops | Much rarer after cycle 47: smoke `fireAtLivingHostile` prefers non-incapacitated nearest foes (was dumping rounds into downed AI boss while bodyguards free-fired). Residual unlucky RNG still possible; cycle 35 extract limp + WS open timeout still in place |
 
 ## Still deferred (Mode B)
 

@@ -19,6 +19,16 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-11 — cycle 47 (smoke instance targeting; Mode A backlog empty)
+- Focus: Overseer select — no incomplete MASTER_PLAN item; health-check hit chapel wipe flake twice (ops debt, not greenfield)
+- Done:
+  - Confirmed M0–M7 all checked; no critical player-facing bugs beyond smoke reliability
+  - Smoke `fireAtLivingHostile`: prefer standing (non-incapacitated) hostiles, nearest to active shooter — downed AI bosses stay `alive` and were soaking fire while bodyguards wiped the posse (chapel flake root cause)
+  - No gameplay/protocol change; smoke script only
+- Verify: `npm run build` OK; first two smokes `SMOKE_FAIL` chapel wipe → after fix `SMOKE_OK` first run (cold/chop/chapel/temple + parties + realms)
+- Next: Human decision — playtest feedback, named polish, or reopen content backlog; never Mode B unless asked
+- Blocked: **No incomplete Mode A milestone.** Overseer should not invent parallel roadmap work.
+
 ### 2026-07-11 — cycle 46 (Mode A backlog empty — health-check stop)
 - Focus: Overseer select — next incomplete MASTER_PLAN item after M0–M7
 - Done:

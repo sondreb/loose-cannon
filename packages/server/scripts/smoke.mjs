@@ -370,19 +370,37 @@ async function healCrew({ gear = false } = {}) {
   await wait(400);
 }
 
-/** One attack-move tick — pick living shooter so fire still works after boss is downed. */
+/**
+ * One fire tick — pick living shooter so fire still works after boss is downed.
+ * Prefer non-incapacitated hostiles: a downed AI boss stays `alive`, and dumping
+ * shots into cover on them while bodyguards free-fire is the main chapel/temple wipe flake.
+ */
 function fireAtLivingHostile() {
-  const foe = last?.units?.find(
+  const hostiles = (last?.units ?? []).filter(
     (u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && u.alive,
   );
-  if (!foe) return null;
+  if (!hostiles.length) return null;
   const pid = last?.you?.posseId;
   const shooters = (last?.units ?? []).filter(
     (u) => u.posseId === pid && u.alive && !u.incapacitated,
   );
-  if (shooters.length) {
-    const pick = shooters.find((u) => u.isPlayerLeader) ?? shooters[0];
+  const pick = shooters.find((u) => u.isPlayerLeader) ?? shooters[0] ?? null;
+  if (pick) {
     ws.send(JSON.stringify({ type: "intent.select", unitId: pick.id }));
+  }
+  const standing = hostiles.filter((u) => !u.incapacitated);
+  const pool = standing.length ? standing : hostiles;
+  // Nearest standing foe to the active shooter (or map origin fallback)
+  const ox = pick?.x ?? 0;
+  const oy = pick?.y ?? 0;
+  let foe = pool[0];
+  let best = Infinity;
+  for (const u of pool) {
+    const d = Math.hypot(u.x - ox, u.y - oy);
+    if (d < best) {
+      best = d;
+      foe = u;
+    }
   }
   ws.send(JSON.stringify({ type: "intent.fire", targetId: foe.id }));
   return foe;
