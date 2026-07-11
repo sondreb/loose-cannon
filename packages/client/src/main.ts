@@ -2285,11 +2285,20 @@ function updateZoneObjective(s: WorldSnapshot): void {
   }
 }
 
-/** Keep status bar just under the mobile posse strip (height changes when collapsed). */
+/** Keep status bar just under floating CREW button / expanded crew strip (+ cash chip). */
 function syncMobileHudTop(): void {
   if (!possePanel) return;
-  const h = possePanel.getBoundingClientRect().height;
-  document.documentElement.style.setProperty("--mobile-hud-top", `${Math.ceil(h)}px`);
+  const r = possePanel.getBoundingClientRect();
+  let bottom = r.bottom;
+  // Collapsed: cashRep is position:fixed top-right, not inside panel box
+  if (possePanel.classList.contains("collapsed") && cashRep) {
+    const c = cashRep.getBoundingClientRect();
+    if (c.height > 0) bottom = Math.max(bottom, c.bottom);
+  }
+  document.documentElement.style.setProperty(
+    "--mobile-hud-top",
+    `${Math.ceil(bottom + 6)}px`,
+  );
 }
 
 /** Last layer we saw — clear pending interact when entering/leaving a building */

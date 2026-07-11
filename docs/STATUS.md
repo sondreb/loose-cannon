@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-11 (playtest skill + dual rain + mobile + voice + hydrants)  
+Last updated: 2026-07-11 (mobile CREW button + street hire loiter)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -21,6 +21,8 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | **Hydrants** | **Done** | Sparse map props (1–2/block); shootable → water spray FX ~3s |
 | **Playtest skill** | **Done** | `.grok/skills/playtest-visuals` + `npm run playtest:shot` / `test:ui` |
 | **Mobile touch** | **Done** | Tap move; hold-drag stick; long-press fire; pinch zoom; declutter HUD |
+| **Mobile CREW control** | **Done** | Collapsed = floating 👤 button + cash chip (not full-width top bar) |
+| **Street hire loiter** | **Done** | Thugs stay safe downtown, slow/idle; not rival-AI marched into war |
 | **Voice banks** | **Done** | 16 crew acks + 12 rival taunts as `/voice/*.mp3` (Grok TTS); select + engage play them |
 | **AI roam** | **Done** | Deep war spawns (y≥50, snapped walkable); roam via war walk points; pathfind; no safe-zone freeze |
 | **AI posse aggro** | **Done** | Hit/miss wakes whole posse; living commander if boss down; all members fire |

@@ -706,15 +706,17 @@ export function createSkidrowMap(): WorldMapDef {
         buildingId: "club_neon",
         dancerKey: "c",
       },
-      // Recruitable street meat in SAFE DOWNTOWN (~40% women by name + spawn gender)
-      { id: "npc_street", name: "Corner Carl", x: 36, y: 28, role: "thug" },
-      { id: "npc_street2", name: "Alley Ace", x: 22, y: 30, role: "thug" },
-      { id: "npc_street3", name: "Meter Maid Mayhem", x: 48, y: 24, role: "thug" },
-      { id: "npc_street4", name: "Quiet Quentin", x: 40, y: 34, role: "thug" },
-      { id: "npc_street5", name: "Bench Benny", x: 72, y: 26, role: "thug" },
-      { id: "npc_street6", name: "Stoop Sally", x: 14, y: 34, role: "thug" },
-      { id: "npc_street7", name: "Roxy Switch", x: 42, y: 22, role: "thug" },
-      { id: "npc_street8", name: "Dutch Dumpster", x: 64, y: 30, role: "thug" },
+      // Recruitable street meat — SAFE DOWNTOWN only (y well below SAFE_Y_MAX≈38).
+      // Walkable road/sidewalk/grass only; stay clear of phone1(28,22) / fence(36,20) / mail1(46,18).
+      // Server keeps them loitering near these anchors; some barely move.
+      { id: "npc_street", name: "Corner Carl", x: 22.5, y: 28.5, role: "thug" },
+      { id: "npc_street2", name: "Alley Ace", x: 16.5, y: 24.5, role: "thug" },
+      { id: "npc_street3", name: "Meter Maid Mayhem", x: 42.5, y: 24.5, role: "thug" },
+      { id: "npc_street4", name: "Quiet Quentin", x: 30.5, y: 32.5, role: "thug" },
+      { id: "npc_street5", name: "Bench Benny", x: 54.5, y: 24.5, role: "thug" },
+      { id: "npc_street6", name: "Stoop Sally", x: 34.5, y: 28.5, role: "thug" },
+      { id: "npc_street7", name: "Roxy Switch", x: 66.5, y: 30.5, role: "thug" },
+      { id: "npc_street8", name: "Dutch Dumpster", x: 70.5, y: 24.5, role: "thug" },
     ],
     // Rival gangs only in WAR ZONE (y >= SAFE_Y_MAX ≈ 38) — keep clear of the line.
     // Names/aggression/threat mirror packages/shared/src/gangs.ts profiles (gear + role bias live there).

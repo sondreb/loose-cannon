@@ -486,23 +486,37 @@ export class GameWorld {
               ? "female"
               : "male"
             : "male";
+      // Street meat: slow + loiter near spawn (safe downtown). Indoor staff stay put.
+      const streetStats = street
+        ? defaultStats({ brains: 5, guts: 5, muscle: 5, aim: 4, speed: 2 })
+        : defaultStats({ brains: 7, guts: 4 });
+      // Snap outdoor thugs onto walkable tiles (map edits can land on shells)
+      let sx = n.x;
+      let sy = n.y;
+      if (street && !n.buildingId) {
+        const snap = this.nearestWalkableNear(n.x, n.y, null, 6);
+        if (snap) {
+          sx = snap.x;
+          sy = Math.min(snap.y, SAFE_Y_MAX - 2);
+        }
+      }
       this.units.set(unitId, {
         id: unitId,
         name: n.name,
         kind: "npc",
         ownerId: null,
         posseId,
-        x: n.x,
-        y: n.y,
-        tx: n.x,
-        ty: n.y,
+        x: sx,
+        y: sy,
+        tx: sx,
+        ty: sy,
         path: [],
         stuckTicks: 0,
         dirX: 0,
         dirY: 0,
         moveMode: "idle",
         health: DEFAULT_HEALTH,
-        stats: defaultStats({ brains: 7, guts: 4 }),
+        stats: streetStats,
         weapon: "pipe",
         armor: "none",
         facing: 2,
@@ -514,7 +528,8 @@ export class GameWorld {
         ownedWeapons: new Set(["pipe"]),
         ownedArmors: new Set(["none"]),
         weaponAmmo: new Map(),
-        aiWanderT: 0,
+        // Stagger first pace so they don't all shuffle on tick 0
+        aiWanderT: street ? 1 + Math.random() * 8 : 0,
         buildingId: n.buildingId ?? null,
         lastHitByPosseId: null,
         npcRole: n.role,
@@ -1718,6 +1733,89 @@ export class GameWorld {
     if (this.tick - last < TICK_HZ * 4) return;
     this.rivalBarkAt.set(key, this.tick);
     session.conn?.send({ type: "voice.play", lineId: pickRivalTauntId() });
+  }
+
+  /**
+   * Hireable street thugs (role thug): loiter in safe downtown near spawn.
+   * Personality from id hash — some barely move (bench/stoop), others slow corner pace.
+   * Must never use rival-gang AI (that marched them into the war zone).
+   */
+  private updateStreetThugIdle(dt: number): void {
+    for (const u of this.units.values()) {
+      if (u.kind !== "npc" || u.npcRole !== "thug" || !u.alive) continue;
+      if (u.buildingId) continue;
+
+      const spawn = this.map.npcSpawns.find((n) => n.id === u.id);
+      const homeX = spawn?.x ?? u.x;
+      const homeY = Math.min(spawn?.y ?? u.y, SAFE_Y_MAX - 3);
+
+      // Pull back if somehow south of the safe line
+      if (u.y >= SAFE_Y_MAX - 0.5) {
+        const safe = this.nearestWalkableNear(homeX, homeY, null, 8);
+        if (safe) this.setUnitNav(u, safe.x, safe.y, null, { pathfind: true });
+        else {
+          u.x = homeX;
+          u.y = homeY;
+          this.parkUnit(u);
+        }
+        u.aiWanderT = 2 + Math.random() * 3;
+        continue;
+      }
+
+      u.aiWanderT -= dt;
+      if (u.aiWanderT > 0) continue;
+      if (u.moveMode === "target" && dist(u.x, u.y, u.tx, u.ty) > 0.2) {
+        // Still walking a short pace — wait
+        u.aiWanderT = 0.4;
+        continue;
+      }
+
+      // 0 = statue, 1 = lazy, 2 = slow corner walker
+      let h = 0;
+      for (let i = 0; i < u.id.length; i++) h = (h * 31 + u.id.charCodeAt(i)) | 0;
+      const persona = Math.abs(h) % 3;
+      // Named loiterers stay put more often
+      const name = (spawn?.name ?? u.name).toLowerCase();
+      const namedStatic =
+        /quiet|bench|stoop|meter|corner|dutch|alley/.test(name) && persona !== 2;
+
+      if (persona === 0 || namedStatic) {
+        // Barely move: rare half-tile fidget toward home
+        u.aiWanderT = 14 + Math.random() * 22;
+        if (Math.random() < 0.55) {
+          this.parkUnit(u);
+          continue;
+        }
+        const fx = homeX + (Math.random() - 0.5) * 0.9;
+        const fy = clamp(homeY + (Math.random() - 0.5) * 0.7, 4, SAFE_Y_MAX - 2);
+        const dest = this.nearestWalkableNear(fx, fy, null, 3);
+        if (dest && Math.hypot(dest.x - u.x, dest.y - u.y) > 0.15) {
+          this.setUnitNav(u, dest.x, dest.y, null, { pathfind: true });
+        } else {
+          this.parkUnit(u);
+        }
+        continue;
+      }
+
+      if (persona === 1) {
+        // Lazy: short step every ~8–16s, stay within ~2 tiles of home
+        u.aiWanderT = 8 + Math.random() * 10;
+        const fx = homeX + (Math.random() - 0.5) * 3.2;
+        const fy = clamp(homeY + (Math.random() - 0.5) * 2.4, 4, SAFE_Y_MAX - 2);
+        const dest = this.nearestWalkableNear(fx, fy, null, 4);
+        if (dest) this.setUnitNav(u, dest.x, dest.y, null, { pathfind: true });
+        continue;
+      }
+
+      // Slow corner walker: occasional longer loiter within safe downtown block
+      u.aiWanderT = 5 + Math.random() * 8;
+      const fx = homeX + (Math.random() - 0.5) * 5.5;
+      const fy = clamp(homeY + (Math.random() - 0.5) * 4, 6, SAFE_Y_MAX - 2.5);
+      const dest = this.nearestWalkableNear(fx, fy, null, 5);
+      if (dest && dest.y < SAFE_Y_MAX - 1) {
+        this.setUnitNav(u, dest.x, dest.y, null, { pathfind: true });
+      }
+    }
   }
 
   /** Walkable outdoor points deep in the war zone (built once per world). */
@@ -6044,9 +6142,16 @@ export class GameWorld {
     // Player attack-move / continuous engage (front-line shield)
     this.updateAttackOrders();
 
-    // AI posse behavior
+    // Street hire meat: stay in safe downtown, mostly idle / tiny paces (not rival AI)
+    this.updateStreetThugIdle(dt);
+
+    // AI posse behavior (rival gangs + instance hostiles — never world NPCs)
     for (const posse of this.posses.values()) {
       if (posse.isPlayer) continue;
+      // Bartenders, coaches, street thugs, dancers — not war-zone roam AI
+      if (posse.id.startsWith("npc_posse_")) continue;
+      const leadKind = this.units.get(posse.leaderId)?.kind;
+      if (leadKind === "npc") continue;
       if (posse.memberIds.every((id) => !this.units.get(id)?.alive)) {
         if (posse.id.startsWith("mi_enemy_")) {
           // Instance hostiles stay dead until despawned with the job

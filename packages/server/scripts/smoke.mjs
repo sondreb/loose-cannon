@@ -80,7 +80,11 @@ if (!phases.has(last.dayPhase)) {
   fail(`expected dayPhase dawn|day|dusk|night, got ${last.dayPhase}`);
 }
 // M5 ammo: starter tommy is limited; pistol is unlimited (no key / no dry)
-const meAmmo = last.units.find((u) => u.isPlayerLeader);
+// Prefer own posse (public realm can show other players' bosses without weaponAmmo).
+const meAmmo =
+  last.units.find((u) => u.id === last.you?.selectedUnitId) ||
+  last.units.find((u) => u.posseId === last.you?.posseId && u.isPlayerLeader) ||
+  last.units.find((u) => u.isPlayerLeader && u.weaponAmmo);
 if (!meAmmo?.weaponAmmo || typeof meAmmo.weaponAmmo.tommy !== "number") {
   fail("expected starter tommy ammo on leader weaponAmmo.tommy");
 }
