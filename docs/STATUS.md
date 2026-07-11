@@ -21,7 +21,9 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | **Hydrants** | **Done** | Sparse map props (1–2/block); shootable → water spray FX ~3s |
 | **Playtest skill** | **Done** | `.grok/skills/playtest-visuals` + `npm run playtest:shot` / `test:ui` |
 | **Mobile touch** | **Done** | Tap move; hold-drag stick; long-press fire; pinch zoom; declutter HUD |
-| **Voice banks** | **Done** | Crew select acks + rival warzone taunts (TTS fallback) |
+| **Voice banks** | **Done** | 16 crew acks + 12 rival taunts as `/voice/*.mp3` (Grok TTS); select + engage play them |
+| **AI roam** | **Done** | Deep war spawns (y≥50, snapped walkable); roam via war walk points; pathfind; no safe-zone freeze |
+| **AI posse aggro** | **Done** | Hit/miss wakes whole posse; living commander if boss down; all members fire |
 | **Interior decor** | **Done** | Bar / gym / hospital / shop / warehouse / church; **Twister VIP lounge**; **Crash Pad apartment** |
 | **Iron Temple gym** | **Done** | Coach Brick dialogue: train selected / whole posse / muscle day |
 | Painted goon/prop sprites | Done | Imagine PNGs + procedural fallback |

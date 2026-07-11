@@ -718,17 +718,17 @@ export function createSkidrowMap(): WorldMapDef {
     ],
     // Rival gangs only in WAR ZONE (y >= SAFE_Y_MAX ≈ 38) — keep clear of the line.
     // Names/aggression/threat mirror packages/shared/src/gangs.ts profiles (gear + role bias live there).
+    // Deep war only (y ≥ 50; safe line is y=38). Server also snaps to walkable +6 south of line.
     aiPosseSpawns: [
-      { id: "ai_rats", name: "Rail Rats", x: 42, y: 48, color: 0x8a4, aggression: 0.52, threat: 2 },
-      { id: "ai_south", name: "Southside Slicks", x: 78, y: 55, color: 0xc84, aggression: 0.55, threat: 3 },
-      { id: "ai_west", name: "West End Wreckers", x: 18, y: 50, color: 0x6a8, aggression: 0.58, threat: 2 },
-      { id: "ai_lot", name: "Lot Lizards MC", x: 52, y: 76, color: 0x886, aggression: 0.48, threat: 3 },
-      { id: "ai_church", name: "Choir of Pain", x: 28, y: 58, color: 0xa55, aggression: 0.32, threat: 2 },
-      // West of Cold Storage shell (88–102, 48–58) so they do not spawn in the void
-      { id: "ai_docks", name: "Pier Punchers", x: 84, y: 52, color: 0x48a, aggression: 0.55, threat: 2 },
-      { id: "ai_neon", name: "Neon Vipers", x: 92, y: 62, color: 0xf0c, aggression: 0.62, threat: 4 },
-      { id: "ai_chrome", name: "Chrome Fists", x: 65, y: 48, color: 0xa6a, aggression: 0.6, threat: 3 },
-      { id: "ai_dogs", name: "The Dumpster Dogs", x: 14, y: 54, color: 0xc44, aggression: 0.72, threat: 1 },
+      { id: "ai_rats", name: "Rail Rats", x: 38, y: 58, color: 0x8a4, aggression: 0.52, threat: 2 },
+      { id: "ai_south", name: "Southside Slicks", x: 74, y: 72, color: 0xc84, aggression: 0.55, threat: 3 },
+      { id: "ai_west", name: "West End Wreckers", x: 14, y: 66, color: 0x6a8, aggression: 0.58, threat: 2 },
+      { id: "ai_lot", name: "Lot Lizards MC", x: 52, y: 80, color: 0x886, aggression: 0.48, threat: 3 },
+      { id: "ai_church", name: "Choir of Pain", x: 28, y: 68, color: 0xa55, aggression: 0.32, threat: 2 },
+      { id: "ai_docks", name: "Pier Punchers", x: 80, y: 68, color: 0x48a, aggression: 0.55, threat: 2 },
+      { id: "ai_neon", name: "Neon Vipers", x: 96, y: 74, color: 0xf0c, aggression: 0.62, threat: 4 },
+      { id: "ai_chrome", name: "Chrome Fists", x: 56, y: 62, color: 0xa6a, aggression: 0.6, threat: 3 },
+      { id: "ai_dogs", name: "The Dumpster Dogs", x: 18, y: 76, color: 0xc44, aggression: 0.72, threat: 1 },
     ],
   };
 }

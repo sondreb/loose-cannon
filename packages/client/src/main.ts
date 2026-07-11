@@ -760,12 +760,13 @@ function renderPartyHud(): void {
     partyHudLabel.textContent = "PARTY · SOLO";
   }
 
-  // Auto-open once when a new invite arrives
+  // Auto-open once when a new invite arrives (and expand chat on mobile)
   if (invite) {
     const key = `${invite.partyId}:${invite.fromPosseId}`;
     if (key !== lastPartyInviteKey) {
       lastPartyInviteKey = key;
       setPartyPanelOpen(true);
+      if (chatBox?.classList.contains("collapsed")) setChatCollapsed(false);
     }
   } else {
     lastPartyInviteKey = "";
@@ -2545,6 +2546,26 @@ function updateRealmHud(realmId: string): void {
 }
 
 const SETTINGS_AUDIO_KEY = "lc_audio_v1";
+const DISPLAY_NAME_KEY = "lc_display_name";
+
+function loadDisplayName(): string {
+  try {
+    const n = localStorage.getItem(DISPLAY_NAME_KEY)?.trim() ?? "";
+    return n.slice(0, 20);
+  } catch {
+    return "";
+  }
+}
+
+function saveDisplayName(name: string): void {
+  const n = name.trim().slice(0, 20);
+  if (n.length < 2) return;
+  try {
+    localStorage.setItem(DISPLAY_NAME_KEY, n);
+  } catch {
+    /* ignore */
+  }
+}
 
 function loadAudioPrefs(): void {
   try {
@@ -2617,6 +2638,8 @@ function submitRename(): void {
   }
   socket.send({ type: "settings.rename", name });
   myName = name;
+  saveDisplayName(name);
+  if (nameInput) nameInput.value = name;
   sfx.play("ui");
   pushEvent(`Rename requested: ${name}`);
 }
@@ -3482,6 +3505,7 @@ function finishOnboardStep(): void {
 joinBtn.addEventListener("click", () => {
   myName = nameInput.value.trim() || "Thug";
   myRealmInput = realmInput?.value.trim() ?? "";
+  saveDisplayName(myName);
   loginError.textContent = "";
   let seen = false;
   try {
@@ -3532,8 +3556,10 @@ window.addEventListener("pointerdown", unlockTitleMusic, { passive: true });
 window.addEventListener("keydown", unlockTitleMusic);
 window.addEventListener("touchstart", unlockTitleMusic, { passive: true });
 
-// Prefill login from ?realm= / ?name= (shareable invite links)
+// Prefill login: localStorage name, then ?name= / ?realm= overrides (invite links)
 try {
+  const saved = loadDisplayName();
+  if (saved && nameInput) nameInput.value = saved;
   const params = new URLSearchParams(location.search);
   const qName = params.get("name");
   const qRealm = params.get("realm");

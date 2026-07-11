@@ -1793,13 +1793,13 @@ export class WorldView {
   }
 
   /**
-   * Full-viewport rain in **screen space** (rainGfx is a stage sibling of root).
-   * Only draws when weather is rain/storm — clear days stay dry.
+   * Full-viewport dual-layer rain (screen space).
+   * Layer A: short soft drizzle, slow fall, light wind left.
+   * Layer B: long bright streaks, faster fall, stronger wind right — different flow.
    */
   private drawWeather(snap: WorldSnapshot): void {
     const g = this.rainGfx;
     g.clear();
-    // Never inherit camera transform
     g.position.set(0, 0);
     g.scale.set(1);
     g.rotation = 0;
@@ -1808,7 +1808,6 @@ export class WorldView {
     const rainScale = this.look.rain;
     if (rainScale < 0.05) return;
 
-    // CSS pixel size of the canvas (not backbuffer) — fixes thin left-strip rain
     const canvas = this.app.canvas as HTMLCanvasElement;
     const w = Math.max(
       64,
@@ -1821,72 +1820,119 @@ export class WorldView {
     const t = this.time;
     const storm = rainScale > 1;
     const neonScale = Math.max(0.2, this.look.neon) * (0.5 + rainScale * 0.5);
-    const alphaMul = Math.min(1, rainScale);
+    const alphaMul = Math.min(1.15, rainScale);
 
-    // Dual layers: far slow mist + near fast streaks (depth / parallax feel)
-    const drawLayer = (opts: {
+    type LayerOpts = {
       colStep: number;
       rows: number;
-      speed: number;
+      /** Vertical fall speed (px/s) */
+      fallSpeed: number;
+      /** Horizontal wind drift (px/s) — sign = direction */
+      wind: number;
+      /** Base diagonal slant (px of X per streak) */
       slant: number;
-      lenBase: number;
+      /** Extra slant jitter from wind sway */
+      sway: number;
+      swayHz: number;
+      lenMin: number;
+      lenMax: number;
       width: number;
       alpha: number;
       color: number;
       seed: number;
+      /** Phase offset so layers don't sync vertically */
       phaseOff: number;
-    }) => {
-      const cols = Math.ceil(w / opts.colStep) + 2;
+    };
+
+    const drawLayer = (opts: LayerOpts) => {
+      const cols = Math.ceil(w / opts.colStep) + 3;
+      const span = h + opts.lenMax + 80;
       for (let c = 0; c < cols; c++) {
         for (let r = 0; r < opts.rows; r++) {
-          const i = c * opts.rows + r + opts.seed;
+          const i = c * 31 + r * 17 + opts.seed;
           const h1 = ((i * 1103515245 + 12345) >>> 0) / 0xffffffff;
-          const phase =
-            (t * opts.speed + h1 * (h + 160) + r * (h / opts.rows) + opts.phaseOff) %
-            (h + 160);
-          const px = c * opts.colStep + (h1 - 0.5) * opts.colStep * 0.55 - 10;
-          const py = phase - 50;
-          const len = opts.lenBase + (i % 5) * 2.2;
-          g.moveTo(px, py);
-          g.lineTo(px + opts.slant, py + len);
+          const h2 = ((i * 1664525 + 1013904223) >>> 0) / 0xffffffff;
+          // Independent vertical phase per streak
+          const fall = ((t * opts.fallSpeed + h1 * span + opts.phaseOff + r * (span / opts.rows)) %
+            span) -
+            40;
+          // Wind + slow lateral sway (layers differ in sign/hz so they don't lock step)
+          const windX = t * opts.wind + Math.sin(t * opts.swayHz + h2 * 6.28) * opts.sway;
+          const baseX = ((c * opts.colStep + h2 * opts.colStep + windX) % (w + 40)) - 20;
+          const len = opts.lenMin + h1 * (opts.lenMax - opts.lenMin);
+          // Slant follows wind direction slightly
+          const slant = opts.slant + (opts.wind > 0 ? 2 : -2) * h2;
+          const a = opts.alpha * alphaMul * (0.75 + h2 * 0.35);
+          g.moveTo(baseX, fall);
+          g.lineTo(baseX + slant, fall + len);
           g.stroke({
             color: opts.color,
             width: opts.width,
-            alpha: opts.alpha * alphaMul * (0.85 + (i % 3) * 0.08),
+            alpha: a,
           });
         }
       }
     };
 
-    // Layer A — distant, softer, slower, shallower angle
+    // ——— Layer A: distant sheet — short, soft, slow, drift LEFT ———
     drawLayer({
-      colStep: storm ? 10 : 12,
-      rows: storm ? 4 : 3,
-      speed: storm ? 220 : 150,
-      slant: storm ? 5 : 3.5,
-      lenBase: storm ? 14 : 11,
-      width: 1.0,
-      alpha: 0.07,
-      color: 0xb0c4e0,
-      seed: 17,
-      phaseOff: 40,
-    });
-    // Layer B — near, brighter, faster, steeper
-    drawLayer({
-      colStep: storm ? 7 : 9,
+      colStep: storm ? 8 : 10,
       rows: storm ? 5 : 4,
-      speed: storm ? 420 : 280,
-      slant: storm ? 9 : 6.5,
-      lenBase: storm ? 22 : 16,
-      width: storm ? 1.35 : 1.15,
-      alpha: 0.12,
-      color: 0xd8e8ff,
+      fallSpeed: storm ? 180 : 120,
+      wind: storm ? -28 : -18,
+      slant: storm ? 4 : 2.5,
+      sway: 6,
+      swayHz: 0.7,
+      lenMin: storm ? 10 : 8,
+      lenMax: storm ? 18 : 14,
+      width: 0.95,
+      alpha: 0.09,
+      color: 0xa8b8d0,
+      seed: 17,
+      phaseOff: 55,
+    });
+
+    // ——— Layer B: near streaks — LONG, faster, steeper, drift RIGHT ———
+    drawLayer({
+      colStep: storm ? 14 : 18,
+      rows: storm ? 4 : 3,
+      fallSpeed: storm ? 520 : 360,
+      wind: storm ? 55 : 38,
+      slant: storm ? 14 : 11,
+      sway: 14,
+      swayHz: 1.35,
+      lenMin: storm ? 36 : 28,
+      lenMax: storm ? 72 : 56,
+      width: storm ? 1.55 : 1.35,
+      alpha: 0.16,
+      color: 0xe0f0ff,
       seed: 91,
       phaseOff: 0,
     });
 
+    // Occasional very long “sheet” streaks on layer B only (storm / heavy rain)
+    if (rainScale > 0.7) {
+      const n = storm ? 14 : 8;
+      for (let i = 0; i < n; i++) {
+        const h1 = ((i * 2654435761 + 99) >>> 0) / 0xffffffff;
+        const h2 = ((i * 2246822519) >>> 0) / 0xffffffff;
+        const span = h + 120;
+        const fall = ((t * (storm ? 480 : 340) + h1 * span + 20) % span) - 30;
+        const windX = t * (storm ? 48 : 32) + Math.sin(t * 0.9 + i) * 10;
+        const px = ((h2 * w + windX) % (w + 60)) - 30;
+        const len = 48 + h1 * 40;
+        g.moveTo(px, fall);
+        g.lineTo(px + 16 + h2 * 6, fall + len);
+        g.stroke({
+          color: 0xf0f8ff,
+          width: 1.1,
+          alpha: (0.07 + h2 * 0.05) * alphaMul,
+        });
+      }
+    }
+
     // Wet neon glints across full screen
-    const glints = Math.round(32 * neonScale);
+    const glints = Math.round(28 * neonScale);
     for (let i = 0; i < glints; i++) {
       const h1 = ((i * 2654435761) >>> 0) / 0xffffffff;
       const h2 = ((i * 2246822519) >>> 0) / 0xffffffff;

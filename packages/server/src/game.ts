@@ -18,6 +18,8 @@ import {
   dancerTipCost,
   dayPhaseFromTick,
   weatherFromTick,
+  pickCrewAckId,
+  pickRivalTauntId,
   DEFAULT_REALM_ID,
   listMissionOffers,
   layLowCost,
@@ -253,6 +255,9 @@ interface Posse {
   detectRange: number;
   /** Street intel line for combat logs */
   gangBlurb: string | null;
+  /** AI home turf (war zone) for roam bias */
+  homeX?: number;
+  homeY?: number;
   lastAggroCheck: number;
   combatUntil: number;
   selectedUnitId: string;
@@ -541,6 +546,10 @@ export class GameWorld {
     const leaderId = `${id}_boss`;
     const memberIds = [leaderId];
     const cash = Math.round((120 + threat * 80 + Math.floor(Math.random() * 100)) * cashMult);
+    // Snap into deep war walkable ground (never spawn on shells / safe line)
+    const snapped = this.snapWarSpawn(x, y);
+    x = snapped.x;
+    y = snapped.y;
     this.posses.set(id, {
       id,
       name: displayName,
@@ -556,6 +565,8 @@ export class GameWorld {
       aggroRange,
       detectRange,
       gangBlurb,
+      homeX: x,
+      homeY: y,
       lastAggroCheck: 0,
       combatUntil: 0,
       selectedUnitId: leaderId,
@@ -907,10 +918,9 @@ export class GameWorld {
           posse.selectedUnitId = msg.unitId;
           const u = this.units.get(msg.unitId);
           if (u?.alive) {
-            // Client plays short male/female ack (TTS bank)
             session.conn?.send({
               type: "voice.play",
-              lineId: u.gender === "female" ? "crew_ack_f" : "crew_ack_m",
+              lineId: pickCrewAckId(u.gender === "female"),
             });
           }
         }
@@ -1201,29 +1211,28 @@ export class GameWorld {
     u.stuckTicks = 0;
   }
 
-  /** Boss at center, goons in a protective circle. */
+  /** Boss (or living commander) at center; rest of crew on a protective circle. */
   private assignCircleFormation(
     posse: Posse,
     centerX: number,
     centerY: number,
     opts?: { moveBoss?: boolean; radius?: number; pathfind?: boolean },
   ): void {
-    const leader = this.leader(posse);
-    if (!leader?.alive) return;
-    const goons = this.goons(posse);
+    const leader = this.aiCommander(posse);
+    if (!leader) return;
+    const crew = this.members(posse).filter((u) => u.alive && u.id !== leader.id);
     const c = this.clampWorld(centerX, centerY);
-    const rad = opts?.radius ?? this.formationRadius(goons.length);
+    const rad = opts?.radius ?? this.formationRadius(Math.max(1, crew.length));
     const moveBoss = opts?.moveBoss !== false;
     const bid = posse.insideBuildingId ?? leader.buildingId;
     const pf = opts?.pathfind;
 
     if (moveBoss) {
-      this.setUnitNav(leader, c.x, c.y, bid, { pathfind: pf });
+      this.setUnitNav(leader, c.x, c.y, bid, { pathfind: pf !== false });
     }
 
-    goons.forEach((u, i) => {
-      const slot = this.circleSlot(c.x, c.y, i, goons.length, rad);
-      // Escort slots: pathfind on long hops or when a wall blocks the micro-step
+    crew.forEach((u, i) => {
+      const slot = this.circleSlot(c.x, c.y, i, crew.length, rad);
       const hop = Math.hypot(slot.x - u.x, slot.y - u.y);
       const autoPf =
         hop > 2.4 || (hop > 0.55 && !this.walkLineClear(u.x, u.y, slot.x, slot.y, bid));
@@ -1690,29 +1699,125 @@ export class GameWorld {
     }
     posse.attackTargetId = target.id;
     posse.moveLabel = null;
-    posse.hostile = true;
-    posse.combatUntil = this.tick + TICK_HZ * 20;
     const tp = this.posses.get(target.posseId);
-    if (tp) {
-      tp.hostile = true;
-      tp.combatUntil = this.tick + TICK_HZ * 20;
+    if (tp) this.aggroPossePair(posse, tp, 24);
+    else {
+      posse.hostile = true;
+      posse.combatUntil = this.tick + TICK_HZ * 24;
     }
     // Bodyguards line up in front; boss stays in the middle/rear
     this.assignFrontFormation(posse, target.x, target.y);
     return true;
   }
 
-  /** Throttled rival warzone taunt voice line (client TTS bank). */
+  /** Throttled rival warzone taunt (real /voice/rival_taunt_*.mp3). */
   private rivalBarkAt = new Map<string, number>();
   private barkRivalTaunt(session: CharacterSession, target: Unit): void {
-    if (target.kind === "npc" && !target.npcRole) {
-      /* street meat can bark too */
-    }
     const key = target.posseId || target.id;
     const last = this.rivalBarkAt.get(key) ?? 0;
     if (this.tick - last < TICK_HZ * 4) return;
     this.rivalBarkAt.set(key, this.tick);
-    session.conn?.send({ type: "voice.play", lineId: "rival_taunt" });
+    session.conn?.send({ type: "voice.play", lineId: pickRivalTauntId() });
+  }
+
+  /** Walkable outdoor points deep in the war zone (built once per world). */
+  private warWalkPoints: Array<{ x: number; y: number }> | null = null;
+
+  private getWarWalkPoints(): Array<{ x: number; y: number }> {
+    if (this.warWalkPoints) return this.warWalkPoints;
+    const pts: Array<{ x: number; y: number }> = [];
+    // y ≥ SAFE_Y_MAX + 6 keeps gangs well south of the red line
+    const y0 = SAFE_Y_MAX + 6;
+    for (let y = y0; y < this.map.height - 2; y += 2) {
+      for (let x = 2; x < this.map.width - 2; x += 2) {
+        if (this.canWalk(x + 0.5, y + 0.5, null)) {
+          pts.push({ x: x + 0.5, y: y + 0.5 });
+        }
+      }
+    }
+    this.warWalkPoints = pts;
+    return pts;
+  }
+
+  /** Snap spawn into deep war walkable ground. */
+  private snapWarSpawn(x: number, y: number): { x: number; y: number } {
+    const yMin = SAFE_Y_MAX + 6;
+    let sx = clamp(x, 2, this.map.width - 3);
+    let sy = clamp(Math.max(y, yMin), yMin, this.map.height - 3);
+    if (this.canWalk(sx, sy, null)) return { x: sx, y: sy };
+    const near = this.nearestWalkableNear(sx, sy, null, 12);
+    if (near && near.y >= yMin) return near;
+    // Fall back to any deep war walkable sample
+    const pts = this.getWarWalkPoints();
+    if (pts.length) {
+      let best = pts[0]!;
+      let bestD = Infinity;
+      for (const p of pts) {
+        const d = dist(sx, sy, p.x, p.y);
+        if (d < bestD) {
+          bestD = d;
+          best = p;
+        }
+      }
+      return { x: best.x, y: best.y };
+    }
+    return { x: sx, y: Math.max(sy, yMin) };
+  }
+
+  /**
+   * Pick a walkable outdoor war-zone roam target from real map samples.
+   * Always returns a point when war walkables exist — no more null freezes.
+   */
+  private pickWarRoamPoint(
+    fromX: number,
+    fromY: number,
+    posseId: string,
+  ): { x: number; y: number } | null {
+    const pts = this.getWarWalkPoints();
+    if (!pts.length) return null;
+    const posse = this.posses.get(posseId);
+    const homeX = posse?.homeX ?? fromX;
+    const homeY = posse?.homeY ?? fromY;
+
+    // Prefer points 6–28 tiles away, deep war only
+    const candidates: Array<{ x: number; y: number; score: number }> = [];
+    for (let i = 0; i < 24; i++) {
+      const p = pts[Math.floor(Math.random() * pts.length)]!;
+      const dFrom = dist(fromX, fromY, p.x, p.y);
+      if (dFrom < 5 || dFrom > 32) continue;
+      const dHome = dist(homeX, homeY, p.x, p.y);
+      // Prefer mid-range from home so they patrol a neighborhood, not the safe line
+      const score = dFrom + (dHome < 20 ? 2 : 0) + (p.y > SAFE_Y_MAX + 10 ? 3 : 0);
+      candidates.push({ ...p, score });
+    }
+    if (candidates.length) {
+      candidates.sort((a, b) => b.score - a.score);
+      const pick = candidates[Math.floor(Math.random() * Math.min(6, candidates.length))]!;
+      return { x: pick.x, y: pick.y };
+    }
+    // Any far-enough war point
+    for (let i = 0; i < 40; i++) {
+      const p = pts[Math.floor(Math.random() * pts.length)]!;
+      if (dist(fromX, fromY, p.x, p.y) >= 4) return p;
+    }
+    return pts[Math.floor(Math.random() * pts.length)] ?? null;
+  }
+
+  /** Living commander for AI (boss, or first living goon if boss is down). */
+  private aiCommander(posse: Posse): Unit | null {
+    const lead = this.units.get(posse.leaderId);
+    if (lead?.alive) return lead;
+    return this.members(posse).find((u) => u.alive) ?? null;
+  }
+
+  /** Full posse goes hostile when shot at / engaged. */
+  private aggroPossePair(attacker: Posse, defender: Posse, seconds = 22): void {
+    if (attacker.id === defender.id) return;
+    const until = this.tick + TICK_HZ * seconds;
+    attacker.hostile = true;
+    attacker.combatUntil = Math.max(attacker.combatUntil, until);
+    defender.hostile = true;
+    defender.combatUntil = Math.max(defender.combatUntil, until);
   }
 
   /**
@@ -2037,6 +2142,12 @@ export class GameWorld {
         y1: target.y + (Math.random() - 0.5) * 0.6,
         weapon,
       });
+      // Miss still draws heat — whole posse wakes up
+      {
+        const atk = this.posses.get(shooter.posseId);
+        const def = this.posses.get(target.posseId);
+        if (atk && def) this.aggroPossePair(atk, def, 18);
+      }
       if (session && !isAi) {
         const notes: string[] = [];
         if (target.stats.guts >= 7) notes.push(`${target.name}'s guts`);
@@ -2069,6 +2180,12 @@ export class GameWorld {
 
     target.health -= dmg;
     target.lastHitByPosseId = shooter.posseId;
+    // Entire defending posse reacts — not just the unit that got tagged
+    {
+      const atk = this.posses.get(shooter.posseId);
+      const def = this.posses.get(target.posseId);
+      if (atk && def) this.aggroPossePair(atk, def, 24);
+    }
     this.pushCombatFx({
       kind: "hit",
       x0: shooter.x,
@@ -5946,11 +6063,18 @@ export class GameWorld {
             const respawnThreat = posse.threat || 1;
             const mapSpawn = this.map.aiPosseSpawns.find((s) => s.id === respawnId);
             this.posses.delete(posse.id);
+            // Respawn near home spawn with jitter deep in war (not on safe border)
+            const rx =
+              (mapSpawn?.x ?? 40) + (Math.random() - 0.5) * 12;
+            const ry = Math.max(
+              SAFE_Y_MAX + 5,
+              (mapSpawn?.y ?? 55) + (Math.random() - 0.5) * 10,
+            );
             this.spawnAiPosse(
               respawnId,
               respawnName,
-              mapSpawn?.x ?? 10 + Math.random() * 20,
-              mapSpawn?.y ?? 10 + Math.random() * 15,
+              clamp(rx, 3, this.map.width - 4),
+              clamp(ry, SAFE_Y_MAX + 4, this.map.height - 4),
               respawnColor,
               respawnAggression,
               mapSpawn?.threat ?? respawnThreat,
@@ -5960,32 +6084,61 @@ export class GameWorld {
         continue;
       }
 
-      const leader = this.leader(posse);
-      if (!leader || !leader.alive) continue;
+      // Use living commander (boss OR first goon if boss is down) so goons still fight/roam
+      const commander = this.aiCommander(posse);
+      if (!commander) continue;
 
-      // AI only fights in the war zone — never aggro in safe downtown
-      // (mission instance layers are not safe — see unitInSafeZone)
-      if (this.unitInSafeZone(leader)) {
+      // If somehow north of the war line, march south — never freeze in place
+      if (this.unitInSafeZone(commander) && !posse.insideBuildingId) {
         posse.hostile = false;
+        commander.aiWanderT -= dt;
+        if (commander.aiWanderT <= 0) {
+          commander.aiWanderT = 1.2;
+          const dest = this.pickWarRoamPoint(
+            commander.x,
+            Math.max(commander.y, SAFE_Y_MAX + 2),
+            posse.id,
+          );
+          if (dest) {
+            this.assignCircleFormation(posse, dest.x, dest.y, {
+              moveBoss: true,
+              pathfind: true,
+            });
+          } else {
+            // Hard shove south
+            this.assignCircleFormation(
+              posse,
+              commander.x,
+              SAFE_Y_MAX + 8 + Math.random() * 6,
+              { moveBoss: true, pathfind: true },
+            );
+          }
+        }
         continue;
       }
 
-      // Find nearest player posse (same layer; outdoor war zone or mission instance)
+      // Find nearest player posse by closest living member (not boss-only)
       let nearestPlayer: Posse | null = null;
       let nearestD = Infinity;
+      let nearestPlayerUnit: Unit | null = null;
       for (const p of this.posses.values()) {
         if (!p.isPlayer) continue;
-        // Same layer only (outdoor null, or shared mission instance id)
         if ((p.insideBuildingId ?? null) !== (posse.insideBuildingId ?? null)) continue;
-        // Hub interiors (non-mission) — no AI murder
         if (p.insideBuildingId && !p.insideBuildingId.startsWith("mi_")) continue;
-        const pl = this.leader(p);
-        if (!pl || !pl.alive) continue;
-        if (this.unitInSafeZone(pl)) continue;
-        const d = dist(leader.x, leader.y, pl.x, pl.y);
-        if (d < nearestD) {
-          nearestD = d;
-          nearestPlayer = p;
+        for (const mid of p.memberIds) {
+          const mu = this.units.get(mid);
+          if (!mu?.alive) continue;
+          if (this.unitInSafeZone(mu)) continue;
+          // Distance to nearest AI member of this posse
+          for (const au of this.members(posse)) {
+            if (!au.alive) continue;
+            const d = dist(au.x, au.y, mu.x, mu.y);
+            if (d < nearestD) {
+              nearestD = d;
+              nearestPlayer = p;
+              nearestPlayerUnit = mu;
+            }
+          }
         }
       }
 
@@ -5998,10 +6151,7 @@ export class GameWorld {
           posse.lastAggroCheck = now;
           if (!posse.hostile && nearestD < aggroR) {
             if (Math.random() < FIGHT_CHANCE * posse.aggression + 0.15) {
-              posse.hostile = true;
-              posse.combatUntil = now + TICK_HZ * 15;
-              nearestPlayer.hostile = true;
-              nearestPlayer.combatUntil = now + TICK_HZ * 15;
+              this.aggroPossePair(posse, nearestPlayer, 20);
               const s = [...this.sessions.values()].find((ss) => ss.posseId === nearestPlayer!.id);
               if (s) {
                 const roles = this.members(posse)
@@ -6012,6 +6162,7 @@ export class GameWorld {
                   : "";
                 const flavor = posse.gangBlurb ? ` — ${posse.gangBlurb}` : "";
                 this.log(s, `${posse.name}${flavor} wants a piece of you!${mix}`);
+                s.conn?.send({ type: "voice.play", lineId: pickRivalTauntId() });
               }
             } else {
               const s = [...this.sessions.values()].find((ss) => ss.posseId === nearestPlayer!.id);
@@ -6024,46 +6175,47 @@ export class GameWorld {
         }
       }
 
-      if (posse.hostile && nearestPlayer) {
-        const pl = this.leader(nearestPlayer);
-        if (pl) {
-          // Role-based AI: rushers charge, shooters hold band, cowards kite/flee
-          this.assignAiRoleCombat(posse, pl.x, pl.y);
-          for (const u of this.members(posse)) {
-            if (u.incapacitated) continue;
-            const best = this.pickBestFireTarget(u, nearestPlayer.memberIds);
-            if (best) this.resolveShot(u, best);
-          }
-          // Player posse auto-return fire if hostile (keep own front if attacking, else circle fire)
-          if (!nearestPlayer.attackTargetId) {
-            this.assignFrontFormation(nearestPlayer, leader.x, leader.y);
-          }
-          for (const id of nearestPlayer.memberIds) {
-            const u = this.units.get(id);
-            if (!u || !u.alive) continue;
-            const best = this.pickBestFireTarget(u, posse.memberIds);
-            if (best) this.resolveShot(u, best);
-          }
+      if (posse.hostile && nearestPlayer && nearestPlayerUnit) {
+        const threatX = nearestPlayerUnit.x;
+        const threatY = nearestPlayerUnit.y;
+        // Whole AI crew repositions + every living member fires
+        this.assignAiRoleCombat(posse, threatX, threatY);
+        for (const u of this.members(posse)) {
+          if (!u.alive || u.incapacitated) continue;
+          const best = this.pickBestFireTarget(u, nearestPlayer.memberIds);
+          if (best) this.resolveShot(u, best);
+        }
+        // Player posse auto-return fire
+        if (!nearestPlayer.attackTargetId) {
+          this.assignFrontFormation(nearestPlayer, commander.x, commander.y);
+        }
+        for (const id of nearestPlayer.memberIds) {
+          const u = this.units.get(id);
+          if (!u || !u.alive) continue;
+          const best = this.pickBestFireTarget(u, posse.memberIds);
+          if (best) this.resolveShot(u, best);
         }
       } else {
-        // Wander: boss drifts; bodyguards keep circle around him
-        leader.aiWanderT -= dt;
-        if (leader.aiWanderT <= 0) {
-          leader.aiWanderT = 2.5 + Math.random() * 4;
-          const ang = Math.random() * Math.PI * 2;
-          const rad = 1.2 + Math.random() * 3.5;
-          const tx = clamp(leader.x + Math.cos(ang) * rad, 1, this.map.width - 2);
-          const ty = clamp(leader.y + Math.sin(ang) * rad, 1, this.map.height - 2);
-          if (this.canWalk(tx, ty, null)) {
-            this.assignCircleFormation(posse, tx, ty, { moveBoss: true });
-          } else {
-            this.assignCircleFormation(posse, leader.x, leader.y, { moveBoss: false });
+        // Roam deep war zone on a timer (always pathfind long hops)
+        commander.aiWanderT -= dt;
+        if (commander.aiWanderT <= 0) {
+          commander.aiWanderT = 2.8 + Math.random() * 4.5;
+          const dest = this.pickWarRoamPoint(commander.x, commander.y, posse.id);
+          if (dest) {
+            this.assignCircleFormation(posse, dest.x, dest.y, {
+              moveBoss: true,
+              pathfind: true,
+            });
           }
-        } else {
-          // Soft maintain circle while idle-wandering
-          if (leader.moveMode === "idle" || dist(leader.x, leader.y, leader.tx, leader.ty) < 0.2) {
-            this.assignCircleFormation(posse, leader.x, leader.y, { moveBoss: false });
-          }
+        } else if (
+          commander.moveMode === "idle" ||
+          dist(commander.x, commander.y, commander.tx, commander.ty) < 0.25
+        ) {
+          // Hold formation on commander while waiting for next roam leg
+          this.assignCircleFormation(posse, commander.x, commander.y, {
+            moveBoss: false,
+            pathfind: false,
+          });
         }
       }
     }

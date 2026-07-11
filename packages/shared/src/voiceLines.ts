@@ -361,7 +361,186 @@ export const VOICE_LINES: VoiceLineDef[] = [
     voice: "eve",
     role: "dancer",
   },
+
+  // ——— Crew select acks (short, male) ———
+  {
+    id: "crew_ack_m_1",
+    speak: "I'm here, boss.",
+    voice: "rex",
+    role: "crew_m",
+  },
+  {
+    id: "crew_ack_m_2",
+    speak: "What's up?",
+    voice: "leo",
+    role: "crew_m",
+  },
+  {
+    id: "crew_ack_m_3",
+    speak: "Ready when you are.",
+    voice: "sal",
+    role: "crew_m",
+  },
+  {
+    id: "crew_ack_m_4",
+    speak: "Say the word.",
+    voice: "rex",
+    role: "crew_m",
+  },
+  {
+    id: "crew_ack_m_5",
+    speak: "On you.",
+    voice: "leo",
+    role: "crew_m",
+  },
+  {
+    id: "crew_ack_m_6",
+    speak: "Yeah, boss.",
+    voice: "sal",
+    role: "crew_m",
+  },
+  {
+    id: "crew_ack_m_7",
+    speak: "Let's go.",
+    voice: "rex",
+    role: "crew_m",
+  },
+  {
+    id: "crew_ack_m_8",
+    speak: "I got this.",
+    voice: "leo",
+    role: "crew_m",
+  },
+
+  // ——— Crew select acks (short, female) ———
+  {
+    id: "crew_ack_f_1",
+    speak: "I'm here.",
+    voice: "ara",
+    role: "crew_f",
+  },
+  {
+    id: "crew_ack_f_2",
+    speak: "What's up?",
+    voice: "eve",
+    role: "crew_f",
+  },
+  {
+    id: "crew_ack_f_3",
+    speak: "Ready when you are.",
+    voice: "ara",
+    role: "crew_f",
+  },
+  {
+    id: "crew_ack_f_4",
+    speak: "Say it.",
+    voice: "eve",
+    role: "crew_f",
+  },
+  {
+    id: "crew_ack_f_5",
+    speak: "On you, boss.",
+    voice: "ara",
+    role: "crew_f",
+  },
+  {
+    id: "crew_ack_f_6",
+    speak: "Yeah?",
+    voice: "eve",
+    role: "crew_f",
+  },
+  {
+    id: "crew_ack_f_7",
+    speak: "Let's move.",
+    voice: "ara",
+    role: "crew_f",
+  },
+  {
+    id: "crew_ack_f_8",
+    speak: "I got it.",
+    voice: "eve",
+    role: "crew_f",
+  },
+
+  // ——— Rival warzone taunts (Kingpin energy, 18+) ———
+  {
+    id: "rival_taunt_1",
+    speak: "You want a piece of this, motherfucker?",
+    voice: "rex",
+    role: "rival",
+  },
+  {
+    id: "rival_taunt_2",
+    speak: "Kiss my ass, you piece of shit!",
+    voice: "sal",
+    role: "rival",
+  },
+  {
+    id: "rival_taunt_3",
+    speak: "Come get some, bitch!",
+    voice: "leo",
+    role: "rival",
+  },
+  {
+    id: "rival_taunt_4",
+    speak: "I'll paint the sidewalk with you!",
+    voice: "rex",
+    role: "rival",
+  },
+  {
+    id: "rival_taunt_5",
+    speak: "Wrong block, asshole!",
+    voice: "sal",
+    role: "rival",
+  },
+  {
+    id: "rival_taunt_6",
+    speak: "You just signed your fucking death warrant!",
+    voice: "leo",
+    role: "rival",
+  },
+  {
+    id: "rival_taunt_7",
+    speak: "Eat lead, you cheap suit!",
+    voice: "rex",
+    role: "rival",
+  },
+  {
+    id: "rival_taunt_8",
+    speak: "Bring it, pussy!",
+    voice: "sal",
+    role: "rival",
+  },
+  {
+    id: "rival_taunt_9",
+    speak: "This is our turf, motherfucker!",
+    voice: "leo",
+    role: "rival",
+  },
+  {
+    id: "rival_taunt_10",
+    speak: "You're already dead!",
+    voice: "rex",
+    role: "rival",
+  },
+  {
+    id: "rival_taunt_11",
+    speak: "Fuck around and find out!",
+    voice: "sal",
+    role: "rival",
+  },
+  {
+    id: "rival_taunt_12",
+    speak: "Time to die, shithead!",
+    voice: "leo",
+    role: "rival",
+  },
 ];
+
+/** Crew ack line ids by gender */
+export const CREW_ACK_M_IDS = VOICE_LINES.filter((l) => l.role === "crew_m").map((l) => l.id);
+export const CREW_ACK_F_IDS = VOICE_LINES.filter((l) => l.role === "crew_f").map((l) => l.id);
+export const RIVAL_TAUNT_IDS = VOICE_LINES.filter((l) => l.role === "rival").map((l) => l.id);
 
 const byId = new Map(VOICE_LINES.map((l) => [l.id, l]));
 
@@ -373,4 +552,13 @@ export function getVoiceLine(id: string | undefined | null): VoiceLineDef | unde
 export function pickVoiceLineId(ids: string[]): string | undefined {
   if (!ids.length) return undefined;
   return ids[Math.floor(Math.random() * ids.length)]!;
+}
+
+export function pickCrewAckId(female: boolean): string {
+  const ids = female ? CREW_ACK_F_IDS : CREW_ACK_M_IDS;
+  return pickVoiceLineId(ids) ?? (female ? "crew_ack_f_1" : "crew_ack_m_1");
+}
+
+export function pickRivalTauntId(): string {
+  return pickVoiceLineId(RIVAL_TAUNT_IDS) ?? "rival_taunt_1";
 }
