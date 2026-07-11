@@ -261,7 +261,8 @@ export const MISSIONS: Record<MissionId, MissionDef> = {
     instance: {
       templateBuildingId: "coldstore",
       enemyCount: 2,
-      enemyThreat: 2,
+      // Threat 1 keeps freezer readable after chop (threat-2 uzis + forced leather melted full kevlar trios)
+      enemyThreat: 1,
       enemyLabel: "Frost",
     },
     objectives: [

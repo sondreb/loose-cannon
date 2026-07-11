@@ -19,6 +19,16 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-11 — cycle 32 (smoke flake harden + Frost/cold balance)
+- Focus: Known ops debt — cold/chop instance smoke wipe (failed twice back-to-back on clean server; not inventing greenfield)
+- Done:
+  - Smoke: restock full trio; `gearUpAtPawn` (kevlar/leather + ammo refill) before hard instances; shoot-during-peek (no AFK free-fire); `fightInstanceHostiles` reselects living shooters when boss downed
+  - Frost flavor: pistols only (no uzi lottery); drop guts/HP spray bias
+  - `cold_storage` instance `enemyThreat` 2 → 1 (readable after chop; reward unchanged)
+- Verify: `npm run build` OK; `npm run smoke` → SMOKE_OK (clean server)
+- Next: Human decision — playtest feedback, named polish, or reopen content backlog; never Mode B unless asked
+- Blocked: **No incomplete Mode A milestone.** Overseer should not invent parallel roadmap work.
+
 ### 2026-07-11 — cycle 31 (Mode A backlog empty — stop)
 - Focus: Overseer select — next incomplete MASTER_PLAN item after M7 packs
 - Done:

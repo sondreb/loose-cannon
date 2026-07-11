@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-11 (cycle 31 — Mode A backlog empty)  
+Last updated: 2026-07-11 (cycle 32 — smoke flake harden + Frost/cold balance)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -245,7 +245,7 @@ Server-authoritative; AI ignores ammo (always free fire). Players:
 ### M7 third instance (live)
 
 - Building: **Cold Storage** (`coldstore`) — docks shell ~(88–102, 48–58), door west; interior pocket 83–91×83–87  
-- Job: `cold_storage` / **Ice Box Eviction** — private clear → extract; Frost-labeled hostiles (threat 2); $580 + 6 rep  
+- Job: `cold_storage` / **Ice Box Eviction** — private clear → extract; Frost-labeled hostiles (threat 1, pistols); $580 + 6 rep  
 - Client: coldstore cyan accent; frost indoor lighting (template kind on `mi_*` layers)  
 - Pier Punchers spawn shifted west of shell (84, 52); street props COLD neon + frozen crate  
 - Smoke: full cold_storage clear → extract → pay  
@@ -349,7 +349,7 @@ Shared `gangs.ts` profiles keyed by map spawn id — server applies on spawn/res
 | `ai_neon` | Neon Vipers | hold / elite | high, long | Queen Fang; minigun/tommy + plate |
 | `ai_chrome` | Chrome Fists | rush / knuckles | high, short | Iron Hands; melee muscle |
 
-**Also:** per-posse `aggroRange` / `detectRange`; combat logs include gang blurb; instance flavors **Bay** (readable pistols), **Chop** (tools/shotguns), **Frost** (uzi/hold), **Choir** (pistols/blades, chapel), **Iron** (pipes/shotguns, gym). Smoke asserts Dogs vs Vipers names/gear. Rush/hold/flee crews always keep ≥1 signature role (smoke-stable).
+**Also:** per-posse `aggroRange` / `detectRange`; combat logs include gang blurb; instance flavors **Bay** (readable pistols), **Chop** (tools/shotguns), **Frost** (pistols/hold — no uzi lottery), **Choir** (pistols/blades, chapel), **Iron** (pipes/shotguns, gym). Smoke asserts Dogs vs Vipers names/gear. Rush/hold/flee crews always keep ≥1 signature role (smoke-stable).
 
 ### Music bed (live)
 
@@ -368,7 +368,7 @@ Shared `gangs.ts` profiles keyed by map spawn id — server applies on spawn/res
 **Mode A near-term checklist is complete** (M0–M7 + optional packs). No incomplete MASTER_PLAN item remains short of deferred M8.
 
 1. **Stop greenfield** until a human re-opens backlog or reports a player-facing bug  
-2. Feel polish / critical bugs only if they appear (none open at cycle 31)  
+2. Feel polish / critical bugs only if they appear (none open at cycle 32)  
 3. Optional content only if a human names it (e.g. more shells, club music bed, 8-dir art, balance pass)  
 4. **Never** Mode B (Postgres/auth/k8s) unless human asks  
 
@@ -380,7 +380,7 @@ Shared `gangs.ts` profiles keyed by map spawn id — server applies on spawn/res
 | Disconnect = wipe | Low | Mode A design |
 | Five instance templates | Live | warehouse + garage + coldstore + church + gym; more optional later |
 | Goon sprites single art facing | Low | L/R iso flip + lean/bob; full 8-dir art sheets still optional later |
-| Instance smoke wipe | Ops | Rare death mid-chop/cold if aggro unlucky; smoke heals + **restocks** bar hires if ambient street fights ate goons; re-run on clean server |
+| Instance smoke wipe | Ops | Hardened cycle 32: gear-up (kevlar+ammo), shoot-during-peek, full trio restock; Frost pistols + cold threat 1 — re-run on clean server if rare flake remains |
 
 ## Still deferred (Mode B)
 

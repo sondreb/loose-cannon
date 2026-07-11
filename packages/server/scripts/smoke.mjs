@@ -224,9 +224,16 @@ function livingCrewCount() {
   return (last?.units ?? []).filter((u) => u.posseId === pid && u.alive).length;
 }
 
-/** Re-hire at Vince if ambient street fights ate the meat (Mode A permanent death). */
-async function restockCrew() {
-  while (livingCrewCount() < 2 && (last?.you?.cash ?? 0) >= 150) {
+function livingCrewUnits() {
+  const pid = last?.you?.posseId;
+  if (!pid) return [];
+  return (last?.units ?? []).filter((u) => u.posseId === pid && u.alive);
+}
+
+/** Re-hire at Vince if ambient street fights ate the meat (Mode A permanent death).
+ *  Target full trio (boss + 2) for hard instances — solo/duo melts under Frost uzis. */
+async function restockCrew(minCrew = 3) {
+  while (livingCrewCount() < minCrew && (last?.you?.cash ?? 0) >= 150) {
     if (last?.you.insideBuildingId && !String(last.you.insideBuildingId).startsWith("mi_")) {
       ws.send(JSON.stringify({ type: "intent.exit" }));
       await wait(400);
@@ -261,8 +268,7 @@ async function restockCrew() {
   }
 }
 
-async function healCrew() {
-  await restockCrew();
+async function exitIfIndoors() {
   if (last?.you.insideBuildingId && !String(last.you.insideBuildingId).startsWith("mi_")) {
     ws.send(JSON.stringify({ type: "intent.exit" }));
     await wait(400);
@@ -271,6 +277,62 @@ async function healCrew() {
       await wait(400);
     }
   }
+}
+
+/**
+ * Pawn-O-Matic: kevlar (or leather) on living crew + refill limited guns.
+ * Cold/chop leave the leader dry; bare street clothes vs shotgun/uzi hold is a coin flip.
+ */
+async function gearUpAtPawn() {
+  await exitIfIndoors();
+  let me = await goTo(51.5, 15.2, 22);
+  if (!me || Math.hypot(me.x - 51.5, me.y - 15.2) > 1.8) return;
+  if (last?.you.insideBuildingId !== "shop_pawn") {
+    ws.send(JSON.stringify({ type: "intent.interact" }));
+    await wait(500);
+  }
+  if (last?.you.insideBuildingId !== "shop_pawn") return;
+  me = await goTo(100.5, 3.4, 12);
+  ws.send(JSON.stringify({ type: "intent.interact" }));
+  await wait(400);
+  if (!last?.shop) {
+    ws.send(JSON.stringify({ type: "intent.exit" }));
+    await wait(300);
+    return;
+  }
+  const rep = last?.you?.rep ?? 0;
+  const armorWant = rep >= 3 ? "kevlar" : "leather";
+  const crew = livingCrewUnits();
+  for (const u of crew) {
+    const have = u.armor ?? "none";
+    if (have === "none" || (armorWant === "kevlar" && have === "leather")) {
+      ws.send(JSON.stringify({ type: "shop.buyArmor", armorId: armorWant, unitId: u.id }));
+      await wait(140);
+    }
+    for (const wid of ["tommy", "uzi", "shotgun"]) {
+      if (u.ownedWeapons?.includes(wid)) {
+        ws.send(JSON.stringify({ type: "shop.buyAmmo", weaponId: wid, unitId: u.id }));
+        await wait(100);
+      }
+    }
+  }
+  console.log(
+    "gear-up pawn cash",
+    last?.you?.cash,
+    "crew",
+    livingCrewCount(),
+    livingCrewUnits().map((u) => `${u.name}/${u.armor ?? "none"}`).join(", "),
+  );
+  ws.send(JSON.stringify({ type: "shop.close" }));
+  await wait(150);
+  ws.send(JSON.stringify({ type: "intent.exit" }));
+  await wait(400);
+}
+
+async function healCrew({ gear = false } = {}) {
+  await restockCrew(gear ? 3 : 2);
+  if (gear) await gearUpAtPawn();
+  await exitIfIndoors();
   let me = await goTo(73, 15.2, 22);
   if (!me || Math.hypot(me.x - 73, me.y - 15.2) > 1.8) return;
   if (last?.you.insideBuildingId !== "hospital") {
@@ -283,6 +345,85 @@ async function healCrew() {
   await wait(400);
   ws.send(JSON.stringify({ type: "intent.exit" }));
   await wait(400);
+}
+
+/** One attack-move tick — pick living shooter so fire still works after boss is downed. */
+function fireAtLivingHostile() {
+  const foe = last?.units?.find(
+    (u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && u.alive,
+  );
+  if (!foe) return null;
+  const pid = last?.you?.posseId;
+  const shooters = (last?.units ?? []).filter(
+    (u) => u.posseId === pid && u.alive && !u.incapacitated,
+  );
+  if (shooters.length) {
+    const pick = shooters.find((u) => u.isPlayerLeader) ?? shooters[0];
+    ws.send(JSON.stringify({ type: "intent.select", unitId: pick.id }));
+  }
+  ws.send(JSON.stringify({ type: "intent.fire", targetId: foe.id }));
+  return foe;
+}
+
+/**
+ * Peek instance hostiles while already shooting — do not free-fire AFK during the poll.
+ * Prior smoke waited ~1.8s collecting names while chop/frost melted the posse.
+ */
+async function peekInstanceHostiles({
+  missionId,
+  nameRe,
+  maxPoll = 40,
+  pollMs = 50,
+} = {}) {
+  let seen = [];
+  let alivePeak = 0;
+  let labelOk = false;
+  for (let i = 0; i < maxPoll; i++) {
+    // Shoot every tick once we're on the mi_ layer
+    if (String(last?.you?.insideBuildingId ?? "").startsWith("mi_")) {
+      fireAtLivingHostile();
+    }
+    await wait(pollMs);
+    if (!String(last?.you?.insideBuildingId ?? "").startsWith("mi_")) continue;
+    if (missionId && last?.mission?.id !== missionId) continue;
+    const hostiles = (last?.units ?? []).filter(
+      (u) => u.kind === "ai_boss" || u.kind === "ai_goon",
+    );
+    const alive = hostiles.filter((u) => u.alive);
+    if (hostiles.length) seen = hostiles;
+    if (alive.length > alivePeak) alivePeak = alive.length;
+    if (nameRe && hostiles.some((u) => nameRe.test(u.name ?? ""))) labelOk = true;
+    if (alivePeak >= 2 || last?.mission?.phase === "extract") break;
+    if (last?.mission == null && last?.you?.respawnIn != null) break;
+  }
+  return { seen, alivePeak, labelOk };
+}
+
+/** Fire loop for instance clears — reselect living shooters if boss is downed. */
+async function fightInstanceHostiles({ maxTicks = 320, tickMs = 55, failLabel = "job" } = {}) {
+  for (let i = 0; i < maxTicks; i++) {
+    const foe = fireAtLivingHostile();
+    if (!foe && last?.mission?.phase === "extract") break;
+    if (!foe && last?.mission?.phase !== "extract" && last?.mission != null) {
+      // brief wait for next snap if hostiles not in this frame
+      await wait(tickMs);
+      if (last?.mission?.phase === "extract") break;
+      continue;
+    }
+    await wait(tickMs);
+    if (last?.mission?.phase === "extract") break;
+    if (last?.mission == null && last?.you.respawnIn != null) {
+      fail(`${failLabel} failed (died) before extract`);
+    }
+  }
+  for (let i = 0; i < 100; i++) {
+    if (last?.mission?.phase === "extract") break;
+    fireAtLivingHostile();
+    await wait(90);
+    if (last?.mission == null && last?.you.respawnIn != null) {
+      fail(`${failLabel} failed (died) before extract`);
+    }
+  }
 }
 
 console.log("map", last?.mapWidth, "x", last?.mapHeight);
@@ -617,32 +758,20 @@ if (last.you.rep < rep0 + 2) fail("keep_frozen rep");
 console.log("keep_frozen outdoor ok cash", last.you.cash);
 
 // --- M6 instance: chop_shop_raid (garage template) ---
-await healCrew();
+await healCrew({ gear: true });
 await openRitaBoard();
 cash0 = last.you.cash;
 rep0 = last.you.rep;
 ws.send(JSON.stringify({ type: "jobBoard.accept", missionId: "chop_shop_raid" }));
-await wait(600);
-// Poll — leather chop crew can melt before a fixed sleep.
+// Poll while shooting — leather chop crew melts AFK peeks
 // Goon epithets are Wrench/Torque/…; only boss title always has "Chop".
-let chopSeen = [];
-let chopAlivePeak = 0;
-let chopLabelOk = false;
-for (let i = 0; i < 30; i++) {
-  await wait(60);
-  if (!String(last?.you.insideBuildingId ?? "").startsWith("mi_")) continue;
-  if (last?.mission?.id !== "chop_shop_raid") continue;
-  const chopAll = (last?.units ?? []).filter(
-    (u) => u.kind === "ai_boss" || u.kind === "ai_goon",
-  );
-  const chopAlive = chopAll.filter((u) => u.alive);
-  if (chopAll.length) chopSeen = chopAll;
-  if (chopAlive.length > chopAlivePeak) chopAlivePeak = chopAlive.length;
-  if (chopAll.some((u) => /chop|wrench|torque|axle|grease|rim|oil|frame|socket|hub|sparks|brake|clutch|vinyl/i.test(u.name ?? ""))) {
-    chopLabelOk = true;
-  }
-  if (chopAlivePeak >= 2 || last?.mission?.phase === "extract") break;
-}
+const chopPeek = await peekInstanceHostiles({
+  missionId: "chop_shop_raid",
+  nameRe: /chop|wrench|torque|axle|grease|rim|oil|frame|socket|hub|sparks|brake|clutch|vinyl/i,
+});
+const chopSeen = chopPeek.seen;
+const chopAlivePeak = chopPeek.alivePeak;
+const chopLabelOk = chopPeek.labelOk;
 if (!String(last?.you.insideBuildingId ?? "").startsWith("mi_")) {
   fail(`chop shop expected mi_ layer, got ${last?.you.insideBuildingId}`);
 }
@@ -656,28 +785,7 @@ if (chopAlivePeak < 2 && chopSeen.length < 2 && last?.mission?.phase !== "extrac
 if (chopSeen.length && !chopLabelOk) {
   fail(`expected Chop-family hostiles, got ${chopSeen.map((u) => u.name).join(",")}`);
 }
-// Fire with the whole posse selected (leader + goons) — attack-move helps survive leather hostiles
-ws.send(JSON.stringify({ type: "intent.select", unitId: null }));
-await wait(100);
-for (let i = 0; i < 260; i++) {
-  const foe = last?.units.find(
-    (u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && u.alive,
-  );
-  if (!foe) break;
-  // intent.fire also sets attack-move chase on the server
-  ws.send(JSON.stringify({ type: "intent.fire", targetId: foe.id }));
-  await wait(70);
-  if (last?.mission?.phase === "extract") break;
-  if (last?.mission == null && last?.you.respawnIn != null) {
-    fail("chop job failed (died) before extract");
-  }
-}
-for (let i = 0; i < 60; i++) {
-  if (last?.mission?.phase === "extract") break;
-  const foe = last?.units.find((u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && u.alive);
-  if (foe) ws.send(JSON.stringify({ type: "intent.fire", targetId: foe.id }));
-  await wait(120);
-}
+await fightInstanceHostiles({ maxTicks: 300, tickMs: 55, failLabel: "chop job" });
 if (last?.mission?.phase !== "extract") {
   fail(`chop expected extract, got ${last?.mission?.phase}`);
 }
@@ -692,32 +800,20 @@ if (last?.you.insideBuildingId) fail("should be outdoors after chop extract");
 console.log("chop_shop_raid instance ok cash", last.you.cash);
 
 // --- M7 instance: cold_storage (coldstore template) ---
-await healCrew();
+await healCrew({ gear: true });
 await openRitaBoard();
 if (!last.jobBoard.offers.some((o) => o.id === "cold_storage")) fail("no cold_storage offer");
 cash0 = last.you.cash;
 rep0 = last.you.rep;
 ws.send(JSON.stringify({ type: "jobBoard.accept", missionId: "cold_storage" }));
-// Poll quickly — crew can wipe freeloaders before a long sleep finishes
-// Goon epithets are Ice/Frost/Shelf/Chill — only boss is always "Frost …"
-let frostSeen = [];
-let frostAlivePeak = 0;
-let frostLabelOk = false;
-for (let i = 0; i < 30; i++) {
-  await wait(60);
-  if (!String(last?.you.insideBuildingId ?? "").startsWith("mi_")) continue;
-  if (last?.mission?.id !== "cold_storage") continue;
-  const hostiles = (last?.units ?? []).filter(
-    (u) => u.kind === "ai_boss" || u.kind === "ai_goon",
-  );
-  const alive = hostiles.filter((u) => u.alive);
-  if (hostiles.length) frostSeen = hostiles;
-  if (alive.length > frostAlivePeak) frostAlivePeak = alive.length;
-  if (hostiles.some((u) => /frost|ice|chill|icicle|shelf/i.test(u.name ?? ""))) {
-    frostLabelOk = true;
-  }
-  if (frostAlivePeak >= 2 || last?.mission?.phase === "extract") break;
-}
+// Goon epithets Ice/Frost/Shelf/Chill — shoot during peek (no AFK free-fire)
+const frostPeek = await peekInstanceHostiles({
+  missionId: "cold_storage",
+  nameRe: /frost|ice|chill|icicle|shelf/i,
+});
+const frostSeen = frostPeek.seen;
+const frostAlivePeak = frostPeek.alivePeak;
+const frostLabelOk = frostPeek.labelOk;
 if (!String(last?.you.insideBuildingId ?? "").startsWith("mi_")) {
   fail(`cold store expected mi_ layer, got ${last?.you.insideBuildingId}`);
 }
@@ -744,27 +840,8 @@ console.log(
   "phase",
   last?.mission?.phase,
 );
-// Select whole posse — threat-3 freezer crew hits hard (fire also sets attack-move)
-ws.send(JSON.stringify({ type: "intent.select", unitId: null }));
-await wait(100);
-for (let i = 0; i < 300; i++) {
-  const foe = last?.units.find(
-    (u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && u.alive,
-  );
-  if (!foe) break;
-  ws.send(JSON.stringify({ type: "intent.fire", targetId: foe.id }));
-  await wait(65);
-  if (last?.mission?.phase === "extract") break;
-  if (last?.mission == null && last?.you.respawnIn != null) {
-    fail("cold job failed (died) before extract");
-  }
-}
-for (let i = 0; i < 80; i++) {
-  if (last?.mission?.phase === "extract") break;
-  const foe = last?.units.find((u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && u.alive);
-  if (foe) ws.send(JSON.stringify({ type: "intent.fire", targetId: foe.id }));
-  await wait(100);
-}
+// Full trio + kevlar + refilled belt — freezer hold crew used to wipe dry solo leads
+await fightInstanceHostiles({ maxTicks: 360, tickMs: 50, failLabel: "cold job" });
 if (last?.mission?.phase !== "extract") {
   fail(`cold expected extract, got ${last?.mission?.phase}`);
 }
@@ -779,37 +856,21 @@ if (last?.you.insideBuildingId) fail("should be outdoors after cold extract");
 console.log("cold_storage instance ok cash", last.you.cash);
 
 // --- M7+ instance: chapel_cleanse (church template) ---
-await healCrew();
+await healCrew({ gear: true });
 await openRitaBoard();
 if (!last.jobBoard.offers.some((o) => o.id === "chapel_cleanse")) fail("no chapel_cleanse offer");
 cash0 = last.you.cash;
 rep0 = last.you.rep;
 ws.send(JSON.stringify({ type: "jobBoard.accept", missionId: "chapel_cleanse" }));
 // Choir epithets: Psalm/Vesper/Bell/Candle/Altar/Hymn; boss "Choir Lead"
-let choirSeen = [];
-let choirAlivePeak = 0;
-let choirLabelOk = false;
-for (let i = 0; i < 30; i++) {
-  await wait(60);
-  if (!String(last?.you.insideBuildingId ?? "").startsWith("mi_")) continue;
-  if (last?.mission?.id !== "chapel_cleanse") continue;
-  const hostiles = (last?.units ?? []).filter(
-    (u) => u.kind === "ai_boss" || u.kind === "ai_goon",
-  );
-  const alive = hostiles.filter((u) => u.alive);
-  if (hostiles.length) choirSeen = hostiles;
-  if (alive.length > choirAlivePeak) choirAlivePeak = alive.length;
-  if (
-    hostiles.some((u) =>
-      /choir|psalm|vesper|bell|candle|altar|hymn|brother|sister|mercy|monk|grace|silent|father|halo|lament/i.test(
-        u.name ?? "",
-      ),
-    )
-  ) {
-    choirLabelOk = true;
-  }
-  if (choirAlivePeak >= 2 || last?.mission?.phase === "extract") break;
-}
+const choirPeek = await peekInstanceHostiles({
+  missionId: "chapel_cleanse",
+  nameRe:
+    /choir|psalm|vesper|bell|candle|altar|hymn|brother|sister|mercy|monk|grace|silent|father|halo|lament/i,
+});
+const choirSeen = choirPeek.seen;
+const choirAlivePeak = choirPeek.alivePeak;
+const choirLabelOk = choirPeek.labelOk;
 if (!String(last?.you.insideBuildingId ?? "").startsWith("mi_")) {
   fail(`chapel expected mi_ layer, got ${last?.you.insideBuildingId}`);
 }
@@ -831,26 +892,7 @@ console.log(
   "phase",
   last?.mission?.phase,
 );
-ws.send(JSON.stringify({ type: "intent.select", unitId: null }));
-await wait(100);
-for (let i = 0; i < 280; i++) {
-  const foe = last?.units.find(
-    (u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && u.alive,
-  );
-  if (!foe) break;
-  ws.send(JSON.stringify({ type: "intent.fire", targetId: foe.id }));
-  await wait(65);
-  if (last?.mission?.phase === "extract") break;
-  if (last?.mission == null && last?.you.respawnIn != null) {
-    fail("chapel job failed (died) before extract");
-  }
-}
-for (let i = 0; i < 70; i++) {
-  if (last?.mission?.phase === "extract") break;
-  const foe = last?.units.find((u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && u.alive);
-  if (foe) ws.send(JSON.stringify({ type: "intent.fire", targetId: foe.id }));
-  await wait(100);
-}
+await fightInstanceHostiles({ maxTicks: 320, tickMs: 55, failLabel: "chapel job" });
 if (last?.mission?.phase !== "extract") {
   fail(`chapel expected extract, got ${last?.mission?.phase}`);
 }
@@ -865,37 +907,21 @@ if (last?.you.insideBuildingId) fail("should be outdoors after chapel extract");
 console.log("chapel_cleanse instance ok cash", last.you.cash);
 
 // --- M7+ instance: temple_sweat (gym / Iron Temple dual-use) ---
-await healCrew();
+await healCrew({ gear: true });
 await openRitaBoard();
 if (!last.jobBoard.offers.some((o) => o.id === "temple_sweat")) fail("no temple_sweat offer");
 cash0 = last.you.cash;
 rep0 = last.you.rep;
 ws.send(JSON.stringify({ type: "jobBoard.accept", missionId: "temple_sweat" }));
 // Iron epithets: Plate/Sweat/Spotter/Rep/Barbell/Chalk; boss "Iron Lead"
-let ironSeen = [];
-let ironAlivePeak = 0;
-let ironLabelOk = false;
-for (let i = 0; i < 30; i++) {
-  await wait(60);
-  if (!String(last?.you.insideBuildingId ?? "").startsWith("mi_")) continue;
-  if (last?.mission?.id !== "temple_sweat") continue;
-  const hostiles = (last?.units ?? []).filter(
-    (u) => u.kind === "ai_boss" || u.kind === "ai_goon",
-  );
-  const alive = hostiles.filter((u) => u.alive);
-  if (hostiles.length) ironSeen = hostiles;
-  if (alive.length > ironAlivePeak) ironAlivePeak = alive.length;
-  if (
-    hostiles.some((u) =>
-      /iron|plate|sweat|spotter|rep|barbell|chalk|bench|bulk|max|spot|pump|flex|steel|lift|grit|power/i.test(
-        u.name ?? "",
-      ),
-    )
-  ) {
-    ironLabelOk = true;
-  }
-  if (ironAlivePeak >= 2 || last?.mission?.phase === "extract") break;
-}
+const ironPeek = await peekInstanceHostiles({
+  missionId: "temple_sweat",
+  nameRe:
+    /iron|plate|sweat|spotter|rep|barbell|chalk|bench|bulk|max|spot|pump|flex|steel|lift|grit|power/i,
+});
+const ironSeen = ironPeek.seen;
+const ironAlivePeak = ironPeek.alivePeak;
+const ironLabelOk = ironPeek.labelOk;
 if (!String(last?.you.insideBuildingId ?? "").startsWith("mi_")) {
   fail(`temple expected mi_ layer, got ${last?.you.insideBuildingId}`);
 }
@@ -917,26 +943,7 @@ console.log(
   "phase",
   last?.mission?.phase,
 );
-ws.send(JSON.stringify({ type: "intent.select", unitId: null }));
-await wait(100);
-for (let i = 0; i < 280; i++) {
-  const foe = last?.units.find(
-    (u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && u.alive,
-  );
-  if (!foe) break;
-  ws.send(JSON.stringify({ type: "intent.fire", targetId: foe.id }));
-  await wait(65);
-  if (last?.mission?.phase === "extract") break;
-  if (last?.mission == null && last?.you.respawnIn != null) {
-    fail("temple job failed (died) before extract");
-  }
-}
-for (let i = 0; i < 70; i++) {
-  if (last?.mission?.phase === "extract") break;
-  const foe = last?.units.find((u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && u.alive);
-  if (foe) ws.send(JSON.stringify({ type: "intent.fire", targetId: foe.id }));
-  await wait(100);
-}
+await fightInstanceHostiles({ maxTicks: 320, tickMs: 55, failLabel: "temple job" });
 if (last?.mission?.phase !== "extract") {
   fail(`temple expected extract, got ${last?.mission?.phase}`);
 }

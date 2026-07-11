@@ -298,14 +298,15 @@ export const INSTANCE_GANG_FLAVORS: Record<
     goonEpithets: ["Ice", "Frost", "Shelf", "Chill", "Icicle"],
     firstNamesM: ["Frost", "Ice", "Cold", "Rime", "Polar"],
     firstNamesF: ["Chill", "Snow", "Frost", "Glaze", "Zero"],
+    // Bay-readable iron: pistols + blades. Uzi spray made Ice Box a wipe lottery.
     preferredWeapons: {
-      shooter: ["uzi", "pistol"],
+      shooter: ["pistol"],
       rusher: ["pipe", "switchblade"],
-      coward: ["pistol", "uzi"],
+      coward: ["pistol"],
     },
     preferredArmor: { boss: "leather", goon: "none" },
-    statBias: { aim: 1, guts: 1, speed: -1, maxHealth: 6 },
-    aggression: 0.9,
+    statBias: { aim: 1, speed: -1 },
+    aggression: 0.85,
   },
   Choir: {
     blurb: "after-hours pew squatters — quiet knives, loud hymns",
