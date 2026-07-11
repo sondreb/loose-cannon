@@ -1,6 +1,6 @@
 # Loose Cannon — Master Plan (Overseer Roadmap)
 
-Last updated: 2026-07-11 (cycle 47 — Mode A near-term complete; smoke targeting ops fix)
+Last updated: 2026-07-11 (cycle 48 — Mode A near-term complete; health-check stop)
 
 Track completion in `docs/STATUS.md`. This file is the **ordered backlog** for autonomous development. Prefer finishing higher milestones before lower ones unless a dependency forces otherwise.
 
