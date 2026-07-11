@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-11 (street contract pack)  
+Last updated: 2026-07-11 (rival kill pack)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -41,6 +41,7 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | **Third instance (M7)** | **Done** | Cold Storage template + `cold_storage` Ice Box Eviction |
 | **Fourth instance (M7+)** | **Done** | Church template + `chapel_cleanse` Chapel Cleanse |
 | **Street contract pack (M7+)** | **Done** | `toll_booth` / `keep_frozen` / `viper_nest` on orphan props + Vipers |
+| **Rival kill pack (M7+)** | **Done** | `lot_ride` / `silk_hit` / `chrome_out` — Lot / Slicks / Chrome bosses |
 | **Street hustles / POI (M7)** | **Done** | Phone/mail/hydrant/neon/cone hustles; fence NPC; prop `readyIn` |
 | **Rival gang variety (M7)** | **Done** | Per-gang names, gear, role bias, aggro/detect ranges; instance flavors |
 | **Music bed (M7)** | **Done** | Title / explore / action MP3 loops @ ~0.12; Settings mute; gesture unlock |
@@ -71,6 +72,9 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | `toll_booth` | Unofficial Toll | Outdoor | Hold `p2` ~15s | $430 + 4 rep |
 | `keep_frozen` | Keep Frozen | Outdoor | Crate `cr3` (84, 56) | $320 + 2 rep |
 | `viper_nest` | Viper Nest | Outdoor | Kill Neon Vipers boss | $650 + 7 rep |
+| `lot_ride` | Lot Ride | Outdoor | Kill Lot Lizards boss | $540 + 5 rep |
+| `silk_hit` | Silk Hit | Outdoor | Kill Southside Slicks boss | $560 + 6 rep |
+| `chrome_out` | Chrome Out | Outdoor | Kill Chrome Fists boss | $530 + 5 rep |
 
 ### Tutorial (live)
 
@@ -184,7 +188,7 @@ Server-authoritative; AI ignores ammo (always free fire). Players:
 
 ### M6 extra missions (live)
 
-- Board order: starter 4 + `still_not_guns`, `parking_tax`, `chop_shop_raid`, `rail_rats`, `pier_punch`, `chapel_cleanse`, street pack  
+- Board order: starter 4 + `still_not_guns`, `parking_tax`, `chop_shop_raid`, `rail_rats`, `pier_punch`, `chapel_cleanse`, street pack, rival kill pack  
 - Map: `cr2`, `p3`, `ai_rats`, garage / coldstore / church instance templates; pier job targets `ai_docks` ~(84, 52)  
 - Smoke: asserts M6 offers (incl. pier_punch); completes still_not_guns + full chop/cold/chapel extracts  
 
@@ -195,8 +199,17 @@ Server-authoritative; AI ignores ammo (always free fire). Players:
   - **`keep_frozen`** — smash docks crate `cr3` ~(84, 56); $320 + 2 rep  
   - **`viper_nest`** — kill Neon Vipers boss (`ai_neon` / Queen Fang) ~(92, 62); elite $650 + 7 rep  
 - Vince/Rita tip + phone tip line mention toll strip / freeze crate / vipers  
-- Smoke: asserts three offers; full complete for `keep_frozen`  
-- Still ambient only (no contract yet): `ai_south`, `ai_west`, `ai_lot`, `ai_church`, `ai_chrome`
+- Smoke: asserts three offers; full complete for `keep_frozen`
+
+### Rival kill pack (live)
+
+- Ambient war-zone gangs wired to Rita’s board (no new shells):  
+  - **`lot_ride`** — drop Lot Lizards Road Captain (`ai_lot`) ~(52, 76); $540 + 5 rep  
+  - **`silk_hit`** — drop Southside Slicks Silk Capo (`ai_south`) ~(78, 55); $560 + 6 rep  
+  - **`chrome_out`** — drop Chrome Fists Iron Hands (`ai_chrome`) ~(65, 48); $530 + 5 rep  
+- Vince/Rita tip + phone tip line mention lizards / slicks / chrome knuckles  
+- Smoke: asserts three offers on the board  
+- Still ambient only (no contract yet): `ai_west` (West End Wreckers), `ai_church` (Choir outdoor — chapel instance already covers Choir indoors)
 
 ### Mission feedback (live)
 
@@ -323,7 +336,7 @@ Shared `gangs.ts` profiles keyed by map spawn id — server applies on spawn/res
 
 ## Next for overseer (priority)
 
-1. Optional: more rival kill jobs (`ai_lot` / `ai_south` / `ai_chrome`) or Iron Temple dual-use instance  
+1. Optional: remaining ambient kills (`ai_west` Wreckers) or Iron Temple / gym dual-use instance  
 2. Feel bugs if critical player-facing issues appear  
 3. **Never** Mode B (Postgres/auth/k8s) unless human asks  
 

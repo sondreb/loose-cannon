@@ -1,6 +1,6 @@
 # Loose Cannon — Master Plan (Overseer Roadmap)
 
-Last updated: 2026-07-11 (street contract pack)
+Last updated: 2026-07-11 (rival kill pack)
 
 Track completion in `docs/STATUS.md`. This file is the **ordered backlog** for autonomous development. Prefer finishing higher milestones before lower ones unless a dependency forces otherwise.
 
@@ -102,6 +102,7 @@ Full design: [realms.md](./realms.md). Friend groups on one beta/in-memory serve
 - [x] Rival gang variety (names, gear, aggression)
 - [x] Optional music bed (loop files, low volume; title / explore / action)
 - [x] Street contract pack (orphan props + elite Vipers: toll_booth / keep_frozen / viper_nest)
+- [x] Rival kill pack (lot_ride / silk_hit / chrome_out — Lot Lizards, Southside Slicks, Chrome Fists)
 
 ### M8 — Explicitly deferred (do not start unless user asks)
 

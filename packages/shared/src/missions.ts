@@ -1,8 +1,8 @@
 /**
  * Starter job catalog (Mode A).
  * Outdoor jobs run on the hub map; instanced jobs use a private layer
- * (warehouse / garage / coldstore / church). Street pack adds hold / crate /
- * elite kill contracts on orphan props and rival gangs.
+ * (warehouse / garage / coldstore / church). Street pack + rival kill pack
+ * wire orphan props and ambient gangs to Rita's board.
  * Server is authoritative for progress and rewards.
  */
 
@@ -20,7 +20,10 @@ export type MissionId =
   | "chapel_cleanse"
   | "toll_booth"
   | "keep_frozen"
-  | "viper_nest";
+  | "viper_nest"
+  | "lot_ride"
+  | "silk_hit"
+  | "chrome_out";
 
 export type MissionObjectiveKind =
   | "hold"
@@ -377,6 +380,63 @@ export const MISSIONS: Record<MissionId, MissionDef> = {
     hintX: 92,
     hintY: 62,
   },
+  lot_ride: {
+    id: "lot_ride",
+    title: "Lot Ride",
+    blurb:
+      "Lot Lizards MC turned the far south lot into a private club. Drop their Road Captain. Chains optional. Exhaust not.",
+    difficulty: 2,
+    rewardCash: 540,
+    rewardRep: 5,
+    objectives: [
+      {
+        id: "drop_lot",
+        label: "Drop the Lot Lizards Road Captain",
+        kind: "kill_unit",
+        targetPosseId: "ai_lot",
+      },
+    ],
+    hintX: 52,
+    hintY: 76,
+  },
+  silk_hit: {
+    id: "silk_hit",
+    title: "Silk Hit",
+    blurb:
+      "Southside Slicks in tailored jackets and dirty money. Drop the Silk Capo east of the tracks. Keep the blood off the cufflinks — or don't.",
+    difficulty: 3,
+    rewardCash: 560,
+    rewardRep: 6,
+    objectives: [
+      {
+        id: "drop_slicks",
+        label: "Drop the Southside Slicks boss",
+        kind: "kill_unit",
+        targetPosseId: "ai_south",
+      },
+    ],
+    hintX: 78,
+    hintY: 55,
+  },
+  chrome_out: {
+    id: "chrome_out",
+    title: "Chrome Out",
+    blurb:
+      "Chrome Fists polish their knuckles on anyone slow enough. Drop Iron Hands near the fringe. Bring a pipe or a death wish.",
+    difficulty: 2,
+    rewardCash: 530,
+    rewardRep: 5,
+    objectives: [
+      {
+        id: "drop_chrome",
+        label: "Drop the Chrome Fists boss",
+        kind: "kill_unit",
+        targetPosseId: "ai_chrome",
+      },
+    ],
+    hintX: 65,
+    hintY: 48,
+  },
 };
 
 export const MISSION_ORDER: MissionId[] = [
@@ -394,6 +454,9 @@ export const MISSION_ORDER: MissionId[] = [
   "toll_booth",
   "keep_frozen",
   "viper_nest",
+  "lot_ride",
+  "silk_hit",
+  "chrome_out",
 ];
 
 export function listMissionOffers(opts?: {

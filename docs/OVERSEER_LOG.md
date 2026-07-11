@@ -19,6 +19,18 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-11 — cycle 28 (rival kill pack)
+- Focus: Optional M7+ content — outdoor kill contracts for underused rival gangs
+- Done:
+  - Mission `lot_ride` — kill Lot Lizards boss (`ai_lot` / Road Captain) ~(52, 76); $540 + 5 rep
+  - Mission `silk_hit` — kill Southside Slicks boss (`ai_south` / Silk Capo) ~(78, 55); $560 + 6 rep
+  - Mission `chrome_out` — kill Chrome Fists boss (`ai_chrome` / Iron Hands) ~(65, 48); $530 + 5 rep
+  - Board order append; Vince/Rita + phone tip lines mention lizards / slicks / chrome
+  - Smoke: asserts three rival kill offers
+- Verify: `npm run build` OK; `npm run smoke` → SMOKE_OK
+- Next: Optional `ai_west` kill or Iron Temple dual-use instance; Mode A checklist complete
+- Blocked: none
+
 ### 2026-07-11 — cycle 27 (street contract pack)
 - Focus: Optional M7+ content — outdoor contracts for orphan props + underused elite Vipers
 - Done:

@@ -503,6 +503,11 @@ for (const id of streetPackIds) {
   if (!last.jobBoard.offers.some((o) => o.id === id)) fail(`missing street pack offer ${id}`);
 }
 console.log("street contract pack offers present", streetPackIds.join(", "));
+const rivalKillIds = ["lot_ride", "silk_hit", "chrome_out"];
+for (const id of rivalKillIds) {
+  if (!last.jobBoard.offers.some((o) => o.id === id)) fail(`missing rival kill offer ${id}`);
+}
+console.log("rival kill pack offers present", rivalKillIds.join(", "));
 cash0 = last.you.cash;
 rep0 = last.you.rep;
 ws.send(JSON.stringify({ type: "jobBoard.accept", missionId: "still_not_guns" }));
