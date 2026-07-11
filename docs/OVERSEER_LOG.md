@@ -19,6 +19,17 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-11 — cycle 31 (Mode A backlog empty — stop)
+- Focus: Overseer select — next incomplete MASTER_PLAN item after M7 packs
+- Done:
+  - Confirmed M0–M7 all checked; no critical player-facing bugs in STATUS
+  - Working tree clean; no unfinished code from prior cycle
+  - Health check only (no greenfield — stop condition met)
+  - STATUS / MASTER_PLAN note: stop inventing until human re-opens backlog
+- Verify: `npm run build` OK; `npm run smoke` → SMOKE_OK (clean server)
+- Next: Human decision — playtest feedback, named polish, or reopen content backlog; never Mode B unless asked
+- Blocked: **No incomplete Mode A milestone.** Overseer should not invent parallel roadmap work.
+
 ### 2026-07-11 — cycle 30 (last_hymn outdoor Choir)
 - Focus: Optional M7+ content — outdoor kill contract for last ambient rival (`ai_church` / Choir of Pain)
 - Done:

@@ -1,6 +1,6 @@
 # Loose Cannon — Master Plan (Overseer Roadmap)
 
-Last updated: 2026-07-11 (last_hymn)
+Last updated: 2026-07-11 (cycle 31 — Mode A near-term complete)
 
 Track completion in `docs/STATUS.md`. This file is the **ordered backlog** for autonomous development. Prefer finishing higher milestones before lower ones unless a dependency forces otherwise.
 
@@ -132,6 +132,7 @@ Each overseer cycle implements **one** primary milestone item (or a tightly rela
 1. Feel bugs / polish from STATUS known debt when critical
 2. Optional content / presentation extras only if backlog re-opens
 3. Never M8 / Mode B unless human asks
+4. **If M0–M7 are all checked and no critical bugs:** health-check (build/smoke) once, log the stop, and **do not invent features**
 
 ### Guardrails
 
