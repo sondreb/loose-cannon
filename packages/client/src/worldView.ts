@@ -1211,7 +1211,7 @@ export class WorldView {
         } else {
           this.drawGroundTile(g, x, y, type);
         }
-        if (type === "road" || type === "sidewalk" || type === "parking") {
+        if (type === "road" || type === "sidewalk" || type === "parking" || type === "grass") {
           this.drawStreetDressing(g, x, y, type);
         }
       }
@@ -1251,9 +1251,10 @@ export class WorldView {
     else if (type === "gym") color = 0x3a3430;
     else if (type === "void") color = 0x0a0812;
     else if (type === "grass") {
+      // Vacant lot dirt with olive scrub — not flat purple void
       const t = asphaltNoise(wx * 0.8, wy * 0.8);
-      color = shade(lerpColor(0x181a20, 0x1e2028, t * 0.5), bright);
-      if (war > 0) color = lerpColor(color, 0x161218, war * 0.35);
+      color = shade(lerpColor(0x1a1e18, 0x24281e, t * 0.55), bright);
+      if (war > 0) color = lerpColor(color, 0x1a1410, war * 0.4);
     }
 
     // ——— ROAD: oversized diamond kills iso seams (continuous asphalt sheet) ———
@@ -1443,13 +1444,33 @@ export class WorldView {
         g.stroke({ color: 0xc0a840, width: 1.5, alpha: 0.28 });
       }
     } else if (type === "grass") {
-      if (asphaltGrit(wx, wy) > 0.7) {
-        g.ellipse(cx, cy + 1, 4, 1.8);
-        g.fill({ color: 0x12141a, alpha: 0.35 });
+      // Vacant lot: dirt + sparse dead grass tufts (combat-scene empty blocks)
+      const t = asphaltNoise(wx, wy);
+      if (t > 0.55) {
+        g.ellipse(cx + (t - 0.7) * 14, cy + 1, 5 + t * 3, 2.2);
+        g.fill({ color: 0x1a2218, alpha: 0.35 });
       }
-      if (seed % 8 === 0) {
-        g.circle(cx - 2, cy, 1.5);
-        g.fill({ color: 0x2a3830, alpha: 0.3 });
+      // Weed clumps
+      if (asphaltGrit(wx, wy) > 0.55) {
+        const gx = cx + (asphaltNoise(wx + 1, wy) - 0.5) * 12;
+        const gy = cy + (asphaltGrit(wx, wy + 1) - 0.5) * 6;
+        g.moveTo(gx, gy + 2);
+        g.lineTo(gx - 2, gy - 4);
+        g.lineTo(gx + 1, gy - 2);
+        g.lineTo(gx + 3, gy - 5);
+        g.lineTo(gx + 1, gy + 2);
+        g.fill({ color: 0x2a4030, alpha: 0.55 });
+      }
+      if (seed % 5 === 0) {
+        g.circle(cx - 3, cy, 1.4);
+        g.fill({ color: 0x3a5038, alpha: 0.4 });
+        g.circle(cx + 2, cy + 1, 1.1);
+        g.fill({ color: 0x2a3828, alpha: 0.35 });
+      }
+      // Dirt patch / bare earth
+      if (asphaltNoise(wx * 0.6, wy * 0.6) > 0.7) {
+        g.ellipse(cx, cy + 1, 8, 3.5);
+        g.fill({ color: 0x2a2418, alpha: 0.28 });
       }
     } else if (type === "door") {
       g.roundRect(sx - 5, sy + 2, 10, 12, 1);
@@ -1592,6 +1613,92 @@ export class WorldView {
       g.fill({ color: 0x3a3028, alpha: 0.45 });
       g.circle(sx - 3, sy + 1, 1);
       g.fill({ color: 0xc0a040, alpha: 0.4 });
+    }
+
+    // ——— Vacant lots (grass tiles): garbage, rubble, weeds, junk ———
+    if (type === "grass") {
+      // Scattered trash bags
+      if (seed % 13 === 2) {
+        g.ellipse(sx, sy + 3, 6, 2.5);
+        g.fill({ color: 0x000000, alpha: 0.28 });
+        g.ellipse(sx - 1, sy - 1, 5, 5);
+        g.fill({ color: 0x1a1a1a });
+        g.ellipse(sx + 3, sy + 1, 3.5, 3);
+        g.fill({ color: 0x222018 });
+      }
+      // Cardboard / crate junk
+      if (seed % 17 === 5) {
+        g.ellipse(sx, sy + 3, 5, 2);
+        g.fill({ color: 0x000000, alpha: 0.22 });
+        g.rect(sx - 6, sy - 3, 11, 7);
+        g.fill({ color: 0x5a4030, alpha: 0.85 });
+        g.rect(sx - 5, sy - 4, 9, 2);
+        g.fill({ color: 0x7a5840, alpha: 0.6 });
+      }
+      // Broken pallet / wood scraps
+      if (seed % 19 === 7) {
+        g.rect(sx - 8, sy, 16, 3);
+        g.fill({ color: 0x4a3828, alpha: 0.55 });
+        g.rect(sx - 6, sy - 2, 3, 7);
+        g.fill({ color: 0x3a2a1c, alpha: 0.5 });
+        g.rect(sx + 2, sy - 1, 3, 6);
+        g.fill({ color: 0x3a2a1c, alpha: 0.45 });
+      }
+      // Rubble pile / bricks
+      if (seed % 11 === 3) {
+        g.ellipse(sx, sy + 2, 8, 3.5);
+        g.fill({ color: 0x000000, alpha: 0.2 });
+        g.rect(sx - 5, sy - 2, 4, 3);
+        g.fill({ color: 0x5a4840, alpha: 0.7 });
+        g.rect(sx - 1, sy - 3, 5, 4);
+        g.fill({ color: 0x4a3a34, alpha: 0.65 });
+        g.rect(sx + 3, sy - 1, 3, 3);
+        g.fill({ color: 0x6a5850, alpha: 0.55 });
+      }
+      // Shopping cart corpse / metal junk
+      if (seed % 29 === 11) {
+        g.ellipse(sx, sy + 3, 7, 2.5);
+        g.fill({ color: 0x000000, alpha: 0.25 });
+        g.rect(sx - 6, sy - 6, 12, 8);
+        g.stroke({ color: 0x6a7080, width: 1.2, alpha: 0.55 });
+        g.circle(sx - 4, sy + 2, 2.5);
+        g.stroke({ color: 0x5a6070, width: 1, alpha: 0.5 });
+        g.circle(sx + 4, sy + 2, 2.5);
+        g.stroke({ color: 0x5a6070, width: 1, alpha: 0.5 });
+      }
+      // Tire
+      if (seed % 23 === 9) {
+        g.ellipse(sx, sy + 1, 7, 3.5);
+        g.fill({ color: 0x0a0a10, alpha: 0.75 });
+        g.ellipse(sx, sy + 1, 4, 2);
+        g.fill({ color: 0x1a1a22, alpha: 0.6 });
+      }
+      // Bottle / can glints
+      if (seed % 7 === 1) {
+        g.rect(sx + 2, sy - 2, 2, 5);
+        g.fill({ color: 0x40a060, alpha: 0.45 });
+        g.circle(sx - 3, sy + 1, 1.5);
+        g.fill({ color: 0xc0c8d0, alpha: 0.4 });
+      }
+      // Chain-link fence hint on lot edges (sparse posts)
+      if (seed % 31 === 0) {
+        g.rect(sx - 1, sy - 14, 2, 16);
+        g.fill({ color: 0x4a5060, alpha: 0.45 });
+        g.moveTo(sx - 6, sy - 12);
+        g.lineTo(sx + 6, sy - 8);
+        g.stroke({ color: 0x5a6070, width: 0.8, alpha: 0.3 });
+      }
+      // Dead bush / scrub
+      if (seed % 15 === 4) {
+        g.ellipse(sx, sy + 2, 6, 2.5);
+        g.fill({ color: 0x000000, alpha: 0.2 });
+        for (let i = 0; i < 5; i++) {
+          const a = -0.8 + i * 0.4;
+          g.moveTo(sx, sy);
+          g.lineTo(sx + Math.sin(a) * 8, sy - 6 - (i % 2) * 3);
+          g.stroke({ color: 0x3a3428, width: 1.2, alpha: 0.5 });
+        }
+      }
     }
   }
 
@@ -2664,28 +2771,39 @@ export class WorldView {
         (snap.you.insideBuildingId === this.hover!.id ? this.getInteriorBuilding(snap) : null);
       if (!b) return;
       const indoors = !!snap.you.insideBuildingId;
-      // Indoors: mark the interior EXIT tile. Outdoors: street door.
-      // (Using outdoor doorX while inside was the misaligned hover ring.)
-      const dx = indoors ? (b.exitX ?? b.doorX) : b.doorX;
-      const dy = indoors ? (b.exitY ?? b.doorY) : b.doorY;
-      const door = worldToScreen(dx + 0.5, dy + 0.5);
       const ringCol = indoors ? 0x70d090 : 0xffcc66;
-      g.circle(door.sx, door.sy + 4, 14 + Math.sin(this.time * 5) * 2);
-      g.stroke({ color: ringCol, width: 2, alpha: pulse });
-      g.circle(door.sx, door.sy + 4, 5);
-      g.fill({ color: ringCol, alpha: 0.22 });
-      if (!indoors && b.ex0 != null && b.ey0 != null && b.ex1 != null && b.ey1 != null) {
-        // Outdoor only: subtle façade cue
-        const cx = (b.ex0 + b.ex1 + 1) / 2;
-        const cy = (b.ey0 + b.ey1 + 1) / 2;
-        const c = worldToScreen(cx, cy);
-        const h = (b.stories ?? 2) * FLOOR_PX;
-        g.rect(c.sx - 18, c.sy - h - 8, 36, 6);
-        g.fill({ color: 0xffcc66, alpha: 0.35 * pulse });
+      // Ground marker: approach tile in front of door (sidewalk), not mid-façade
+      const ap = indoors
+        ? { x: (b.exitX ?? b.doorX) + 0.5, y: (b.exitY ?? b.doorY) + 0.5 }
+        : this.doorApproachWorld(b);
+      const ground = worldToScreen(ap.x, ap.y);
+      // Door visual anchor (matches drawIsoBuilding door)
+      const door = worldToScreen(b.doorX + 0.5, b.doorY + 0.5);
+      const r = 12 + Math.sin(this.time * 5) * 2;
+      // Iso diamond on the walkable tile (same language as move marker)
+      g.moveTo(ground.sx, ground.sy - r * 0.55);
+      g.lineTo(ground.sx + r, ground.sy);
+      g.lineTo(ground.sx, ground.sy + r * 0.55);
+      g.lineTo(ground.sx - r, ground.sy);
+      g.closePath();
+      g.stroke({ color: ringCol, width: 2.2, alpha: pulse });
+      g.moveTo(ground.sx, ground.sy - r * 0.28);
+      g.lineTo(ground.sx + r * 0.5, ground.sy);
+      g.lineTo(ground.sx, ground.sy + r * 0.28);
+      g.lineTo(ground.sx - r * 0.5, ground.sy);
+      g.closePath();
+      g.fill({ color: ringCol, alpha: 0.18 * pulse });
+      // Stem up to the door on the façade so the ring and door read as one target
+      if (!indoors) {
+        g.moveTo(ground.sx, ground.sy);
+        g.lineTo(door.sx, door.sy - 8);
+        g.stroke({ color: ringCol, width: 1.4, alpha: 0.35 * pulse });
+        g.circle(door.sx, door.sy - 8, 5);
+        g.stroke({ color: ringCol, width: 1.5, alpha: 0.55 * pulse });
       }
       this.showHoverTip(
-        door.sx,
-        door.sy - 40,
+        ground.sx,
+        ground.sy - 36,
         `${this.hover.label} — ${this.hover.action}`,
         ringCol,
       );
@@ -2697,6 +2815,99 @@ export class WorldView {
       g.stroke({ color: 0xa0e080, width: 2, alpha: pulse });
       this.showHoverTip(sx, sy - 28, `${this.hover.label} — ${this.hover.action}`, 0xa0e080);
     }
+  }
+
+  /**
+   * Walkable tile in front of an exterior door (where the enter ring should sit).
+   * Door tiles sit on the shell edge; ring on the wall looks mid-façade.
+   */
+  private doorApproachWorld(b: BuildingPublic): { x: number; y: number } {
+    const dx = b.doorX + 0.5;
+    const dy = b.doorY + 0.5;
+    const ex0 = b.ex0;
+    const ey0 = b.ey0;
+    const ex1 = b.ex1;
+    const ey1 = b.ey1;
+    if (ey1 != null && b.doorY >= ey1) return { x: dx, y: dy + 0.75 }; // south face → street south
+    if (ey0 != null && b.doorY <= ey0) return { x: dx, y: dy - 0.75 }; // north
+    if (ex1 != null && b.doorX >= ex1) return { x: dx + 0.75, y: dy }; // east
+    if (ex0 != null && b.doorX <= ex0) return { x: dx - 0.75, y: dy }; // west
+    return { x: dx, y: dy + 0.6 };
+  }
+
+  /**
+   * True when a unit is visually behind an outdoor building mass (iso occlusion).
+   * Used to switch full sprite → silhouette outline.
+   */
+  private unitOccludedByBuilding(ux: number, uy: number, snap: WorldSnapshot): boolean {
+    if (snap.you.insideBuildingId) return false;
+    const unitDepth = ux + uy;
+    const up = worldToScreen(ux, uy);
+    for (const b of snap.buildings) {
+      if (b.ex0 == null || b.ey0 == null || b.ex1 == null || b.ey1 == null) continue;
+      // Skip tiny / mission-only without exterior
+      const x0 = b.ex0;
+      const y0 = b.ey0;
+      const x1 = b.ex1 + 1;
+      const y1 = b.ey1 + 1;
+      // Must be near the footprint (including north/west “behind” band)
+      if (ux < x0 - 2.5 || ux > x1 + 1.5 || uy < y0 - 2.5 || uy > y1 + 1.5) continue;
+      // In front of SE corner → not occluded
+      const frontDepth = x1 + y1;
+      const backDepth = x0 + y0;
+      if (unitDepth >= frontDepth - 1.2) continue;
+      // Only occlude when unit is more “behind” than the building mid-depth
+      if (unitDepth > (backDepth + frontDepth) * 0.52) continue;
+
+      const h = Math.max(2, b.stories ?? 2) * FLOOR_PX + 10;
+      const c00 = worldToScreen(x0, y0);
+      const c10 = worldToScreen(x1, y0);
+      const c01 = worldToScreen(x0, y1);
+      const c11 = worldToScreen(x1, y1);
+      const minSx = Math.min(c00.sx, c10.sx, c01.sx, c11.sx) - 8;
+      const maxSx = Math.max(c00.sx, c10.sx, c01.sx, c11.sx) + 8;
+      const minSy = Math.min(c00.sy, c10.sy, c01.sy, c11.sy) - h - 12;
+      const maxSy = Math.max(c00.sy, c10.sy, c01.sy, c11.sy) + 16;
+      // Body from feet up ~40px
+      if (up.sx >= minSx && up.sx <= maxSx && up.sy >= minSy && up.sy - 36 <= maxSy) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Flat silhouette when unit is behind a building (readable through façades). */
+  private drawUnitSilhouette(
+    g: Graphics,
+    sx: number,
+    baseSy: number,
+    color: number,
+    bulk: number,
+    female: boolean,
+  ): void {
+    const bw = 12 + bulk * 1.5;
+    const bh = 18 + bulk;
+    const col = color;
+    // Soft ground contact
+    g.ellipse(sx, baseSy + 5, 9, 3.5);
+    g.fill({ color: col, alpha: 0.2 });
+    // Legs
+    g.rect(sx - 5, baseSy - 2, 3.5, 8);
+    g.fill({ color: col, alpha: 0.85 });
+    g.rect(sx + 1.5, baseSy - 2, 3.5, 8);
+    g.fill({ color: col, alpha: 0.85 });
+    // Torso
+    g.roundRect(sx - bw / 2, baseSy - bh - 2, bw, bh, 3);
+    g.fill({ color: col, alpha: 0.9 });
+    // Head
+    const hr = female ? 4.2 : 4.6;
+    g.circle(sx, baseSy - bh - 6, hr);
+    g.fill({ color: col, alpha: 0.92 });
+    // Bright outline so it pops through dark façades
+    g.roundRect(sx - bw / 2 - 1, baseSy - bh - 3, bw + 2, bh + 2, 3.5);
+    g.stroke({ color: 0xffffff, width: 1.4, alpha: 0.55 });
+    g.circle(sx, baseSy - bh - 6, hr + 1.2);
+    g.stroke({ color: 0xffffff, width: 1.3, alpha: 0.5 });
   }
 
   private showHoverTip(sx: number, sy: number, text: string, color: number): void {
@@ -2775,6 +2986,43 @@ export class WorldView {
       g.fill({ color: 0x6a1820, alpha: 0.65 });
       g.rect(sx - 8, baseSy - 2, 16, 4);
       g.fill({ color: shade(color, 0.5), alpha: 0.5 });
+      return;
+    }
+
+    // Behind a building: silhouette outline only (full art would draw through façades)
+    const occluded = this.unitOccludedByBuilding(vis.x, vis.y, snap);
+    if (occluded) {
+      const hideSpr = this.unitSprites.get(u.id);
+      if (hideSpr) hideSpr.visible = false;
+      const silCol = mine
+        ? 0xffe080
+        : isNpc
+          ? 0x60d0ff
+          : posse?.hostile
+            ? 0xff6060
+            : 0xc0c0d0;
+      this.drawUnitSilhouette(g, sx, baseSy, silCol, bulk, female);
+      // Name only — keep readable through walls
+      let lab = this.labelPool.get(u.id);
+      if (!lab) {
+        lab = new Text({
+          text: u.name,
+          style: {
+            fontSize: 11,
+            fill: silCol,
+            fontWeight: "700",
+            fontFamily: "system-ui,sans-serif",
+          },
+        });
+        this.labelPool.set(u.id, lab);
+        this.labels.addChild(lab);
+      }
+      lab.visible = true;
+      lab.text = u.name;
+      lab.style.fill = silCol;
+      lab.x = sx - lab.width / 2;
+      lab.y = baseSy - 36;
+      used.add(u.id);
       return;
     }
 
