@@ -74,6 +74,12 @@ const settingsVoice = $("settingsVoice") as HTMLInputElement;
 const settingsRealmLabel = $("settingsRealmLabel");
 const settingsInviteBtn = $("settingsInviteBtn");
 const settingsHowToBtn = $("settingsHowToBtn");
+const settingsFullscreenBtn = document.getElementById(
+  "settingsFullscreenBtn",
+) as HTMLButtonElement | null;
+const loginFullscreenBtn = document.getElementById(
+  "loginFullscreenBtn",
+) as HTMLButtonElement | null;
 const canvas = $("canvas") as HTMLCanvasElement;
 const posseList = $("posseList");
 const cashRep = $("cashRep");
@@ -234,9 +240,11 @@ const respawnOverlay = $("respawnOverlay");
 const respawnCount = $("respawnCount");
 const notifyToasts = $("notifyToasts");
 const mobileControls = document.getElementById("mobileControls") as HTMLElement | null;
-const mobInteract = document.getElementById("mobInteract") as HTMLButtonElement | null;
-const mobAttack = document.getElementById("mobAttack") as HTMLButtonElement | null;
-const mobStop = document.getElementById("mobStop") as HTMLButtonElement | null;
+const mobMode = document.getElementById("mobMode") as HTMLButtonElement | null;
+const mobModeIco = document.getElementById("mobModeIco");
+const mobModeLab = document.getElementById("mobModeLab");
+const mobJoystick = document.getElementById("mobJoystick") as HTMLElement | null;
+const mobJoyKnob = document.getElementById("mobJoyKnob") as HTMLElement | null;
 
 const possePanel = document.getElementById("possePanel") as HTMLElement | null;
 const possePanelToggle = document.getElementById("possePanelToggle") as HTMLButtonElement | null;
@@ -269,30 +277,29 @@ const DIR_RESEND_MS = 50;
 /** After click-to-interact: walk here then send intent.interact (optional NPC target) */
 let pendingInteract: { x: number; y: number; targetUnitId?: string } | null = null;
 
-/** Mobile: next map tap is attack-move instead of walk */
+/**
+ * Mobile mode toggle:
+ *  false = Use (tap move / talk / doors)
+ *  true  = Attack (every tap fires / attack-moves)
+ */
 let mobileAttackMode = false;
+/** Canvas one-finger gesture (tap only — move uses dedicated joystick) */
 let touchStart: {
   x: number;
   y: number;
   t: number;
   id: number;
   cancelled: boolean;
-  longFired: boolean;
-  /** Hold-drag virtual stick (intent.dir) */
-  stick: boolean;
 } | null = null;
 /** Two-finger pinch zoom */
 let pinchStartDist = 0;
 let pinchStartZoom = 1;
-let longPressTimer: number | null = null;
-let longPressRingTimer: number | null = null;
-let longPressRing: HTMLDivElement | null = null;
-const LONG_PRESS_MS = 380;
-const LONG_PRESS_RING_DELAY_MS = 90;
 /** Fat-finger tolerance — slightly larger than desktop click */
 const TAP_SLOP_PX = 22;
-/** Drag past this → virtual stick steer instead of long-press attack */
-const STICK_ACTIVATE_PX = 28;
+/** Dedicated on-screen joystick state */
+let joyPointerId: number | null = null;
+let joyActive = false;
+const JOY_MAX_PX = 52;
 /** Event log pinned open (tap on mobile / click desktop) */
 let eventLogPinned = false;
 
@@ -331,10 +338,163 @@ function toggleChat(): void {
 
 function setMobileAttackMode(on: boolean): void {
   mobileAttackMode = on;
-  if (mobAttack) {
-    mobAttack.setAttribute("aria-pressed", on ? "true" : "false");
-    mobAttack.classList.toggle("active", on);
+  document.body.classList.toggle("mobile-attack", on);
+  if (mobMode) {
+    mobMode.setAttribute("aria-pressed", on ? "true" : "false");
+    mobMode.classList.toggle("attack-on", on);
+    mobMode.classList.toggle("active", on);
   }
+  if (mobModeIco) mobModeIco.textContent = on ? "⚔" : "✋";
+  if (mobModeLab) mobModeLab.textContent = on ? "Attack" : "Use";
+}
+
+function resetJoyKnob(): void {
+  if (mobJoyKnob) mobJoyKnob.style.transform = "translate(0px, 0px)";
+  mobJoystick?.classList.remove("active");
+}
+
+function sendJoyDir(dx: number, dy: number): void {
+  if (!socket) return;
+  // Screen drag → world dir (same iso mapping as WASD)
+  const worldDx = dx + dy;
+  const worldDy = dy - dx;
+  const n = Math.hypot(worldDx, worldDy) || 1;
+  socket.send({ type: "intent.dir", dx: worldDx / n, dy: worldDy / n });
+  keyMoving = true;
+  pendingInteract = null;
+  view?.clearLocalPrediction();
+}
+
+function stopJoyMove(): void {
+  joyActive = false;
+  joyPointerId = null;
+  resetJoyKnob();
+  if (!keyMoving) return;
+  keyMoving = false;
+  socket?.send({ type: "intent.dir", dx: 0, dy: 0 });
+  socket?.send({ type: "intent.stop" });
+  view?.clearLocalPrediction();
+}
+
+function bindMobileJoystick(): void {
+  if (!mobJoystick) return;
+  const base = mobJoystick.querySelector(".mob-joy-base") as HTMLElement | null;
+  if (!base) return;
+
+  const updateFromClient = (clientX: number, clientY: number) => {
+    const rect = base.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    let dx = clientX - cx;
+    let dy = clientY - cy;
+    const len = Math.hypot(dx, dy);
+    const maxR = Math.min(JOY_MAX_PX, rect.width * 0.38);
+    if (len > maxR && len > 0.001) {
+      dx = (dx / len) * maxR;
+      dy = (dy / len) * maxR;
+    }
+    if (mobJoyKnob) mobJoyKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+    mobJoystick.classList.add("active");
+    if (len < 8) {
+      // Dead zone — hold still
+      if (keyMoving) {
+        keyMoving = false;
+        socket?.send({ type: "intent.dir", dx: 0, dy: 0 });
+      }
+      return;
+    }
+    sendJoyDir(dx / maxR, dy / maxR);
+  };
+
+  const onDown = (e: PointerEvent) => {
+    if (joyPointerId != null) return;
+    e.preventDefault();
+    e.stopPropagation();
+    joyPointerId = e.pointerId;
+    joyActive = true;
+    try {
+      base.setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    updateFromClient(e.clientX, e.clientY);
+  };
+  const onMove = (e: PointerEvent) => {
+    if (!joyActive || e.pointerId !== joyPointerId) return;
+    e.preventDefault();
+    updateFromClient(e.clientX, e.clientY);
+  };
+  const onUp = (e: PointerEvent) => {
+    if (e.pointerId !== joyPointerId) return;
+    e.preventDefault();
+    stopJoyMove();
+  };
+
+  base.addEventListener("pointerdown", onDown);
+  base.addEventListener("pointermove", onMove);
+  base.addEventListener("pointerup", onUp);
+  base.addEventListener("pointercancel", onUp);
+  base.addEventListener("lostpointercapture", () => {
+    if (joyActive) stopJoyMove();
+  });
+}
+
+/** Fullscreen helpers (splash + settings). */
+function isFullscreenActive(): boolean {
+  const doc = document as Document & {
+    webkitFullscreenElement?: Element | null;
+  };
+  return !!(document.fullscreenElement || doc.webkitFullscreenElement);
+}
+
+function syncFullscreenButtons(): void {
+  const on = isFullscreenActive();
+  const label = on ? "Exit Fullscreen" : "Fullscreen";
+  const settingsLabel = on ? "EXIT FULLSCREEN" : "ENTER FULLSCREEN";
+  if (loginFullscreenBtn) {
+    loginFullscreenBtn.textContent = label;
+    loginFullscreenBtn.setAttribute("aria-pressed", on ? "true" : "false");
+  }
+  if (settingsFullscreenBtn) {
+    settingsFullscreenBtn.textContent = settingsLabel;
+    settingsFullscreenBtn.setAttribute("aria-pressed", on ? "true" : "false");
+  }
+}
+
+async function toggleFullscreen(): Promise<void> {
+  const el = document.documentElement as HTMLElement & {
+    webkitRequestFullscreen?: () => void;
+  };
+  const doc = document as Document & {
+    webkitExitFullscreen?: () => void;
+    webkitFullscreenElement?: Element | null;
+  };
+  try {
+    if (isFullscreenActive()) {
+      if (document.exitFullscreen) await document.exitFullscreen();
+      else doc.webkitExitFullscreen?.();
+    } else {
+      if (el.requestFullscreen) await el.requestFullscreen();
+      else el.webkitRequestFullscreen?.();
+    }
+  } catch {
+    // iOS Safari: prefer install / Add to Home Screen for true fullscreen
+    pushEvent("Fullscreen blocked — install the app or use Add to Home Screen.");
+  }
+  // fullscreenchange may lag; sync after a tick too
+  window.setTimeout(syncFullscreenButtons, 80);
+  syncFullscreenButtons();
+}
+
+function registerServiceWorker(): void {
+  if (!("serviceWorker" in navigator)) return;
+  // Only secure contexts (localhost / https)
+  if (!window.isSecureContext) return;
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {
+      /* ignore — optional installability */
+    });
+  });
 }
 
 function fireAttackAtClient(clientX: number, clientY: number): void {
@@ -369,7 +529,7 @@ function fireAttackAtClient(clientX: number, clientY: number): void {
     }
     socket.send({ type: "intent.fire", x: w.x, y: w.y });
   }
-  setMobileAttackMode(false);
+  // Stay in attack mode — user toggles off when done
 }
 
 function handlePrimaryPointer(clientX: number, clientY: number, asAttack: boolean): void {
@@ -419,8 +579,8 @@ function handlePrimaryPointer(clientX: number, clientY: number, asAttack: boolea
       return;
     }
     if (u && u.posseId !== s.you.posseId) {
-      // Tap enemy on mobile = attack them
-      if (isCoarsePointer()) {
+      // Mobile: only shoot when Attack mode is on
+      if (isCoarsePointer() && mobileAttackMode) {
         fireAttackAtClient(clientX, clientY);
       }
       return;
@@ -579,57 +739,6 @@ function notifyHoldMs(kind: string, upgrade = false): number {
   if (kind === "loot") return upgrade ? 9000 : 7000;
   if (kind === "mission") return 7500;
   return 4500;
-}
-
-function ensureLongPressRing(): HTMLDivElement {
-  if (longPressRing) return longPressRing;
-  const el = document.createElement("div");
-  el.id = "longPressRing";
-  el.className = "long-press-ring hidden";
-  el.setAttribute("aria-hidden", "true");
-  const game = document.getElementById("game");
-  (game ?? document.body).appendChild(el);
-  longPressRing = el;
-  return el;
-}
-
-function showLongPressRing(clientX: number, clientY: number): void {
-  const el = ensureLongPressRing();
-  const game = document.getElementById("game");
-  const rect = game?.getBoundingClientRect();
-  const x = rect ? clientX - rect.left : clientX;
-  const y = rect ? clientY - rect.top : clientY;
-  el.style.left = `${x}px`;
-  el.style.top = `${y}px`;
-  el.classList.remove("hidden", "armed");
-  // restart CSS animation
-  el.style.animation = "none";
-  void el.offsetWidth;
-  el.style.animation = "";
-  el.classList.add("charging");
-}
-
-function armLongPressRing(): void {
-  longPressRing?.classList.add("armed");
-  longPressRing?.classList.remove("charging");
-}
-
-function hideLongPressRing(): void {
-  if (!longPressRing) return;
-  longPressRing.classList.add("hidden");
-  longPressRing.classList.remove("charging", "armed");
-}
-
-function clearLongPressTimer(): void {
-  if (longPressTimer != null) {
-    window.clearTimeout(longPressTimer);
-    longPressTimer = null;
-  }
-  if (longPressRingTimer != null) {
-    window.clearTimeout(longPressRingTimer);
-    longPressRingTimer = null;
-  }
-  hideLongPressRing();
 }
 
 function showNotify(msg: Extract<ServerMessage, { type: "notify" }>): void {
@@ -2773,18 +2882,15 @@ function bindInput(): void {
     }
   });
 
-  // Touch:
-  //  - tap = move / interact / select
-  //  - hold-drag = virtual stick (intent.dir)
-  //  - long-press no drag = fire
+  // Touch on map:
+  //  - tap = Use (move/talk) or Attack (fire) depending on mode toggle
   //  - pinch = zoom
+  //  - movement = dedicated joystick (not canvas drag)
   canvas.addEventListener(
     "touchstart",
     (e) => {
       lastTouchAt = performance.now();
       if (e.touches.length === 2) {
-        // Pinch start
-        clearLongPressTimer();
         touchStart = null;
         const a = e.touches[0]!;
         const b = e.touches[1]!;
@@ -2796,7 +2902,6 @@ function bindInput(): void {
         touchStart = null;
         return;
       }
-      clearLongPressTimer();
       pinchStartDist = 0;
       const t = e.touches[0]!;
       touchStart = {
@@ -2805,21 +2910,8 @@ function bindInput(): void {
         t: performance.now(),
         id: t.identifier,
         cancelled: false,
-        longFired: false,
-        stick: false,
       };
       if (view) view.updateHover(t.clientX, t.clientY);
-      longPressRingTimer = window.setTimeout(() => {
-        if (!touchStart || touchStart.cancelled || touchStart.longFired || touchStart.stick) return;
-        showLongPressRing(touchStart.x, touchStart.y);
-      }, LONG_PRESS_RING_DELAY_MS);
-      longPressTimer = window.setTimeout(() => {
-        if (!touchStart || touchStart.cancelled || touchStart.longFired || touchStart.stick) return;
-        touchStart.longFired = true;
-        armLongPressRing();
-        handlePrimaryPointer(touchStart.x, touchStart.y, true);
-        window.setTimeout(() => hideLongPressRing(), 140);
-      }, LONG_PRESS_MS);
     },
     { passive: true },
   );
@@ -2827,10 +2919,8 @@ function bindInput(): void {
   canvas.addEventListener(
     "touchmove",
     (e) => {
-      // Pinch zoom
       if (e.touches.length === 2 && view) {
         e.preventDefault();
-        clearLongPressTimer();
         touchStart = null;
         const a = e.touches[0]!;
         const b = e.touches[1]!;
@@ -2841,41 +2931,10 @@ function bindInput(): void {
         }
         return;
       }
-      if (!touchStart || e.touches.length !== 1 || !socket) return;
+      if (!touchStart || e.touches.length !== 1) return;
       const t = e.touches[0]!;
-      const dx = t.clientX - touchStart.x;
-      const dy = t.clientY - touchStart.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist > STICK_ACTIVATE_PX) {
-        // Virtual stick: hold-drag to walk
-        if (!touchStart.stick) {
-          touchStart.stick = true;
-          touchStart.cancelled = true;
-          clearLongPressTimer();
-          hideLongPressRing();
-          pendingInteract = null;
-          view?.clearLocalPrediction();
-        }
-        // Screen → world dir: up is north (−y), right is +x-ish in iso
-        // Approximate with screen axes: dx→world mix, dy→world mix
-        let wdx = dx;
-        let wdy = dy;
-        // Normalize
-        const len = Math.hypot(wdx, wdy) || 1;
-        wdx /= len;
-        wdy /= len;
-        // Convert screen drag to world: iso screen x grows with (wx-wy), y with (wx+wy)
-        // Inverse: wx ∝ sx/TILE_W + sy/TILE_H, wy ∝ sy/TILE_H - sx/TILE_W
-        const worldDx = wdx + wdy;
-        const worldDy = wdy - wdx;
-        const n = Math.hypot(worldDx, worldDy) || 1;
-        socket.send({ type: "intent.dir", dx: worldDx / n, dy: worldDy / n });
-        keyMoving = true;
-        e.preventDefault();
-      } else if (dist > TAP_SLOP_PX) {
-        touchStart.cancelled = true;
-        clearLongPressTimer();
-      }
+      const dist = Math.hypot(t.clientX - touchStart.x, t.clientY - touchStart.y);
+      if (dist > TAP_SLOP_PX) touchStart.cancelled = true;
     },
     { passive: false },
   );
@@ -2892,30 +2951,14 @@ function bindInput(): void {
       const t =
         Array.from(e.changedTouches).find((c) => c.identifier === start.id) ??
         e.changedTouches[0];
-      clearLongPressTimer();
       if (!t) {
         touchStart = null;
         return;
       }
       e.preventDefault();
-      // End stick → stop walking
-      if (start.stick) {
-        keyMoving = false;
-        socket?.send({ type: "intent.dir", dx: 0, dy: 0 });
-        socket?.send({ type: "intent.stop" });
-        view?.clearLocalPrediction();
-        touchStart = null;
-        return;
-      }
       const dist = Math.hypot(t.clientX - start.x, t.clientY - start.y);
-      if (start.longFired) {
-        touchStart = null;
-        return;
-      }
       if (!start.cancelled && dist < TAP_SLOP_PX * 2.5) {
-        handlePrimaryPointer(t.clientX, t.clientY, false);
-      } else if (dist < TAP_SLOP_PX * 1.2) {
-        handlePrimaryPointer(t.clientX, t.clientY, false);
+        handlePrimaryPointer(t.clientX, t.clientY, mobileAttackMode);
       }
       touchStart = null;
     },
@@ -2923,36 +2966,24 @@ function bindInput(): void {
   );
 
   canvas.addEventListener("touchcancel", () => {
-    clearLongPressTimer();
-    if (touchStart?.stick) {
-      keyMoving = false;
-      socket?.send({ type: "intent.dir", dx: 0, dy: 0 });
-      socket?.send({ type: "intent.stop" });
-    }
     touchStart = null;
     pinchStartDist = 0;
   });
 
-  // Mobile chrome buttons
-  mobInteract?.addEventListener("click", (e) => {
-    e.preventDefault();
-    fireInteract();
-  });
-  mobAttack?.addEventListener("click", (e) => {
+  // Dedicated virtual joystick (hold + drag → intent.dir)
+  bindMobileJoystick();
+
+  // Mobile chrome: Chat · Use/Attack toggle · Settings
+  mobMode?.addEventListener("click", (e) => {
     e.preventDefault();
     setMobileAttackMode(!mobileAttackMode);
-    if (mobileAttackMode) pushEvent("Attack mode — tap a target or the ground.");
+    pushEvent(
+      mobileAttackMode
+        ? "Attack mode — every tap shoots. Joystick to move."
+        : "Use mode — tap to walk, talk, open doors.",
+    );
   });
-  mobStop?.addEventListener("click", (e) => {
-    e.preventDefault();
-    pendingInteract = null;
-    keys.up = keys.down = keys.left = keys.right = false;
-    keyMoving = false;
-    setMobileAttackMode(false);
-    view?.clearLocalPrediction();
-    socket?.send({ type: "intent.dir", dx: 0, dy: 0 });
-    socket?.send({ type: "intent.stop" });
-  });
+  setMobileAttackMode(false);
   mobSettings?.addEventListener("click", (e) => {
     e.preventDefault();
     openSettings();
@@ -2989,6 +3020,8 @@ function bindInput(): void {
   window.addEventListener("touchstart", unlockAudio, { passive: true });
 
   window.addEventListener("keydown", (e) => {
+    // How-to-play guide owns arrows / Esc / Space while open
+    if (isOnboardOpen()) return;
     if (chatFocused) {
       if (e.key === "Escape") {
         chatInput.blur();
@@ -3338,6 +3371,9 @@ function bindInput(): void {
     closeSettings();
     openOnboard(false);
   });
+  settingsFullscreenBtn?.addEventListener("click", () => {
+    void toggleFullscreen();
+  });
 
   window.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
@@ -3436,22 +3472,51 @@ let onboardStep = 0;
 let onboardThenJoin = false;
 
 const onboardEl = document.getElementById("onboard") as HTMLElement | null;
+const onboardCard = document.getElementById("onboardCard") as HTMLElement | null;
 const onboardTitle = document.getElementById("onboardTitle");
 const onboardText = document.getElementById("onboardText");
 const onboardBullets = document.getElementById("onboardBullets");
+const onboardArtWrap = document.getElementById("onboardArtWrap") as HTMLElement | null;
 const onboardArt = document.getElementById("onboardArt") as HTMLImageElement | null;
+const onboardArtBg = document.getElementById("onboardArtBg") as HTMLImageElement | null;
 const onboardProgress = document.getElementById("onboardProgress");
-const onboardNext = document.getElementById("onboardNext");
-const onboardBack = document.getElementById("onboardBack");
-const onboardSkip = document.getElementById("onboardSkip");
+const onboardNext = document.getElementById("onboardNext") as HTMLButtonElement | null;
+const onboardBack = document.getElementById("onboardBack") as HTMLButtonElement | null;
+const onboardSkip = document.getElementById("onboardSkip") as HTMLButtonElement | null;
 const howToPlayBtn = document.getElementById("howToPlayBtn");
+
+/** Tag art wrap for optional CSS hooks (layout no longer depends on it). */
+function syncOnboardArtAspect(img: HTMLImageElement): void {
+  if (!onboardArtWrap) return;
+  const w = img.naturalWidth;
+  const h = img.naturalHeight;
+  if (!w || !h) {
+    onboardArtWrap.dataset.ar = "wide";
+    return;
+  }
+  const ar = w / h;
+  onboardArtWrap.dataset.ar = ar >= 1.25 ? "wide" : ar <= 0.9 ? "tall" : "square";
+}
+
+function setOnboardArt(src: string): void {
+  if (onboardArtBg) onboardArtBg.src = src;
+  if (!onboardArt) return;
+  const apply = () => syncOnboardArtAspect(onboardArt!);
+  onboardArt.onload = apply;
+  onboardArt.src = src;
+  if (onboardArt.complete && onboardArt.naturalWidth > 0) apply();
+}
+
+function isOnboardOpen(): boolean {
+  return !!onboardEl && !onboardEl.classList.contains("hidden");
+}
 
 function renderOnboard(): void {
   const step = ONBOARD_STEPS[onboardStep];
   if (!step || !onboardEl) return;
   if (onboardTitle) onboardTitle.textContent = step.title;
   if (onboardText) onboardText.textContent = step.text;
-  if (onboardArt) onboardArt.src = step.art;
+  setOnboardArt(step.art);
   if (onboardBullets) {
     onboardBullets.innerHTML = step.bullets.map((b) => `<li>${escapeHtml(b)}</li>`).join("");
   }
@@ -3461,8 +3526,7 @@ function renderOnboard(): void {
     ).join("");
   }
   if (onboardBack) {
-    onboardBack.style.visibility = onboardStep === 0 ? "hidden" : "visible";
-    onboardBack.toggleAttribute("disabled", onboardStep === 0);
+    onboardBack.disabled = onboardStep === 0;
   }
   if (onboardNext) {
     onboardNext.textContent = onboardStep >= ONBOARD_STEPS.length - 1 ? "Let's go" : "Next";
@@ -3478,6 +3542,7 @@ function openOnboard(thenJoin: boolean): void {
 }
 
 function closeOnboard(markDone: boolean): void {
+  if (!isOnboardOpen()) return;
   onboardEl?.classList.add("hidden");
   if (markDone) {
     try {
@@ -3498,6 +3563,13 @@ function finishOnboardStep(): void {
     return;
   }
   onboardStep += 1;
+  renderOnboard();
+  sfx.play("ui");
+}
+
+function onboardGoBack(): void {
+  if (onboardStep <= 0) return;
+  onboardStep -= 1;
   renderOnboard();
   sfx.play("ui");
 }
@@ -3525,14 +3597,66 @@ howToPlayBtn?.addEventListener("click", () => {
 });
 
 onboardNext?.addEventListener("click", () => finishOnboardStep());
-onboardBack?.addEventListener("click", () => {
-  if (onboardStep > 0) {
-    onboardStep -= 1;
-    renderOnboard();
-    sfx.play("ui");
+onboardBack?.addEventListener("click", () => onboardGoBack());
+onboardSkip?.addEventListener("click", () => closeOnboard(true));
+
+// Desktop: arrow keys / space / enter / escape while guide is open
+window.addEventListener("keydown", (e) => {
+  if (!isOnboardOpen()) return;
+  const t = e.target as HTMLElement | null;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+
+  if (e.key === "ArrowRight" || e.key === "ArrowDown" || e.key === " " || e.key === "Enter") {
+    e.preventDefault();
+    finishOnboardStep();
+    return;
+  }
+  if (e.key === "ArrowLeft" || e.key === "ArrowUp" || e.key === "Backspace") {
+    e.preventDefault();
+    onboardGoBack();
+    return;
+  }
+  if (e.key === "Escape") {
+    e.preventDefault();
+    closeOnboard(true);
   }
 });
-onboardSkip?.addEventListener("click", () => closeOnboard(true));
+
+// Mobile: horizontal swipe on the guide card
+{
+  let touchStartX = 0;
+  let touchStartY = 0;
+  let tracking = false;
+  const SWIPE_MIN = 48;
+
+  const onTouchStart = (e: TouchEvent) => {
+    if (!isOnboardOpen() || e.touches.length !== 1) return;
+    const t = e.touches[0]!;
+    touchStartX = t.clientX;
+    touchStartY = t.clientY;
+    tracking = true;
+  };
+  const onTouchEnd = (e: TouchEvent) => {
+    if (!tracking || !isOnboardOpen()) return;
+    tracking = false;
+    const t = e.changedTouches[0];
+    if (!t) return;
+    const dx = t.clientX - touchStartX;
+    const dy = t.clientY - touchStartY;
+    if (Math.abs(dx) < SWIPE_MIN || Math.abs(dx) < Math.abs(dy) * 1.15) return;
+    // Swipe left → next, swipe right → back
+    if (dx < 0) finishOnboardStep();
+    else onboardGoBack();
+  };
+  const onTouchCancel = () => {
+    tracking = false;
+  };
+
+  const swipeTarget = onboardCard ?? onboardEl;
+  swipeTarget?.addEventListener("touchstart", onTouchStart, { passive: true });
+  swipeTarget?.addEventListener("touchend", onTouchEnd, { passive: true });
+  swipeTarget?.addEventListener("touchcancel", onTouchCancel, { passive: true });
+}
 
 nameInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") joinBtn.click();
@@ -3546,6 +3670,15 @@ realmInviteBtn?.addEventListener("click", () => {
 
 // Audio prefs before first play
 loadAudioPrefs();
+
+// PWA installability + fullscreen chrome
+registerServiceWorker();
+syncFullscreenButtons();
+document.addEventListener("fullscreenchange", syncFullscreenButtons);
+document.addEventListener("webkitfullscreenchange", syncFullscreenButtons as EventListener);
+loginFullscreenBtn?.addEventListener("click", () => {
+  void toggleFullscreen();
+});
 
 // Title music on splash: start as soon as the browser allows (first click/key/tap on login)
 const unlockTitleMusic = () => {

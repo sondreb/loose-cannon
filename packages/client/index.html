@@ -9,6 +9,11 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="theme-color" content="#0c0a14" />
+    <meta name="application-name" content="Loose Cannon" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
     <title>Loose Cannon (18+)</title>
     <meta
       name="description"
@@ -54,32 +59,34 @@
           </label>
           <button id="joinBtn" type="button" class="login-cta">Hit the Streets</button>
           <button id="howToPlayBtn" type="button" class="login-secondary">How to Play</button>
+          <button id="loginFullscreenBtn" type="button" class="login-secondary login-fs-btn">
+            Fullscreen
+          </button>
           <p id="loginError" class="error"></p>
           <div class="login-hints glass-inset">
             <div class="hint-desktop"><kbd>WASD</kbd> move · <kbd>RMB</kbd> attack-move</div>
             <div class="hint-desktop"><kbd>E</kbd> interact · <kbd>1–4</kbd> crew · <kbd>5–0</kbd> weapons</div>
-            <div class="hint-mobile">Tap to move · long-press to attack · use bottom buttons</div>
+            <div class="hint-mobile">Joystick to move · tap to Use or Attack · pinch zoom</div>
           </div>
         </div>
       </div>
 
       <!-- First-run / How to Play wizard -->
       <div id="onboard" class="hidden" role="dialog" aria-modal="true" aria-labelledby="onboardTitle">
-        <div class="onboard-card glass">
-          <div class="onboard-art-wrap">
-            <img id="onboardArt" class="onboard-art" src="/art/splash.jpg" alt="" />
+        <div class="onboard-card glass" id="onboardCard">
+          <div class="onboard-art-wrap" id="onboardArtWrap" data-ar="wide">
+            <img id="onboardArtBg" class="onboard-art-bg" src="/art/splash.jpg" alt="" aria-hidden="true" />
+            <img id="onboardArt" class="onboard-art" src="/art/splash.jpg" alt="" decoding="async" />
           </div>
-          <div class="onboard-body">
-            <div class="onboard-progress" id="onboardProgress"></div>
+          <div class="onboard-panel">
+            <div class="onboard-progress" id="onboardProgress" aria-hidden="true"></div>
             <h2 id="onboardTitle">Welcome to Skidrow</h2>
             <p id="onboardText" class="onboard-text"></p>
             <ul id="onboardBullets" class="onboard-bullets"></ul>
-            <div class="onboard-actions">
-              <button type="button" id="onboardSkip" class="ghost">Skip</button>
-              <div class="onboard-nav">
-                <button type="button" id="onboardBack" class="login-secondary onboard-nav-btn">Back</button>
-                <button type="button" id="onboardNext" class="login-cta onboard-nav-btn">Next</button>
-              </div>
+            <div class="onboard-actions" role="group" aria-label="How to Play navigation">
+              <button type="button" id="onboardSkip" class="onboard-btn onboard-btn-skip">Skip</button>
+              <button type="button" id="onboardBack" class="onboard-btn onboard-btn-back">Back</button>
+              <button type="button" id="onboardNext" class="onboard-btn onboard-btn-next">Next</button>
             </div>
           </div>
         </div>
@@ -224,6 +231,13 @@
                 <p class="muted tiny">Friends open the link to join the same city instance.</p>
               </section>
               <section class="settings-section">
+                <h3>Display</h3>
+                <button type="button" id="settingsFullscreenBtn" class="tiny-btn">
+                  ENTER FULLSCREEN
+                </button>
+                <p class="muted tiny">Fullscreen or install the app for a cleaner phone view.</p>
+              </section>
+              <section class="settings-section">
                 <h3>Help</h3>
                 <button type="button" id="settingsHowToBtn" class="tiny-btn">HOW TO PLAY</button>
               </section>
@@ -313,26 +327,37 @@
 
         <!-- Touch / phone controls -->
         <div id="mobileControls" aria-label="Touch controls">
-          <button type="button" id="mobChat" class="mob-btn">
-            <span class="mob-ico">💬</span>
-            <span class="mob-lab">Chat</span>
-          </button>
-          <button type="button" id="mobInteract" class="mob-btn">
-            <span class="mob-ico">E</span>
-            <span class="mob-lab">Use</span>
-          </button>
-          <button type="button" id="mobAttack" class="mob-btn attack" aria-pressed="false">
-            <span class="mob-ico">⚔</span>
-            <span class="mob-lab">Attack</span>
-          </button>
-          <button type="button" id="mobStop" class="mob-btn">
-            <span class="mob-ico">■</span>
-            <span class="mob-lab">Stop</span>
-          </button>
-          <button type="button" id="mobSettings" class="mob-btn" aria-label="Settings">
-            <span class="mob-ico">⚙</span>
-            <span class="mob-lab">Set</span>
-          </button>
+          <div
+            id="mobJoystick"
+            class="mob-joystick"
+            role="application"
+            aria-label="Move joystick — press and drag"
+          >
+            <div class="mob-joy-base">
+              <div id="mobJoyKnob" class="mob-joy-knob"></div>
+            </div>
+            <span class="mob-lab">Move</span>
+          </div>
+          <div class="mob-actions">
+            <button type="button" id="mobChat" class="mob-btn">
+              <span class="mob-ico">💬</span>
+              <span class="mob-lab">Chat</span>
+            </button>
+            <button
+              type="button"
+              id="mobMode"
+              class="mob-btn mode-toggle"
+              aria-pressed="false"
+              title="Toggle Use / Attack mode"
+            >
+              <span class="mob-ico" id="mobModeIco">✋</span>
+              <span class="mob-lab" id="mobModeLab">Use</span>
+            </button>
+            <button type="button" id="mobSettings" class="mob-btn" aria-label="Settings">
+              <span class="mob-ico">⚙</span>
+              <span class="mob-lab">Set</span>
+            </button>
+          </div>
         </div>
 
         <div id="dialogueModal" class="modal hidden">
