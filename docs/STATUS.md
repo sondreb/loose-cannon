@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-11 (weather events + buildings/gym/street art pass)  
+Last updated: 2026-07-11 (textures + full-screen rain + interiors pass)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -14,9 +14,11 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | Client prediction + 60 FPS path | Done | Viewport cull (spatial), not full-map scan |
 | Multi-story isometric buildings | Done | Tall façades, storefronts, windows, neon, awnings, roof gear |
 | Combat-scene world look | Done | Wet asphalt, episodic rain, props, street dressing |
-| **Street realism pass** | **Done** | Continuous charcoal asphalt (world-noise, oversized diamonds, no stripe grid); yellow center lines only on avenue middles; wet-only neon puddles |
-| **Episodic weather** | **Done** | Clear default; rain/storm ~22% in 75s slots; full-screen rain FX; HUD CLEAR/RAIN/STORM |
-| **Interior decor** | **Done** | Bar / gym / hospital / shop / safehouse / warehouse / church / club chrome |
+| **Street realism pass** | **Done** | Continuous asphalt + Imagine seamless textures (asphalt/sidewalk/grass/debris) |
+| **Building textures** | **Done** | Brick wall + tar roof fills on façades; wood/plaster/club carpet interiors |
+| **Episodic weather** | **Done** | Clear default; full-viewport column-grid rain (CSS px); HUD CLEAR/RAIN/STORM |
+| **Warzone line** | **Done** | Iso diagonal double rail + jersey barriers on the line (not upright poles) |
+| **Interior decor** | **Done** | Bar / gym / hospital / shop / warehouse / church; **Twister VIP lounge**; **Crash Pad apartment** |
 | **Iron Temple gym** | **Done** | Coach Brick dialogue: train selected / whole posse / muscle day |
 | Painted goon/prop sprites | Done | Imagine PNGs + procedural fallback |
 | **The Titty Twister** | **Done** | Club; 3 dancers; tip→reveal; VO; realistic profiles |

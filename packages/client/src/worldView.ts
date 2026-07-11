@@ -35,6 +35,15 @@ import {
   UNIT_SPRITE_H,
 } from "./sprites.js";
 import {
+  floorTextureMatrix,
+  groundTexForType,
+  isoTileMatrix,
+  loadWorldTextures,
+  texturesReady,
+  wallFaceMatrix,
+  worldTexture,
+} from "./textures.js";
+import {
   facingFlip,
   facingFromDelta,
   facingLean,
@@ -256,9 +265,14 @@ export class WorldView {
       powerPreference: "high-performance",
       roundPixels: true,
     });
-    // Load painted goons / props (non-blocking if fail → procedural fallback)
-    await loadGameSprites().catch(() => undefined);
-    // Rain is screen-space (sibling of root) so it covers the full viewport, not a world corner
+    // Load painted goons / props / world textures (non-blocking if fail → procedural fallback)
+    await Promise.all([
+      loadGameSprites().catch(() => undefined),
+      loadWorldTextures().catch(() => undefined),
+    ]);
+    // Rain + atmosphere are screen-space siblings of root (never under camera zoom)
+    this.rainGfx.eventMode = "none";
+    this.atmosphereGfx.eventMode = "none";
     this.app.stage.addChild(this.root, this.rainGfx, this.atmosphereGfx);
     this.root.addChild(
       this.mapLayer,
@@ -1218,6 +1232,51 @@ export class WorldView {
     }
   }
 
+  /**
+   * Textured or solid fill for an iso diamond.
+   * No pad with textures (pad + double-draw = zoom-dependent stitching).
+   * Texture matrix is shared globally so shared edges sample continuously.
+   */
+  private fillIsoDiamond(
+    g: Graphics,
+    sx: number,
+    sy: number,
+    hw: number,
+    hh: number,
+    pad: number,
+    color: number,
+    texId: string | null,
+    alpha = 1,
+  ): void {
+    const tex = texId && texturesReady() ? worldTexture(texId) : null;
+    // Solid fills may use slight pad to kill 1px gaps; textured fills use exact diamonds
+    const p = tex ? 0 : pad;
+    g.poly([
+      sx,
+      sy - p * 0.5,
+      sx + hw + p,
+      sy + hh,
+      sx,
+      sy + TILE_H + p * 0.5,
+      sx - hw - p,
+      sy + hh,
+    ]);
+    if (tex) {
+      // Shared matrix — continuous UV across the whole map layer
+      g.fill({
+        texture: tex,
+        matrix: isoTileMatrix(),
+        color: 0xffffff,
+        alpha,
+      });
+      // Soft lighting wash (low alpha so seams don't darken)
+      g.poly([sx, sy, sx + hw, sy + hh, sx, sy + TILE_H, sx - hw, sy + hh]);
+      g.fill({ color, alpha: 0.14 });
+    } else {
+      g.fill({ color, alpha });
+    }
+  }
+
   private drawGroundTile(g: Graphics, x: number, y: number, type: string, indoor = false): void {
     const { sx, sy } = worldToScreen(x, y);
     const hw = TILE_W / 2;
@@ -1232,6 +1291,10 @@ export class WorldView {
     const wy = y + 0.5;
     const cx = sx;
     const cy = sy + hh;
+    // Outdoor ground textures disabled for iso diamonds — per-tile UV stamps stitch at
+    // every zoom. Continuous solid + noise looks seamless; textures stay on walls / interiors.
+    const texKey: string | null = null;
+    void groundTexForType; // available if we re-enable continuous ground mesh later
 
     let color = 0x2a2840;
     if (type === "road") {
@@ -1261,17 +1324,7 @@ export class WorldView {
     if (type === "road") {
       // Expand ~2px past tile edge so neighbors blend; no stroke ever
       const pad = 2.2;
-      g.poly([
-        sx,
-        sy - pad * 0.5,
-        sx + hw + pad,
-        sy + hh,
-        sx,
-        sy + TILE_H + pad * 0.5,
-        sx - hw - pad,
-        sy + hh,
-      ]);
-      g.fill({ color });
+      this.fillIsoDiamond(g, sx, sy, hw, hh, pad, color, texKey);
 
       // Continuous grit: world-noise speckles (same field across tile boundaries)
       const grit = asphaltGrit(wx, wy);
@@ -1384,19 +1437,13 @@ export class WorldView {
       return;
     }
 
-    // Non-road: normal diamond (slight oversize on sidewalk for continuity)
-    const pad = type === "sidewalk" ? 1.2 : 0;
-    g.poly([
-      sx,
-      sy - pad * 0.4,
-      sx + hw + pad,
-      sy + hh,
-      sx,
-      sy + TILE_H + pad * 0.4,
-      sx - hw - pad,
-      sy + hh,
-    ]);
-    g.fill({ color });
+    // Non-road: textured diamond (sidewalk / grass / parking / interior floors)
+    const pad = type === "sidewalk" || type === "grass" ? 1.4 : type === "parking" ? 1.2 : 0;
+    const floorTex =
+      indoor && type === "floor"
+        ? null // set by interior chrome
+        : texKey;
+    this.fillIsoDiamond(g, sx, sy, hw, hh, pad, color, floorTex);
 
     if (type === "sidewalk") {
       // Very soft slab joints (not a hard grid)
@@ -1709,55 +1756,70 @@ export class WorldView {
   private drawWeather(snap: WorldSnapshot): void {
     const g = this.rainGfx;
     g.clear();
+    // Never inherit camera transform
+    g.position.set(0, 0);
+    g.scale.set(1);
+    g.rotation = 0;
     if (snap.you.insideBuildingId) return;
 
     const rainScale = this.look.rain;
-    if (rainScale < 0.05) return; // clear weather — no streaks, no glints
+    if (rainScale < 0.05) return;
 
-    const w = this.app.renderer.width;
-    const h = this.app.renderer.height;
+    // CSS pixel size of the canvas (not backbuffer) — fixes thin left-strip rain
+    const canvas = this.app.canvas as HTMLCanvasElement;
+    const w = Math.max(
+      64,
+      canvas.clientWidth || this.app.screen.width || this.app.renderer.width,
+    );
+    const h = Math.max(
+      64,
+      canvas.clientHeight || this.app.screen.height || this.app.renderer.height,
+    );
     const t = this.time;
     const storm = rainScale > 1;
     const neonScale = Math.max(0.2, this.look.neon) * (0.5 + rainScale * 0.5);
+    const alphaMul = Math.min(1, rainScale);
 
-    // Dense diagonal rain across entire screen
-    const count = Math.round((storm ? 140 : 95) * Math.min(1.2, rainScale));
-    for (let i = 0; i < count; i++) {
-      const h1 = ((i * 1103515245 + 12345) >>> 0) / 0xffffffff;
-      const h2 = ((i * 1664525 + 1013904223) >>> 0) / 0xffffffff;
-      const speed = storm ? 380 : 260;
-      const drift = ((t * speed + h1 * (h + 120)) % (h + 120)) - 40;
-      const px = h2 * w + Math.sin(t * 1.1 + i * 0.7) * 8;
-      const py = drift;
-      const len = (storm ? 18 : 14) + (i % 7) * 3;
-      const slant = storm ? 7 : 5;
-      g.moveTo(px, py);
-      g.lineTo(px + slant, py + len);
-      g.stroke({
-        color: 0xd8e8ff,
-        width: storm ? 1.35 : 1.15,
-        alpha: (0.12 + (i % 5) * 0.03) * Math.min(1, rainScale),
-      });
+    // Column grid guarantees full-width coverage (no sparse RNG left-clump)
+    const colStep = storm ? 7 : 9;
+    const cols = Math.ceil(w / colStep) + 2;
+    const rows = storm ? 5 : 4;
+    const speed = storm ? 420 : 280;
+    const slant = storm ? 8 : 6;
+    const lenBase = storm ? 20 : 15;
+
+    for (let c = 0; c < cols; c++) {
+      for (let r = 0; r < rows; r++) {
+        const i = c * rows + r;
+        const h1 = ((i * 1103515245 + 12345) >>> 0) / 0xffffffff;
+        const phase = (t * speed + h1 * (h + 160) + r * (h / rows)) % (h + 160);
+        const px = c * colStep + (h1 - 0.5) * colStep * 0.6 - 8;
+        const py = phase - 40;
+        const len = lenBase + (i % 6) * 2.5;
+        g.moveTo(px, py);
+        g.lineTo(px + slant, py + len);
+        g.stroke({
+          color: 0xd8e8ff,
+          width: storm ? 1.3 : 1.1,
+          alpha: (0.11 + (i % 4) * 0.025) * alphaMul,
+        });
+      }
     }
 
-    // Screen-space wet neon glints (puddle shimmer) while raining
-    const glints = Math.round(28 * neonScale);
+    // Wet neon glints across full screen
+    const glints = Math.round(32 * neonScale);
     for (let i = 0; i < glints; i++) {
       const h1 = ((i * 2654435761) >>> 0) / 0xffffffff;
       const h2 = ((i * 2246822519) >>> 0) / 0xffffffff;
       const gx = h1 * w;
-      const gy = h2 * h * 0.85 + h * 0.08;
-      const pulse = (0.035 + Math.sin(t * 2.6 + i) * 0.02) * neonScale;
-      const rw = 14 + (i % 8) * 2;
+      const gy = h2 * h;
+      const pulse = (0.03 + Math.sin(t * 2.6 + i) * 0.018) * neonScale;
+      const rw = 12 + (i % 8) * 2;
       g.ellipse(gx, gy, rw, rw * 0.28);
       g.fill({
         color: i % 3 === 0 ? 0xff50c8 : i % 3 === 1 ? 0x50e8ff : 0xa070ff,
         alpha: pulse,
       });
-      if (i % 2 === 0) {
-        g.ellipse(gx - 1, gy - 0.5, rw * 0.32, rw * 0.1);
-        g.fill({ color: 0xffffff, alpha: pulse * 0.4 });
-      }
     }
   }
 
@@ -1852,22 +1914,100 @@ export class WorldView {
     }
   }
 
+  /**
+   * Room floor as **one** iso quad (not per-tile diamonds) so textures don't stitch.
+   */
   private drawIsoFloorWash(
     g: Graphics,
     bounds: { x0: number; y0: number; x1: number; y1: number },
     c0: number,
     c1: number,
     alpha = 0.55,
+    texId: string | null = null,
   ): void {
+    const c00 = worldToScreen(bounds.x0, bounds.y0);
+    const c10 = worldToScreen(bounds.x1 + 1, bounds.y0);
+    const c01 = worldToScreen(bounds.x0, bounds.y1 + 1);
+    const c11 = worldToScreen(bounds.x1 + 1, bounds.y1 + 1);
+    const pts = [c00.sx, c00.sy, c10.sx, c10.sy, c11.sx, c11.sy, c01.sx, c01.sy];
+    const tex = texId && texturesReady() ? worldTexture(texId) : null;
+    g.poly(pts);
+    if (tex) {
+      // Map texture across the whole room using geometry extents
+      const minX = Math.min(c00.sx, c10.sx, c01.sx, c11.sx);
+      const minY = Math.min(c00.sy, c10.sy, c01.sy, c11.sy);
+      const maxX = Math.max(c00.sx, c10.sx, c01.sx, c11.sx);
+      const maxY = Math.max(c00.sy, c10.sy, c01.sy, c11.sy);
+      const period = 140;
+      const mat = floorTextureMatrix().clone();
+      // Prefer continuous world UV: scale + translate by room origin
+      mat.set(
+        (maxX - minX) / period,
+        0,
+        0,
+        (maxY - minY) / period,
+        minX / period,
+        minY / period,
+      );
+      g.fill({
+        texture: tex,
+        matrix: mat,
+        color: 0xffffff,
+        alpha: Math.min(1, alpha + 0.25),
+      });
+      g.poly(pts);
+      g.fill({ color: c0, alpha: 0.18 });
+    } else {
+      g.fill({ color: c0, alpha });
+    }
+    // Subtle checker wash without hard tile edges (large soft blotches)
+    void c1;
     const hw = TILE_W / 2;
-    for (let y = bounds.y0; y <= bounds.y1; y++) {
-      for (let x = bounds.x0; x <= bounds.x1; x++) {
+    for (let y = bounds.y0; y <= bounds.y1; y += 2) {
+      for (let x = bounds.x0 + (y % 4 === 0 ? 0 : 1); x <= bounds.x1; x += 2) {
         const { sx, sy } = worldToScreen(x, y);
-        const tone = (x + y) % 2 === 0 ? c0 : c1;
-        g.poly([sx, sy, sx + hw, sy + TILE_H / 2, sx, sy + TILE_H, sx - hw, sy + TILE_H / 2]);
-        g.fill({ color: tone, alpha });
+        g.poly([
+          sx,
+          sy + 2,
+          sx + hw * 0.7,
+          sy + TILE_H / 2,
+          sx,
+          sy + TILE_H - 2,
+          sx - hw * 0.7,
+          sy + TILE_H / 2,
+        ]);
+        g.fill({ color: c1, alpha: 0.06 });
       }
     }
+  }
+
+  /** Soft wall strip along north edge of an interior room (shared UV matrix). */
+  private drawInteriorWallStrip(
+    g: Graphics,
+    bounds: { x0: number; y0: number; x1: number; y1: number },
+    texId: string | null,
+    wash: number,
+  ): void {
+    const tex = texId && texturesReady() ? worldTexture(texId) : null;
+    const mat = wallFaceMatrix();
+    // One continuous strip instead of per-tile rects (kills wall stitching)
+    const left = worldToScreen(bounds.x0, bounds.y0);
+    const right = worldToScreen(bounds.x1 + 1, bounds.y0);
+    const midY = (left.sy + right.sy) / 2;
+    const minX = Math.min(left.sx, right.sx) - 8;
+    const maxX = Math.max(left.sx, right.sx) + 8;
+    const w = maxX - minX;
+    g.rect(minX, midY - 44, w, 28);
+    if (tex) {
+      g.fill({ texture: tex, matrix: mat, alpha: 0.88 });
+      g.rect(minX, midY - 44, w, 28);
+      g.fill({ color: wash, alpha: 0.28 });
+    } else {
+      g.fill({ color: wash, alpha: 0.55 });
+    }
+    // Baseboard
+    g.rect(minX, midY - 18, w, 3);
+    g.fill({ color: 0x1a1010, alpha: 0.45 });
   }
 
   private drawBarInteriorDecor(bounds: {
@@ -1877,35 +2017,107 @@ export class WorldView {
     y1: number;
   }): void {
     const g = this.buildingGfx;
-    this.drawIsoFloorWash(g, bounds, 0x2a1c18, 0x241814, 0.5);
-    // Bar counter along back wall
-    for (let x = bounds.x0 + 1; x <= bounds.x1 - 1; x++) {
-      const p = worldToScreen(x + 0.5, bounds.y0 + 1.2);
-      g.roundRect(p.sx - 10, p.sy - 8, 20, 12, 2);
-      g.fill({ color: 0x3a2418, alpha: 0.9 });
-      g.rect(p.sx - 8, p.sy - 14, 3, 8);
-      g.fill({ color: 0x60a0ff, alpha: 0.35 }); // bottle
-      g.rect(p.sx - 2, p.sy - 12, 3, 6);
-      g.fill({ color: 0xff8060, alpha: 0.4 });
-      g.rect(p.sx + 4, p.sy - 13, 3, 7);
-      g.fill({ color: 0xffe080, alpha: 0.35 });
+    const pulse = 0.5 + Math.sin(this.time * 2.2) * 0.12;
+    // Sticky wood floor + stained walls
+    this.drawIsoFloorWash(g, bounds, 0x2a1c18, 0x241814, 0.6, "wood_floor");
+    this.drawInteriorWallStrip(g, bounds, "plaster_wall", 0x3a2a24);
+
+    // Continuous bar counter (one piece, not per-tile boxes)
+    const barL = worldToScreen(bounds.x0 + 1.2, bounds.y0 + 1.3);
+    const barR = worldToScreen(bounds.x1 - 0.8, bounds.y0 + 1.3);
+    const barMidX = (barL.sx + barR.sx) / 2;
+    const barMidY = (barL.sy + barR.sy) / 2;
+    const barW = Math.hypot(barR.sx - barL.sx, barR.sy - barL.sy) + 20;
+    g.ellipse(barMidX, barMidY + 8, barW * 0.48, 10);
+    g.fill({ color: 0x000000, alpha: 0.35 });
+    g.roundRect(barMidX - barW * 0.45, barMidY - 6, barW * 0.9, 16, 3);
+    g.fill({ color: 0x3a2418, alpha: 0.95 });
+    g.roundRect(barMidX - barW * 0.45, barMidY - 8, barW * 0.9, 5, 2);
+    g.fill({ color: 0x5a3a28, alpha: 0.9 }); // countertop
+    g.roundRect(barMidX - barW * 0.45, barMidY - 6, barW * 0.9, 16, 3);
+    g.stroke({ color: 0x1a1008, width: 1.2, alpha: 0.5 });
+
+    // Bottle shelf + bottles along counter
+    g.rect(barMidX - barW * 0.4, barMidY - 28, barW * 0.8, 4);
+    g.fill({ color: 0x2a1a12, alpha: 0.9 });
+    for (let i = 0; i < 9; i++) {
+      const bx = barMidX - barW * 0.35 + i * (barW * 0.08);
+      const cols = [0x60a0ff, 0xff8060, 0xffe080, 0x80ff80, 0xff60c0, 0xc0a0ff];
+      g.rect(bx - 1.5, barMidY - 26, 3, 14);
+      g.fill({ color: cols[i % cols.length]!, alpha: 0.55 });
+      g.rect(bx - 1, barMidY - 28, 2, 3);
+      g.fill({ color: 0xd0d0d0, alpha: 0.4 });
     }
-    // Stools
-    for (let x = bounds.x0 + 2; x <= bounds.x1 - 2; x += 2) {
-      const p = worldToScreen(x + 0.5, bounds.y0 + 2.4);
-      g.ellipse(p.sx, p.sy + 2, 6, 3);
-      g.fill({ color: 0x1a1010, alpha: 0.5 });
-      g.circle(p.sx, p.sy - 2, 5);
-      g.fill({ color: 0x4a3020 });
-      g.rect(p.sx - 1, p.sy - 2, 2, 6);
+
+    // Back-bar mirror glow
+    g.rect(barMidX - barW * 0.38, barMidY - 40, barW * 0.76, 10);
+    g.fill({ color: 0x4a6078, alpha: 0.2 });
+    g.ellipse(barMidX, barMidY - 20, barW * 0.3, 8);
+    g.fill({ color: 0xffa060, alpha: 0.06 * pulse });
+
+    // Bar stools (fewer, better)
+    for (let i = 0; i < 4; i++) {
+      const t = 0.2 + i * 0.2;
+      const p = worldToScreen(
+        bounds.x0 + 1.5 + t * (bounds.x1 - bounds.x0 - 2),
+        bounds.y0 + 2.5,
+      );
+      g.ellipse(p.sx, p.sy + 3, 7, 3);
+      g.fill({ color: 0x000000, alpha: 0.35 });
+      g.rect(p.sx - 1.5, p.sy - 4, 3, 8);
       g.fill({ color: 0x2a2018 });
+      g.ellipse(p.sx, p.sy - 5, 7, 3.5);
+      g.fill({ color: 0x4a3020 });
+      g.ellipse(p.sx, p.sy - 5, 7, 3.5);
+      g.stroke({ color: 0x1a1008, width: 1, alpha: 0.5 });
     }
-    // Neon beer sign
-    const mid = worldToScreen((bounds.x0 + bounds.x1) / 2, bounds.y0 + 0.5);
-    g.roundRect(mid.sx - 18, mid.sy - 40, 36, 12, 2);
+
+    // Booth along side wall
+    const booth = worldToScreen(bounds.x0 + 2, bounds.y1 - 1.2);
+    g.ellipse(booth.sx, booth.sy + 3, 16, 7);
+    g.fill({ color: 0x000000, alpha: 0.3 });
+    g.roundRect(booth.sx - 18, booth.sy - 8, 36, 14, 4);
+    g.fill({ color: 0x3a2018, alpha: 0.9 });
+    g.roundRect(booth.sx - 16, booth.sy - 4, 32, 6, 2);
+    g.fill({ color: 0x4a2820, alpha: 0.75 });
+
+    // Neon beer signs
+    const mid = worldToScreen((bounds.x0 + bounds.x1) / 2, bounds.y0 + 0.35);
+    g.roundRect(mid.sx - 22, mid.sy - 48, 44, 14, 2);
+    g.fill({ color: 0x0a0810, alpha: 0.9 });
+    g.roundRect(mid.sx - 20, mid.sy - 46, 40, 10, 1);
+    g.fill({ color: 0xff40aa, alpha: 0.4 + pulse * 0.2 });
+    g.circle(mid.sx, mid.sy - 40, 16);
+    g.fill({ color: 0xff40aa, alpha: 0.08 * pulse });
+
+    // Second smaller sign
+    const s2 = worldToScreen(bounds.x1 - 1.5, bounds.y0 + 0.4);
+    g.roundRect(s2.sx - 10, s2.sy - 40, 20, 10, 1);
     g.fill({ color: 0x0a0810, alpha: 0.85 });
-    g.roundRect(mid.sx - 16, mid.sy - 38, 32, 8, 1);
-    g.fill({ color: 0xff40aa, alpha: 0.45 + Math.sin(this.time * 2) * 0.1 });
+    g.roundRect(s2.sx - 8, s2.sy - 38, 16, 6, 1);
+    g.fill({ color: 0x40e0ff, alpha: 0.45 + pulse * 0.15 });
+
+    // Floor sticky stains / peanut shells vibe
+    for (const spot of [
+      { x: bounds.x0 + 3, y: bounds.y0 + 3 },
+      { x: bounds.x1 - 2, y: bounds.y0 + 4 },
+      { x: bounds.x0 + 5, y: bounds.y1 - 1.5 },
+    ]) {
+      const p = worldToScreen(spot.x, spot.y);
+      g.ellipse(p.sx, p.sy + 4, 8, 3);
+      g.fill({ color: 0x1a1008, alpha: 0.25 });
+    }
+
+    // Jukebox corner
+    const juke = worldToScreen(bounds.x1 - 1.5, bounds.y0 + 2.5);
+    g.ellipse(juke.sx, juke.sy + 3, 8, 3.5);
+    g.fill({ color: 0x000000, alpha: 0.3 });
+    g.roundRect(juke.sx - 8, juke.sy - 18, 16, 20, 2);
+    g.fill({ color: 0x2a1830, alpha: 0.95 });
+    g.rect(juke.sx - 6, juke.sy - 14, 12, 8);
+    g.fill({ color: 0xff40c8, alpha: 0.25 + pulse * 0.15 });
+    g.circle(juke.sx, juke.sy - 20, 6);
+    g.fill({ color: 0x40e0ff, alpha: 0.15 * pulse });
   }
 
   private drawGymInteriorDecor(bounds: {
@@ -2029,6 +2241,7 @@ export class WorldView {
     g.fill({ color: 0x2a2018 });
   }
 
+  /** Crash Pad — lived-in one-room apartment, not a void box. */
   private drawSafehouseInteriorDecor(bounds: {
     x0: number;
     y0: number;
@@ -2036,29 +2249,103 @@ export class WorldView {
     y1: number;
   }): void {
     const g = this.buildingGfx;
-    this.drawIsoFloorWash(g, bounds, 0x2a2830, 0x242028, 0.5);
-    // Mattress
-    const bed = worldToScreen(bounds.x0 + 2, bounds.y0 + 2);
-    g.ellipse(bed.sx, bed.sy + 4, 16, 7);
+    const pulse = 0.5 + Math.sin(this.time * 1.8) * 0.1;
+
+    // Wood floor + plaster walls
+    this.drawIsoFloorWash(g, bounds, 0x3a3028, 0x322820, 0.6, "wood_floor");
+    this.drawInteriorWallStrip(g, bounds, "plaster_wall", 0x4a4840);
+
+    // Window with blinds (back wall)
+    const win = worldToScreen((bounds.x0 + bounds.x1) / 2, bounds.y0 + 0.3);
+    g.roundRect(win.sx - 16, win.sy - 40, 32, 18, 1);
+    g.fill({ color: 0x1a2838, alpha: 0.9 });
+    g.roundRect(win.sx - 14, win.sy - 38, 28, 14, 1);
+    g.fill({ color: 0x3a5068, alpha: 0.55 });
+    for (let i = 0; i < 5; i++) {
+      g.rect(win.sx - 14, win.sy - 37 + i * 3, 28, 1.2);
+      g.fill({ color: 0x2a2a28, alpha: 0.45 });
+    }
+    // Soft daylight leak
+    g.ellipse(win.sx, win.sy - 20, 20, 8);
+    g.fill({ color: 0xffe8c0, alpha: 0.06 });
+
+    // Bed with frame, pillow, blanket
+    const bed = worldToScreen(bounds.x0 + 2.2, bounds.y0 + 2.2);
+    g.ellipse(bed.sx, bed.sy + 6, 18, 8);
     g.fill({ color: 0x000000, alpha: 0.3 });
-    g.roundRect(bed.sx - 16, bed.sy - 4, 32, 14, 3);
-    g.fill({ color: 0x3a4850, alpha: 0.9 });
-    g.rect(bed.sx - 14, bed.sy - 2, 10, 6);
-    g.fill({ color: 0x5a6870, alpha: 0.7 });
-    // Table + lamp
-    const tab = worldToScreen(bounds.x1 - 2, bounds.y0 + 2.5);
-    g.ellipse(tab.sx, tab.sy + 2, 10, 4);
+    g.roundRect(bed.sx - 18, bed.sy - 6, 36, 16, 2);
+    g.fill({ color: 0x3a2a22, alpha: 0.95 }); // frame
+    g.roundRect(bed.sx - 16, bed.sy - 4, 32, 12, 2);
+    g.fill({ color: 0x4a5a68, alpha: 0.9 }); // sheet
+    g.roundRect(bed.sx - 16, bed.sy - 2, 14, 8, 2);
+    g.fill({ color: 0x5a3848, alpha: 0.75 }); // blanket
+    g.roundRect(bed.sx - 15, bed.sy - 8, 10, 5, 2);
+    g.fill({ color: 0xd8d0c8, alpha: 0.85 }); // pillow
+
+    // Couch / futon
+    const couch = worldToScreen(bounds.x1 - 2.2, bounds.y0 + 2.0);
+    g.ellipse(couch.sx, couch.sy + 4, 14, 6);
+    g.fill({ color: 0x000000, alpha: 0.25 });
+    g.roundRect(couch.sx - 16, couch.sy - 6, 32, 12, 3);
+    g.fill({ color: 0x3a4048, alpha: 0.9 });
+    g.roundRect(couch.sx - 16, couch.sy - 10, 6, 10, 2);
+    g.fill({ color: 0x2a3038, alpha: 0.85 });
+    g.roundRect(couch.sx + 10, couch.sy - 10, 6, 10, 2);
+    g.fill({ color: 0x2a3038, alpha: 0.85 });
+
+    // Coffee table + pizza box + ashtray
+    const tab = worldToScreen(bounds.x1 - 2.0, bounds.y0 + 3.2);
+    g.ellipse(tab.sx, tab.sy + 2, 11, 4.5);
     g.fill({ color: 0x3a2a20 });
-    g.rect(tab.sx - 1, tab.sy - 10, 2, 10);
-    g.fill({ color: 0x2a2018 });
-    g.circle(tab.sx, tab.sy - 12, 5);
-    g.fill({ color: 0xffc060, alpha: 0.45 });
-    g.circle(tab.sx, tab.sy - 12, 10);
-    g.fill({ color: 0xffa040, alpha: 0.08 });
-    // Stash glow
-    const st = worldToScreen((bounds.x0 + bounds.x1) / 2, bounds.y1 - 0.5);
-    g.ellipse(st.sx, st.sy + 2, 12, 5);
-    g.fill({ color: 0x40ff80, alpha: 0.1 + Math.sin(this.time * 2) * 0.04 });
+    g.roundRect(tab.sx - 5, tab.sy - 4, 8, 5, 1);
+    g.fill({ color: 0xc0a060, alpha: 0.7 }); // pizza box
+    g.circle(tab.sx + 5, tab.sy - 2, 2.5);
+    g.fill({ color: 0x2a2a28, alpha: 0.8 });
+
+    // Floor lamp
+    const lamp = worldToScreen(bounds.x0 + 1.3, bounds.y0 + 3.5);
+    g.rect(lamp.sx - 1, lamp.sy - 22, 2, 22);
+    g.fill({ color: 0x3a3a40 });
+    g.ellipse(lamp.sx, lamp.sy - 24, 8, 4);
+    g.fill({ color: 0xffe0a0, alpha: 0.55 * pulse });
+    g.circle(lamp.sx, lamp.sy - 24, 14);
+    g.fill({ color: 0xffc060, alpha: 0.07 * pulse });
+
+    // Mini fridge
+    const frig = worldToScreen(bounds.x0 + 1.5, bounds.y0 + 1.2);
+    g.roundRect(frig.sx - 7, frig.sy - 16, 14, 18, 1);
+    g.fill({ color: 0x3a4850, alpha: 0.9 });
+    g.rect(frig.sx + 3, frig.sy - 10, 2, 5);
+    g.fill({ color: 0x1a1a20 });
+    g.rect(frig.sx - 5, frig.sy - 14, 10, 2);
+    g.fill({ color: 0x60a0c0, alpha: 0.25 });
+
+    // TV on milk crate
+    const tv = worldToScreen(bounds.x1 - 1.5, bounds.y0 + 1.3);
+    g.rect(tv.sx - 6, tv.sy - 4, 12, 6);
+    g.fill({ color: 0x4a3828 });
+    g.roundRect(tv.sx - 10, tv.sy - 16, 20, 12, 1);
+    g.fill({ color: 0x1a1a22 });
+    g.rect(tv.sx - 8, tv.sy - 14, 16, 8);
+    g.fill({ color: 0x204060, alpha: 0.5 });
+
+    // Stash crate with green safe glow
+    const st = worldToScreen((bounds.x0 + bounds.x1) / 2, bounds.y1 - 0.8);
+    g.ellipse(st.sx, st.sy + 3, 12, 5);
+    g.fill({ color: 0x000000, alpha: 0.3 });
+    g.roundRect(st.sx - 12, st.sy - 8, 24, 14, 2);
+    g.fill({ color: 0x3a3428, alpha: 0.95 });
+    g.roundRect(st.sx - 12, st.sy - 8, 24, 14, 2);
+    g.stroke({ color: 0x40ff80, width: 1.5, alpha: 0.35 + pulse * 0.2 });
+    g.ellipse(st.sx, st.sy + 2, 14, 6);
+    g.fill({ color: 0x40ff80, alpha: 0.08 + pulse * 0.04 });
+
+    // Poster on wall
+    const post = worldToScreen(bounds.x0 + 0.8, bounds.y0 + 0.5);
+    g.rect(post.sx - 6, post.sy - 36, 12, 16);
+    g.fill({ color: 0x6a2030, alpha: 0.7 });
+    g.rect(post.sx - 5, post.sy - 35, 10, 4);
+    g.fill({ color: 0xff4060, alpha: 0.4 });
   }
 
   private drawWarehouseInteriorDecor(
@@ -2142,7 +2429,7 @@ export class WorldView {
     }
   }
 
-  /** Velvet floors, stages, VIP booths, neon for The Titty Twister. */
+  /** Exclusive velvet VIP lounge for The Titty Twister. */
   private drawClubInteriorDecor(bounds: {
     x0: number;
     y0: number;
@@ -2152,32 +2439,36 @@ export class WorldView {
     const g = this.buildingGfx;
     const pulse = 0.55 + Math.sin(this.time * 2.5) * 0.15;
 
-    // Carpet wash over floor tiles
-    for (let y = bounds.y0; y <= bounds.y1; y++) {
-      for (let x = bounds.x0; x <= bounds.x1; x++) {
-        const { sx, sy } = worldToScreen(x, y);
-        const hw = TILE_W / 2;
-        const tone = (x + y) % 2 === 0 ? 0x3a1830 : 0x321428;
-        g.poly([sx, sy, sx + hw, sy + TILE_H / 2, sx, sy + TILE_H, sx - hw, sy + TILE_H / 2]);
-        g.fill({ color: tone, alpha: 0.55 });
-        // Spotlights on stage row
-        if (y === bounds.y0 + 2 && x > bounds.x0 + 2 && x < bounds.x1 - 1) {
-          g.ellipse(sx, sy + 10, 14, 6);
-          g.fill({ color: 0xff40aa, alpha: 0.08 * pulse });
-        }
-      }
+    // Plush carpet + leather wall strip
+    this.drawIsoFloorWash(g, bounds, 0x2a1020, 0x220c18, 0.65, "club_carpet");
+    this.drawInteriorWallStrip(g, bounds, "club_wall", 0x1a0814);
+
+    // Gold runner down the center aisle
+    for (let y = bounds.y0 + 1; y <= bounds.y1 - 1; y++) {
+      const p = worldToScreen((bounds.x0 + bounds.x1) / 2, y);
+      g.ellipse(p.sx, p.sy + 8, 10, 4);
+      g.fill({ color: 0xc9a227, alpha: 0.12 + pulse * 0.05 });
     }
 
-    // Neon wall strips
-    for (let x = bounds.x0; x <= bounds.x1; x += 2) {
+    // Neon cove lighting along back wall
+    for (let x = bounds.x0; x <= bounds.x1; x += 1) {
       const a = worldToScreen(x, bounds.y0);
-      const c = worldToScreen(x + 1, bounds.y0);
-      g.moveTo(a.sx, a.sy - 36);
-      g.lineTo(c.sx, c.sy - 36);
-      g.stroke({ color: 0xff40c8, width: 2, alpha: 0.35 + pulse * 0.2 });
+      g.rect(a.sx - 10, a.sy - 44, 20, 3);
+      g.fill({ color: 0xff40c8, alpha: 0.25 + pulse * 0.2 });
+      g.circle(a.sx, a.sy - 42, 8);
+      g.fill({ color: 0xff40c8, alpha: 0.06 * pulse });
+    }
+    // Magenta side coves
+    for (let y = bounds.y0; y <= bounds.y1; y += 2) {
+      const L = worldToScreen(bounds.x0, y);
+      const R = worldToScreen(bounds.x1, y);
+      g.rect(L.sx - 8, L.sy - 30, 4, 18);
+      g.fill({ color: 0xff2080, alpha: 0.2 * pulse });
+      g.rect(R.sx + 4, R.sy - 30, 4, 18);
+      g.fill({ color: 0x40e0ff, alpha: 0.15 * pulse });
     }
 
-    // Stages + booths (painted sprites when loaded)
+    // Raised stages + chrome poles
     const stageSpots = [
       { x: 40, y: 4.2 },
       { x: 43.5, y: 4.0 },
@@ -2185,83 +2476,151 @@ export class WorldView {
     ];
     for (const s of stageSpots) {
       const { sx, sy } = worldToScreen(s.x, s.y);
-      const tex = clubPropTexture("stage");
-      if (tex && spritesReady()) {
-        // Draw via graphics-adjacent: use a temp approach — bake into building layer as simple shapes if no sprite pool
-        // Procedural stage under dancers always
-      }
-      // Raised stage plate + pole
-      g.ellipse(sx, sy + 6, 22, 10);
-      g.fill({ color: 0x1a0a14, alpha: 0.85 });
-      g.ellipse(sx, sy + 4, 18, 8);
-      g.fill({ color: 0x3a1830, alpha: 0.9 });
-      g.ellipse(sx, sy + 4, 18, 8);
-      g.stroke({ color: 0xff40aa, width: 1.5, alpha: 0.55 * pulse });
+      void clubPropTexture("stage");
+      g.ellipse(sx, sy + 6, 24, 11);
+      g.fill({ color: 0x000000, alpha: 0.45 });
+      g.ellipse(sx, sy + 4, 20, 9);
+      g.fill({ color: 0x1a0814, alpha: 0.95 });
+      g.ellipse(sx, sy + 4, 20, 9);
+      g.stroke({ color: 0xffd070, width: 1.8, alpha: 0.45 + pulse * 0.25 });
+      g.ellipse(sx, sy + 2, 14, 6);
+      g.fill({ color: 0x3a1830, alpha: 0.7 });
       // Chrome pole
-      g.rect(sx - 1.5, sy - 42, 3, 46);
-      g.fill({ color: 0xc0c8d8, alpha: 0.85 });
-      g.rect(sx - 0.5, sy - 42, 1, 46);
-      g.fill({ color: 0xffffff, alpha: 0.35 });
-      g.circle(sx, sy - 44, 3);
-      g.fill({ color: 0xff60c0, alpha: 0.5 });
+      g.rect(sx - 1.5, sy - 48, 3, 52);
+      g.fill({ color: 0xc0c8d8, alpha: 0.9 });
+      g.rect(sx - 0.5, sy - 48, 1, 52);
+      g.fill({ color: 0xffffff, alpha: 0.4 });
+      g.circle(sx, sy - 50, 4);
+      g.fill({ color: 0xff60c0, alpha: 0.55 * pulse });
+      g.circle(sx, sy - 50, 10);
+      g.fill({ color: 0xff40aa, alpha: 0.08 * pulse });
     }
 
-    // VIP booths along left wall
+    // VIP booths — leather + gold
     for (const spot of [
       { x: 36.5, y: 6.5 },
       { x: 38.5, y: 7.2 },
+      { x: 45.5, y: 7.0 },
     ]) {
       const { sx, sy } = worldToScreen(spot.x, spot.y);
-      g.ellipse(sx, sy + 4, 16, 7);
-      g.fill({ color: 0x000000, alpha: 0.35 });
-      g.roundRect(sx - 18, sy - 10, 36, 16, 6);
-      g.fill({ color: 0x5a1828, alpha: 0.9 });
-      g.roundRect(sx - 18, sy - 10, 36, 16, 6);
-      g.stroke({ color: 0xff4080, width: 1, alpha: 0.4 });
-      // Table
-      g.ellipse(sx, sy - 2, 7, 3.5);
-      g.fill({ color: 0x2a1a20 });
-      g.circle(sx, sy - 6, 3);
-      g.fill({ color: 0xff60c0, alpha: 0.35 * pulse });
+      g.ellipse(sx, sy + 4, 18, 8);
+      g.fill({ color: 0x000000, alpha: 0.4 });
+      g.roundRect(sx - 20, sy - 12, 40, 18, 8);
+      g.fill({ color: 0x2a0c18, alpha: 0.95 });
+      g.roundRect(sx - 20, sy - 12, 40, 18, 8);
+      g.stroke({ color: 0xc9a227, width: 1.5, alpha: 0.55 + pulse * 0.15 });
+      // Cushion
+      g.roundRect(sx - 16, sy - 8, 32, 8, 4);
+      g.fill({ color: 0x5a1830, alpha: 0.8 });
+      // Bottle service table
+      g.ellipse(sx, sy - 2, 8, 4);
+      g.fill({ color: 0x1a1018 });
+      g.rect(sx - 1, sy - 10, 2, 6);
+      g.fill({ color: 0x80e0ff, alpha: 0.5 });
+      g.circle(sx, sy - 12, 3);
+      g.fill({ color: 0xffd070, alpha: 0.45 * pulse });
     }
 
-    // Bar glow
+    // Exclusive bar — marble top + bottles
     const bar = worldToScreen(36.5, 3.2);
-    g.ellipse(bar.sx, bar.sy + 4, 20, 8);
-    g.fill({ color: 0xff40aa, alpha: 0.12 * pulse });
+    g.ellipse(bar.sx, bar.sy + 6, 28, 10);
+    g.fill({ color: 0x000000, alpha: 0.35 });
+    g.roundRect(bar.sx - 30, bar.sy - 8, 60, 16, 3);
+    g.fill({ color: 0x1a1018, alpha: 0.95 });
+    g.roundRect(bar.sx - 28, bar.sy - 10, 56, 5, 2);
+    g.fill({ color: 0xd0c8c0, alpha: 0.7 }); // marble
+    g.roundRect(bar.sx - 30, bar.sy - 8, 60, 16, 3);
+    g.stroke({ color: 0xc9a227, width: 1.2, alpha: 0.5 });
+    for (let i = -3; i <= 3; i++) {
+      g.rect(bar.sx + i * 7 - 1, bar.sy - 22, 2.5, 12);
+      g.fill({
+        color: [0xff60c0, 0x40e0ff, 0xffd070, 0x80ff80][(i + 3) % 4]!,
+        alpha: 0.45,
+      });
+    }
+    g.ellipse(bar.sx, bar.sy + 4, 24, 8);
+    g.fill({ color: 0xff40aa, alpha: 0.1 * pulse });
+
+    // "MEMBERS" neon plaque
+    const plaque = worldToScreen((bounds.x0 + bounds.x1) / 2, bounds.y0 + 0.4);
+    g.roundRect(plaque.sx - 28, plaque.sy - 52, 56, 14, 2);
+    g.fill({ color: 0x0a0810, alpha: 0.9 });
+    g.roundRect(plaque.sx - 26, plaque.sy - 50, 52, 10, 1);
+    g.fill({ color: 0xff40c8, alpha: 0.4 + pulse * 0.2 });
   }
 
   private drawZoneDivider(g: Graphics): void {
     const y = SAFE_Y_MAX;
-    for (let x = 0; x < 110; x += 3) {
+    // Iso diagonal: constant world-y → screen runs down-right (not screen-vertical)
+    for (let x = 0; x < 110; x += 2) {
       const a = worldToScreen(x, y);
-      const b = worldToScreen(x + 3, y);
+      const b = worldToScreen(x + 2, y);
       g.moveTo(a.sx, a.sy);
       g.lineTo(b.sx, b.sy);
     }
-    g.stroke({ color: 0xff4040, width: 2.5, alpha: 0.45 });
-    // Barricade ticks
-    for (let x = 2; x < 110; x += 6) {
-      const p = worldToScreen(x, y);
-      g.rect(p.sx - 3, p.sy - 6, 6, 10);
-      g.fill({ color: 0x5a4030, alpha: 0.7 });
+    g.stroke({ color: 0xff3030, width: 3, alpha: 0.55 });
+    // Second dashed rail slightly south (war side)
+    for (let x = 1; x < 110; x += 2) {
+      const a = worldToScreen(x, y + 0.35);
+      const b = worldToScreen(x + 2, y + 0.35);
+      g.moveTo(a.sx, a.sy);
+      g.lineTo(b.sx, b.sy);
     }
+    g.stroke({ color: 0xff6060, width: 1.5, alpha: 0.35 });
+
+    // Jersey barriers along the iso line (oriented with the diagonal, not upright poles)
+    for (let x = 3; x < 108; x += 5) {
+      const p0 = worldToScreen(x, y);
+      const p1 = worldToScreen(x + 1.2, y);
+      const mx = (p0.sx + p1.sx) / 2;
+      const my = (p0.sy + p1.sy) / 2;
+      // Iso diamond barrier sitting ON the line
+      g.poly([
+        mx,
+        my - 5,
+        mx + 10,
+        my,
+        mx,
+        my + 5,
+        mx - 10,
+        my,
+      ]);
+      g.fill({ color: 0x5a4030, alpha: 0.85 });
+      g.poly([
+        mx,
+        my - 5,
+        mx + 10,
+        my,
+        mx,
+        my + 5,
+        mx - 10,
+        my,
+      ]);
+      g.stroke({ color: 0xff4040, width: 1.2, alpha: 0.55 });
+      // Stripe
+      g.moveTo(mx - 5, my - 1);
+      g.lineTo(mx + 5, my + 1);
+      g.stroke({ color: 0xffc040, width: 1.5, alpha: 0.7 });
+    }
+
     for (const midX of [28, 55, 82]) {
-      const mid = worldToScreen(midX, SAFE_Y_MAX - 0.8);
+      // Labels sit just north (safe) / south (war) of the iso line
+      const safePos = worldToScreen(midX, SAFE_Y_MAX - 1.2);
+      const warPos = worldToScreen(midX, SAFE_Y_MAX + 1.4);
       const safe = new Text({
         text: "▲ SAFE DOWNTOWN",
         style: { fontSize: 11, fill: 0x60c080, fontWeight: "700" },
       });
-      safe.x = mid.sx - safe.width / 2;
-      safe.y = mid.sy - 28;
+      safe.x = safePos.sx - safe.width / 2;
+      safe.y = safePos.sy - 8;
       this.overlayLayer.addChild(safe);
       this.buildingLabelPool.push(safe);
       const war = new Text({
         text: "▼ WARZONE",
         style: { fontSize: 11, fill: 0xff6060, fontWeight: "700" },
       });
-      war.x = mid.sx - war.width / 2;
-      war.y = mid.sy + 8;
+      war.x = warPos.sx - war.width / 2;
+      war.y = warPos.sy - 4;
       this.overlayLayer.addChild(war);
       this.buildingLabelPool.push(war);
     }
@@ -2306,15 +2665,30 @@ export class WorldView {
     g.poly([c00.sx, c00.sy + 6, c10.sx, c10.sy + 6, c11.sx, c11.sy + 6, c01.sx, c01.sy + 6]);
     g.fill({ color: 0x000000, alpha: 0.32 });
 
+    const brick = texturesReady() ? worldTexture("brick") : null;
+    const roofTex = texturesReady() ? worldTexture("roof") : null;
+    const wallMat = wallFaceMatrix();
+    const fillWall = (pts: number[], shadeMul: number) => {
+      g.poly(pts);
+      if (brick) {
+        g.fill({
+          texture: brick,
+          matrix: wallMat,
+          color: 0xffffff,
+          alpha: 0.95,
+        });
+        g.poly(pts);
+        g.fill({ color: shade(wall, shadeMul), alpha: 0.32 });
+      } else {
+        g.fill({ color: shade(wall, shadeMul) });
+      }
+    };
+
     // Four wall faces with strong value separation (reads as 3D, not flat diamond)
-    g.poly([c00.sx, c00.sy, c01.sx, c01.sy, t01.sx, t01.sy, t00.sx, t00.sy]);
-    g.fill({ color: shade(wall, 0.62) });
-    g.poly([c00.sx, c00.sy, c10.sx, c10.sy, t10.sx, t10.sy, t00.sx, t00.sy]);
-    g.fill({ color: shade(wall, 1.05) });
-    g.poly([c01.sx, c01.sy, c11.sx, c11.sy, t11.sx, t11.sy, t01.sx, t01.sy]);
-    g.fill({ color: shade(wall, 0.48) });
-    g.poly([c10.sx, c10.sy, c11.sx, c11.sy, t11.sx, t11.sy, t10.sx, t10.sy]);
-    g.fill({ color: shade(wall, 0.72) });
+    fillWall([c00.sx, c00.sy, c01.sx, c01.sy, t01.sx, t01.sy, t00.sx, t00.sy], 0.62);
+    fillWall([c00.sx, c00.sy, c10.sx, c10.sy, t10.sx, t10.sy, t00.sx, t00.sy], 1.05);
+    fillWall([c01.sx, c01.sy, c11.sx, c11.sy, t11.sx, t11.sy, t01.sx, t01.sy], 0.48);
+    fillWall([c10.sx, c10.sy, c11.sx, c11.sy, t11.sx, t11.sy, t10.sx, t10.sy], 0.72);
 
     // Brick / panel courses on the front face
     const courseN = stories * 4;
@@ -2392,7 +2766,18 @@ export class WorldView {
 
     // Roof slab + parapet
     g.poly([t00.sx, t00.sy, t10.sx, t10.sy, t11.sx, t11.sy, t01.sx, t01.sy]);
-    g.fill({ color: roof });
+    if (roofTex) {
+      g.fill({
+        texture: roofTex,
+        matrix: wallFaceMatrix(),
+        color: 0xffffff,
+        alpha: 0.95,
+      });
+      g.poly([t00.sx, t00.sy, t10.sx, t10.sy, t11.sx, t11.sy, t01.sx, t01.sy]);
+      g.fill({ color: roof, alpha: 0.28 });
+    } else {
+      g.fill({ color: roof });
+    }
     g.poly([t00.sx, t00.sy, t10.sx, t10.sy, t11.sx, t11.sy, t01.sx, t01.sy]);
     g.stroke({ color: shade(accent, 0.75), width: 1.6, alpha: 0.55 });
     // Parapet lip
