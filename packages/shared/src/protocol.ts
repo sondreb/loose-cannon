@@ -298,7 +298,7 @@ export interface CombatFxEvent {
    * shot / melee / flame = attack start;
    * hit / miss / blocked / death = outcome (blocked = wall/cover LoS).
    */
-  kind: "shot" | "melee" | "flame" | "hit" | "miss" | "blocked" | "death";
+  kind: "shot" | "melee" | "flame" | "hit" | "miss" | "blocked" | "death" | "hydrant_spray";
   x0: number;
   y0: number;
   x1: number;

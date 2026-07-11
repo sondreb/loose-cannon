@@ -4096,6 +4096,30 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
 }
 
 @media (max-width: 900px) {
+  /* Declutter: less chrome density */
+  body.mobile-layout #helpBar,
+  body.mobile-layout .help-strip,
+  body.mobile-layout #controlHints {
+    display: none !important;
+  }
+  body.mobile-layout #eventLog {
+    max-height: 22vh;
+    font-size: 0.72rem;
+  }
+  body.mobile-layout #possePanel.collapsed .posse-list,
+  body.mobile-layout #possePanel.collapsed #posseUnits {
+    display: none;
+  }
+  body.mobile-layout #tutorialHud {
+    max-width: min(92vw, 22rem);
+    font-size: 0.78rem;
+  }
+  body.mobile-layout #cashRep {
+    font-size: 0.75rem;
+    flex-wrap: wrap;
+    gap: 0.2rem;
+  }
+
   #mobileControls {
     display: flex;
     position: absolute;
@@ -4103,11 +4127,11 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
     right: 0;
     bottom: 0;
     z-index: 12;
-    gap: 0.4rem;
+    gap: 0.35rem;
     align-items: flex-end;
     justify-content: center;
-    padding: 0.4rem 0.5rem calc(0.4rem + env(safe-area-inset-bottom, 0px));
-    background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.55) 35%);
+    padding: 0.35rem 0.45rem calc(0.35rem + env(safe-area-inset-bottom, 0px));
+    background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.5) 40%);
     pointer-events: none;
   }
 

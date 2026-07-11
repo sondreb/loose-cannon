@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-11 (textures + full-screen rain + interiors pass)  
+Last updated: 2026-07-11 (playtest skill + dual rain + mobile + voice + hydrants)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -16,8 +16,12 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | Combat-scene world look | Done | Wet asphalt, episodic rain, props, street dressing |
 | **Street realism pass** | **Done** | Continuous asphalt + Imagine seamless textures (asphalt/sidewalk/grass/debris) |
 | **Building textures** | **Done** | Brick wall + tar roof fills on façades; wood/plaster/club carpet interiors |
-| **Episodic weather** | **Done** | Clear default; full-viewport column-grid rain (CSS px); HUD CLEAR/RAIN/STORM |
-| **Warzone line** | **Done** | Iso diagonal double rail + jersey barriers on the line (not upright poles) |
+| **Episodic weather** | **Done** | Dual-layer full-viewport rain; CLEAR default; HUD CLEAR/RAIN/STORM |
+| **Warzone line** | **Done** | Iso diagonal double rail + jersey barriers (not upright poles) |
+| **Hydrants** | **Done** | Sparse map props (1–2/block); shootable → water spray FX ~3s |
+| **Playtest skill** | **Done** | `.grok/skills/playtest-visuals` + `npm run playtest:shot` / `test:ui` |
+| **Mobile touch** | **Done** | Tap move; hold-drag stick; long-press fire; pinch zoom; declutter HUD |
+| **Voice banks** | **Done** | Crew select acks + rival warzone taunts (TTS fallback) |
 | **Interior decor** | **Done** | Bar / gym / hospital / shop / warehouse / church; **Twister VIP lounge**; **Crash Pad apartment** |
 | **Iron Temple gym** | **Done** | Coach Brick dialogue: train selected / whole posse / muscle day |
 | Painted goon/prop sprites | Done | Imagine PNGs + procedural fallback |

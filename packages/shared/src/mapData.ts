@@ -613,15 +613,15 @@ export function createSkidrowMap(): WorldMapDef {
     { id: "d1b", kind: "dumpster", x: 34, y: 26, label: "Alley buffet" },
     { id: "n2", kind: "neon", x: 50, y: 12, label: "PAWN" },
     { id: "n2b", kind: "neon", x: 10, y: 18, label: "LIQUOR" },
-    { id: "h1", kind: "hydrant", x: 20, y: 24 },
-    { id: "h1b", kind: "hydrant", x: 42, y: 20 },
+    // Hydrants: 1–2 per district block (not a seed column on every sidewalk)
+    { id: "h1", kind: "hydrant", x: 22, y: 23, label: "Downtown plug" },
+    { id: "h1b", kind: "hydrant", x: 48, y: 17, label: "Pawn block plug" },
     { id: "cr1", kind: "crate", x: 44, y: 28, label: "Definitely not guns" },
     { id: "taxi1", kind: "car", x: 38, y: 20, label: "Checker cab (retired)" },
     { id: "cone1", kind: "cone", x: 18, y: 19 },
     { id: "cone2", kind: "cone", x: 41, y: 21 },
     { id: "phone1", kind: "phonebooth", x: 28, y: 22, label: "Last working booth" },
     { id: "mail1", kind: "mailbox", x: 46, y: 18, label: "Federal pigeonhole" },
-    { id: "h1c", kind: "hydrant", x: 30, y: 28, label: "Pressure relief" },
     { id: "cone0", kind: "cone", x: 36, y: 24, label: "Union property" },
     // War zone
     { id: "d2", kind: "dumpster", x: 55, y: 45, label: "Smells like opportunity" },
@@ -640,7 +640,8 @@ export function createSkidrowMap(): WorldMapDef {
     { id: "n1", kind: "neon", x: 94, y: 58, label: "OPEN" },
     { id: "n3", kind: "neon", x: 26, y: 50, label: "LOANS" },
     { id: "n4", kind: "neon", x: 70, y: 62, label: "24HR" },
-    { id: "h2", kind: "hydrant", x: 64, y: 46 },
+    { id: "h2", kind: "hydrant", x: 58, y: 48, label: "War plug" },
+    { id: "h2b", kind: "hydrant", x: 74, y: 44, label: "Fringe plug" },
     { id: "cr2", kind: "crate", x: 58, y: 50, label: "Still not guns" },
     { id: "cone3", kind: "cone", x: 39, y: 41 },
     { id: "cone4", kind: "cone", x: 61, y: 43 },
@@ -652,7 +653,7 @@ export function createSkidrowMap(): WorldMapDef {
     { id: "n5", kind: "neon", x: 86, y: 52, label: "COLD" },
     { id: "cr3", kind: "crate", x: 84, y: 56, label: "Keep frozen (or else)" },
     { id: "cone5", kind: "cone", x: 87, y: 50, label: "Ice hazard" },
-    { id: "h3", kind: "hydrant", x: 90, y: 54, label: "Frost valve" },
+    { id: "h3", kind: "hydrant", x: 92, y: 56, label: "Frost valve" },
   ];
 
   return {

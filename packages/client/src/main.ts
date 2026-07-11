@@ -279,7 +279,12 @@ let touchStart: {
   id: number;
   cancelled: boolean;
   longFired: boolean;
+  /** Hold-drag virtual stick (intent.dir) */
+  stick: boolean;
 } | null = null;
+/** Two-finger pinch zoom */
+let pinchStartDist = 0;
+let pinchStartZoom = 1;
 let longPressTimer: number | null = null;
 let longPressRingTimer: number | null = null;
 let longPressRing: HTMLDivElement | null = null;
@@ -287,6 +292,8 @@ const LONG_PRESS_MS = 380;
 const LONG_PRESS_RING_DELAY_MS = 90;
 /** Fat-finger tolerance — slightly larger than desktop click */
 const TAP_SLOP_PX = 22;
+/** Drag past this → virtual stick steer instead of long-press attack */
+const STICK_ACTIVATE_PX = 28;
 /** Event log pinned open (tap on mobile / click desktop) */
 let eventLogPinned = false;
 
@@ -2689,8 +2696,12 @@ async function startGame(): Promise<void> {
 
   socket.connect(myName, myRealmInput || undefined);
   bindInput();
-  // Phones: chat starts hidden so it never covers the map / zone pill
-  if (isMobileLayout()) setChatCollapsed(true);
+  // Phones: collapse chat + posse so the map isn't buried under chrome
+  if (isMobileLayout()) {
+    setChatCollapsed(true);
+    possePanel?.classList.add("collapsed");
+    document.body.classList.add("mobile-layout");
+  }
   syncMobileHudTop();
   if (possePanel && typeof ResizeObserver !== "undefined") {
     const ro = new ResizeObserver(() => syncMobileHudTop());
@@ -2731,16 +2742,31 @@ function bindInput(): void {
     }
   });
 
-  // Touch: tap = move / interact, long-press = attack, attack-mode button sticky
+  // Touch:
+  //  - tap = move / interact / select
+  //  - hold-drag = virtual stick (intent.dir)
+  //  - long-press no drag = fire
+  //  - pinch = zoom
   canvas.addEventListener(
     "touchstart",
     (e) => {
       lastTouchAt = performance.now();
-      clearLongPressTimer();
+      if (e.touches.length === 2) {
+        // Pinch start
+        clearLongPressTimer();
+        touchStart = null;
+        const a = e.touches[0]!;
+        const b = e.touches[1]!;
+        pinchStartDist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+        pinchStartZoom = view?.getZoom?.() ?? 1;
+        return;
+      }
       if (e.touches.length !== 1) {
         touchStart = null;
         return;
       }
+      clearLongPressTimer();
+      pinchStartDist = 0;
       const t = e.touches[0]!;
       touchStart = {
         x: t.clientX,
@@ -2749,15 +2775,15 @@ function bindInput(): void {
         id: t.identifier,
         cancelled: false,
         longFired: false,
+        stick: false,
       };
       if (view) view.updateHover(t.clientX, t.clientY);
-      // Delay ring so quick taps don't flash; fire attack when hold completes
       longPressRingTimer = window.setTimeout(() => {
-        if (!touchStart || touchStart.cancelled || touchStart.longFired) return;
+        if (!touchStart || touchStart.cancelled || touchStart.longFired || touchStart.stick) return;
         showLongPressRing(touchStart.x, touchStart.y);
       }, LONG_PRESS_RING_DELAY_MS);
       longPressTimer = window.setTimeout(() => {
-        if (!touchStart || touchStart.cancelled || touchStart.longFired) return;
+        if (!touchStart || touchStart.cancelled || touchStart.longFired || touchStart.stick) return;
         touchStart.longFired = true;
         armLongPressRing();
         handlePrimaryPointer(touchStart.x, touchStart.y, true);
@@ -2770,23 +2796,66 @@ function bindInput(): void {
   canvas.addEventListener(
     "touchmove",
     (e) => {
-      if (!touchStart || e.touches.length !== 1) return;
+      // Pinch zoom
+      if (e.touches.length === 2 && view) {
+        e.preventDefault();
+        clearLongPressTimer();
+        touchStart = null;
+        const a = e.touches[0]!;
+        const b = e.touches[1]!;
+        const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+        if (pinchStartDist > 8) {
+          const ratio = dist / pinchStartDist;
+          view.setZoom(pinchStartZoom * ratio);
+        }
+        return;
+      }
+      if (!touchStart || e.touches.length !== 1 || !socket) return;
       const t = e.touches[0]!;
       const dx = t.clientX - touchStart.x;
       const dy = t.clientY - touchStart.y;
       const dist = Math.hypot(dx, dy);
-      // Drag cancels long-press attack; still allow release as move if short drag
-      if (dist > TAP_SLOP_PX) {
+      if (dist > STICK_ACTIVATE_PX) {
+        // Virtual stick: hold-drag to walk
+        if (!touchStart.stick) {
+          touchStart.stick = true;
+          touchStart.cancelled = true;
+          clearLongPressTimer();
+          hideLongPressRing();
+          pendingInteract = null;
+          view?.clearLocalPrediction();
+        }
+        // Screen → world dir: up is north (−y), right is +x-ish in iso
+        // Approximate with screen axes: dx→world mix, dy→world mix
+        let wdx = dx;
+        let wdy = dy;
+        // Normalize
+        const len = Math.hypot(wdx, wdy) || 1;
+        wdx /= len;
+        wdy /= len;
+        // Convert screen drag to world: iso screen x grows with (wx-wy), y with (wx+wy)
+        // Inverse: wx ∝ sx/TILE_W + sy/TILE_H, wy ∝ sy/TILE_H - sx/TILE_W
+        const worldDx = wdx + wdy;
+        const worldDy = wdy - wdx;
+        const n = Math.hypot(worldDx, worldDy) || 1;
+        socket.send({ type: "intent.dir", dx: worldDx / n, dy: worldDy / n });
+        keyMoving = true;
+        e.preventDefault();
+      } else if (dist > TAP_SLOP_PX) {
         touchStart.cancelled = true;
         clearLongPressTimer();
       }
     },
-    { passive: true },
+    { passive: false },
   );
 
   canvas.addEventListener(
     "touchend",
     (e) => {
+      if (e.touches.length >= 2) return;
+      if (pinchStartDist > 0 && e.touches.length < 2) {
+        pinchStartDist = 0;
+      }
       if (!touchStart) return;
       const start = touchStart;
       const t =
@@ -2798,17 +2867,23 @@ function bindInput(): void {
         return;
       }
       e.preventDefault();
+      // End stick → stop walking
+      if (start.stick) {
+        keyMoving = false;
+        socket?.send({ type: "intent.dir", dx: 0, dy: 0 });
+        socket?.send({ type: "intent.stop" });
+        view?.clearLocalPrediction();
+        touchStart = null;
+        return;
+      }
       const dist = Math.hypot(t.clientX - start.x, t.clientY - start.y);
-      // Long-press already fired on timer — don't also walk/move on release
       if (start.longFired) {
         touchStart = null;
         return;
       }
-      // Short tap or slight drag still counts as move / interact
       if (!start.cancelled && dist < TAP_SLOP_PX * 2.5) {
         handlePrimaryPointer(t.clientX, t.clientY, false);
       } else if (dist < TAP_SLOP_PX * 1.2) {
-        // Cancelled mid-hold with tiny motion — still treat as tap
         handlePrimaryPointer(t.clientX, t.clientY, false);
       }
       touchStart = null;
@@ -2818,7 +2893,13 @@ function bindInput(): void {
 
   canvas.addEventListener("touchcancel", () => {
     clearLongPressTimer();
+    if (touchStart?.stick) {
+      keyMoving = false;
+      socket?.send({ type: "intent.dir", dx: 0, dy: 0 });
+      socket?.send({ type: "intent.stop" });
+    }
     touchStart = null;
+    pinchStartDist = 0;
   });
 
   // Mobile chrome buttons

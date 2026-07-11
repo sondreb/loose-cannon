@@ -19,6 +19,17 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-11 — playtest skill, dual rain, mobile, voice, hydrants
+- Focus: Automated visual QA skill; rain depth; hydrant placement/shoot; mobile touch; Kingpin taunts + crew acks
+- Done:
+  - Skill `playtest-visuals` + `npm run playtest:shot` / `npm run test:ui`
+  - Dual-layer full-viewport rain; sidewalk hydrant spam removed; sparse shootable hydrants + spray FX
+  - Mobile: hold-drag stick, pinch zoom, declutter; roundPixels off for zoom glitches
+  - Voice banks: crew_ack_m/f + rival_taunt (Web Speech fallback)
+- Verify: `npm run build` + `npm run test:ui` → UI_TEST_OK
+- Next: Optional playwright install for screenshots; more mission UI paths in test:ui
+- Blocked: none
+
 ### 2026-07-11 — weather + buildings + gym + streets
 - Focus: User feedback — no permanent rain, rain FX broken/tiny, tiles, buildings, gym workouts
 - Done:

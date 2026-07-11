@@ -10,6 +10,8 @@
     "server": "npm run start -w @loose-cannon/server",
     "client": "npm run dev -w @loose-cannon/client",
     "smoke": "node packages/server/scripts/smoke.mjs",
+    "test:ui": "node scripts/playtest/ui-test.mjs",
+    "playtest:shot": "node scripts/playtest/capture.mjs",
     "voice:gen": "node scripts/voice/generate-voice.mjs",
     "build": "npm run build -w @loose-cannon/shared && npm run build -w @loose-cannon/server && npm run build -w @loose-cannon/client",
     "build:azure": "node scripts/prepare-azure-deploy.mjs",

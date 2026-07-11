@@ -72,6 +72,16 @@ type FxParticle =
   | { kind: "impact"; x: number; y: number; life: number; max: number; crit: boolean }
   | { kind: "shell"; x: number; y: number; life: number; max: number; vx: number; vy: number }
   | {
+      kind: "hydrantSpray";
+      x: number;
+      y: number;
+      life: number;
+      max: number;
+      vx: number;
+      vy: number;
+      r: number;
+    }
+  | {
       kind: "dmgText";
       x: number;
       y: number;
@@ -263,7 +273,8 @@ export class WorldView {
       resolution: Math.min(window.devicePixelRatio || 1, 1),
       autoDensity: true,
       powerPreference: "high-performance",
-      roundPixels: true,
+      // roundPixels causes shimmer/glitches on textured walls under continuous zoom
+      roundPixels: false,
     });
     // Load painted goons / props / world textures (non-blocking if fail → procedural fallback)
     await Promise.all([
@@ -481,6 +492,44 @@ export class WorldView {
     }
   }
 
+  /** Fire hydrant gush — ~3s of water particles in world space. */
+  spawnHydrantSpray(x: number, y: number): void {
+    const max = 3.2;
+    for (let i = 0; i < 48; i++) {
+      const ang = -Math.PI / 2 + (Math.random() - 0.5) * 1.4;
+      const spd = 1.2 + Math.random() * 2.8;
+      this.fx.push({
+        kind: "hydrantSpray",
+        x: x + (Math.random() - 0.5) * 0.15,
+        y: y + (Math.random() - 0.5) * 0.15,
+        life: max * (0.55 + Math.random() * 0.45),
+        max,
+        vx: Math.cos(ang) * spd,
+        vy: Math.sin(ang) * spd * 0.35 + (Math.random() - 0.2) * 0.8,
+        r: 1.5 + Math.random() * 2.5,
+      });
+    }
+    // Continuous gush from nozzle for a few bursts
+    for (let wave = 0; wave < 6; wave++) {
+      window.setTimeout(() => {
+        for (let i = 0; i < 10; i++) {
+          const ang = -Math.PI / 2 + (Math.random() - 0.5) * 1.2;
+          const spd = 1.5 + Math.random() * 2.5;
+          this.fx.push({
+            kind: "hydrantSpray",
+            x,
+            y,
+            life: 1.8 + Math.random(),
+            max: 2.5,
+            vx: Math.cos(ang) * spd,
+            vy: Math.sin(ang) * spd * 0.3,
+            r: 1.8 + Math.random() * 2,
+          });
+        }
+      }, wave * 400);
+    }
+  }
+
   burstFx(x: number, y: number, kind: "muzzle" | "blood" | "spark"): void {
     if (kind === "muzzle") {
       this.fx.push({
@@ -541,6 +590,11 @@ export class WorldView {
   }
 
   private spawnCombatFx(e: CombatFxEvent): void {
+    if (e.kind === "hydrant_spray") {
+      this.spawnHydrantSpray(e.x0, e.y0);
+      return;
+    }
+
     const dx = e.x1 - e.x0;
     const dy = e.y1 - e.y0;
     const ang = Math.atan2(dy, dx);
@@ -1606,19 +1660,8 @@ export class WorldView {
       g.fill({ color: 0x8a6840, alpha: 0.7 });
     }
 
-    // Fire hydrant
-    if (type === "sidewalk" && seed % 37 === 9) {
-      g.ellipse(sx, sy + 3, 4, 1.8);
-      g.fill({ color: 0x000000, alpha: 0.3 });
-      g.rect(sx - 2.5, sy - 8, 5, 10);
-      g.fill({ color: 0xc02828 });
-      g.rect(sx - 4, sy - 5, 8, 3);
-      g.fill({ color: 0xa02020 });
-      g.circle(sx, sy - 10, 2.5);
-      g.fill({ color: 0xd03030 });
-      g.circle(sx, sy - 10, 4);
-      g.fill({ color: 0xff4040, alpha: 0.08 * neonBoost });
-    }
+    // Fire hydrants: map props only (1–2 per block) — no sidewalk seed spam
+    // (seed % N hydrants stacked into vertical columns along iso sidewalks)
 
     // Traffic light post (sidewalk corners near roads)
     if (type === "sidewalk" && seed % 29 === 7) {
@@ -1780,31 +1823,67 @@ export class WorldView {
     const neonScale = Math.max(0.2, this.look.neon) * (0.5 + rainScale * 0.5);
     const alphaMul = Math.min(1, rainScale);
 
-    // Column grid guarantees full-width coverage (no sparse RNG left-clump)
-    const colStep = storm ? 7 : 9;
-    const cols = Math.ceil(w / colStep) + 2;
-    const rows = storm ? 5 : 4;
-    const speed = storm ? 420 : 280;
-    const slant = storm ? 8 : 6;
-    const lenBase = storm ? 20 : 15;
-
-    for (let c = 0; c < cols; c++) {
-      for (let r = 0; r < rows; r++) {
-        const i = c * rows + r;
-        const h1 = ((i * 1103515245 + 12345) >>> 0) / 0xffffffff;
-        const phase = (t * speed + h1 * (h + 160) + r * (h / rows)) % (h + 160);
-        const px = c * colStep + (h1 - 0.5) * colStep * 0.6 - 8;
-        const py = phase - 40;
-        const len = lenBase + (i % 6) * 2.5;
-        g.moveTo(px, py);
-        g.lineTo(px + slant, py + len);
-        g.stroke({
-          color: 0xd8e8ff,
-          width: storm ? 1.3 : 1.1,
-          alpha: (0.11 + (i % 4) * 0.025) * alphaMul,
-        });
+    // Dual layers: far slow mist + near fast streaks (depth / parallax feel)
+    const drawLayer = (opts: {
+      colStep: number;
+      rows: number;
+      speed: number;
+      slant: number;
+      lenBase: number;
+      width: number;
+      alpha: number;
+      color: number;
+      seed: number;
+      phaseOff: number;
+    }) => {
+      const cols = Math.ceil(w / opts.colStep) + 2;
+      for (let c = 0; c < cols; c++) {
+        for (let r = 0; r < opts.rows; r++) {
+          const i = c * opts.rows + r + opts.seed;
+          const h1 = ((i * 1103515245 + 12345) >>> 0) / 0xffffffff;
+          const phase =
+            (t * opts.speed + h1 * (h + 160) + r * (h / opts.rows) + opts.phaseOff) %
+            (h + 160);
+          const px = c * opts.colStep + (h1 - 0.5) * opts.colStep * 0.55 - 10;
+          const py = phase - 50;
+          const len = opts.lenBase + (i % 5) * 2.2;
+          g.moveTo(px, py);
+          g.lineTo(px + opts.slant, py + len);
+          g.stroke({
+            color: opts.color,
+            width: opts.width,
+            alpha: opts.alpha * alphaMul * (0.85 + (i % 3) * 0.08),
+          });
+        }
       }
-    }
+    };
+
+    // Layer A — distant, softer, slower, shallower angle
+    drawLayer({
+      colStep: storm ? 10 : 12,
+      rows: storm ? 4 : 3,
+      speed: storm ? 220 : 150,
+      slant: storm ? 5 : 3.5,
+      lenBase: storm ? 14 : 11,
+      width: 1.0,
+      alpha: 0.07,
+      color: 0xb0c4e0,
+      seed: 17,
+      phaseOff: 40,
+    });
+    // Layer B — near, brighter, faster, steeper
+    drawLayer({
+      colStep: storm ? 7 : 9,
+      rows: storm ? 5 : 4,
+      speed: storm ? 420 : 280,
+      slant: storm ? 9 : 6.5,
+      lenBase: storm ? 22 : 16,
+      width: storm ? 1.35 : 1.15,
+      alpha: 0.12,
+      color: 0xd8e8ff,
+      seed: 91,
+      phaseOff: 0,
+    });
 
     // Wet neon glints across full screen
     const glints = Math.round(32 * neonScale);
@@ -3050,12 +3129,19 @@ export class WorldView {
           g.fill({ color: 0xffffff, alpha: 0.4 });
         }
       } else if (p.kind === "hydrant") {
+        g.ellipse(sx, sy + 4, 6, 2.5);
+        g.fill({ color: 0x000000, alpha: 0.3 });
         g.roundRect(sx - 5, sy - 14, 10, 16, 2);
         g.fill({ color: 0xe04030 });
         g.roundRect(sx - 5, sy - 14, 10, 16, 2);
-        g.stroke({ color: 0x0a0810, width: 1, alpha: 0.55 });
+        g.stroke({ color: 0x0a0810, width: 1.2, alpha: 0.6 });
         g.rect(sx - 8, sy - 8, 16, 4);
         g.fill({ color: 0xc03028 });
+        g.circle(sx, sy - 16, 3);
+        g.fill({ color: 0xff6050 });
+        // Hint: shootable
+        g.circle(sx, sy - 8, 14);
+        g.stroke({ color: 0x60c0ff, width: 1, alpha: 0.12 + Math.sin(this.time * 3) * 0.06 });
       }
     }
 
@@ -3821,10 +3907,20 @@ export class WorldView {
       if (f.life <= 0) continue;
 
       // Motion
-      if (f.kind === "blood" || f.kind === "spark" || f.kind === "shell" || f.kind === "flame") {
+      if (
+        f.kind === "blood" ||
+        f.kind === "spark" ||
+        f.kind === "shell" ||
+        f.kind === "flame" ||
+        f.kind === "hydrantSpray"
+      ) {
         f.x += f.vx * dt;
         f.y += f.vy * dt;
         if (f.kind === "blood" || f.kind === "shell") f.vy += 3.5 * dt;
+        if (f.kind === "hydrantSpray") {
+          f.vy += 2.2 * dt; // arc down
+          f.vx *= 0.98;
+        }
         if (f.kind === "flame") {
           f.vx *= 0.9;
           f.vy *= 0.9;
@@ -3892,6 +3988,12 @@ export class WorldView {
         g.fill({ color: 0xffe080, alpha: a });
         g.circle(p.sx + f.vx * 2, p.sy - 8 + f.vy * 2, 1.6);
         g.fill({ color: 0xffffff, alpha: a * 0.8 });
+      } else if (f.kind === "hydrantSpray") {
+        const p = worldToScreen(f.x, f.y);
+        g.circle(p.sx, p.sy - 4, f.r * (0.6 + t * 0.6));
+        g.fill({ color: 0x60c0ff, alpha: a * 0.75 });
+        g.circle(p.sx + 1, p.sy - 5, f.r * 0.35);
+        g.fill({ color: 0xd0f0ff, alpha: a * 0.55 });
       } else if (f.kind === "flame") {
         const p = worldToScreen(f.x, f.y);
         const col = t > 0.6 ? 0xfff0a0 : t > 0.3 ? 0xff8020 : 0xc02010;
@@ -4009,7 +4111,8 @@ export class WorldView {
     // Larger cells = fewer full map rebuilds while moving (was /4 and stuttered south)
     const cellX = Math.floor(this.followX / 8);
     const cellY = Math.floor(this.followY / 8);
-    const zCell = Math.round(this.zoom * 8);
+    // Coarser zoom buckets — avoid rebuild thrash mid-pinch that flashes seams
+    const zCell = Math.round(this.zoom * 4);
     if (cellX !== this.mapCamCellX || cellY !== this.mapCamCellY || zCell !== this.mapZoomCell) {
       this.mapCamCellX = cellX;
       this.mapCamCellY = cellY;

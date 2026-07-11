@@ -903,7 +903,17 @@ export class GameWorld {
         this.cmdFire(session, posse, msg.targetId, msg.x, msg.y);
         break;
       case "intent.select":
-        if (posse.memberIds.includes(msg.unitId)) posse.selectedUnitId = msg.unitId;
+        if (posse.memberIds.includes(msg.unitId)) {
+          posse.selectedUnitId = msg.unitId;
+          const u = this.units.get(msg.unitId);
+          if (u?.alive) {
+            // Client plays short male/female ack (TTS bank)
+            session.conn?.send({
+              type: "voice.play",
+              lineId: u.gender === "female" ? "crew_ack_f" : "crew_ack_m",
+            });
+          }
+        }
         break;
       case "intent.interact":
         this.cmdInteract(session, posse, msg.targetUnitId);
@@ -1692,6 +1702,65 @@ export class GameWorld {
     return true;
   }
 
+  /** Throttled rival warzone taunt voice line (client TTS bank). */
+  private rivalBarkAt = new Map<string, number>();
+  private barkRivalTaunt(session: CharacterSession, target: Unit): void {
+    if (target.kind === "npc" && !target.npcRole) {
+      /* street meat can bark too */
+    }
+    const key = target.posseId || target.id;
+    const last = this.rivalBarkAt.get(key) ?? 0;
+    if (this.tick - last < TICK_HZ * 4) return;
+    this.rivalBarkAt.set(key, this.tick);
+    session.conn?.send({ type: "voice.play", lineId: "rival_taunt" });
+  }
+
+  /**
+   * Shoot a hydrant within range of aim point. Returns true if a hydrant was hit.
+   * Emits hydrant_spray combat FX (~3s water on client).
+   */
+  private tryHydrantShot(
+    session: CharacterSession,
+    posse: Posse,
+    shooter: Unit,
+    aimX: number,
+    aimY: number,
+  ): boolean {
+    if (posse.insideBuildingId) return false;
+    let best: { id: string; x: number; y: number; d: number } | null = null;
+    for (const p of this.map.props) {
+      if (p.kind !== "hydrant") continue;
+      const d = dist(aimX, aimY, p.x, p.y);
+      if (d < 1.85 && (!best || d < best.d)) best = { id: p.id, x: p.x, y: p.y, d };
+    }
+    if (!best) return false;
+    const range = dist(shooter.x, shooter.y, best.x, best.y);
+    const w = WEAPONS[shooter.weapon];
+    if (range > w.range + 1.2) return false;
+    // Cooldown so spam doesn't flood FX
+    const cdKey = `hydrant:${best.id}`;
+    const ready = this.propReadyAt.get(cdKey) ?? 0;
+    if (this.tick < ready) {
+      this.logThrottled(session, cdKey, "That hydrant's still pissing itself.", 2);
+      return true;
+    }
+    this.propReadyAt.set(cdKey, this.tick + TICK_HZ * 5);
+    this.pushCombatFx({
+      kind: "hydrant_spray",
+      x0: best.x,
+      y0: best.y,
+      x1: best.x,
+      y1: best.y,
+      weapon: shooter.weapon,
+    });
+    this.addHeat(posse, 2, session, "hydrant shot");
+    this.log(
+      session,
+      `You shot the hydrant. City water goes feral for a few seconds. (+2 heat) "That's taxpayer juice!"`,
+    );
+    return true;
+  }
+
   private tryMoveUnit(u: Unit, nx: number, ny: number, bid: string | null): boolean {
     let moved = false;
     const dx = nx - u.x;
@@ -1760,6 +1829,17 @@ export class GameWorld {
       }
       target = best;
     }
+
+    // Shoot a fire hydrant (ground aim or near miss) — water gush FX
+    const aimX = target?.x ?? x;
+    const aimY = target?.y ?? y;
+    if (aimX != null && aimY != null && !posse.insideBuildingId) {
+      if (this.tryHydrantShot(session, posse, shooter, aimX, aimY)) {
+        // Still allow shooting a unit if also targeted
+        if (!target || !target.alive) return;
+      }
+    }
+
     if (!target || !target.alive) return;
     if (target.posseId === posse.id) return;
 
@@ -1775,6 +1855,8 @@ export class GameWorld {
 
     // Always commit attack-move: chase if needed, fire when in range
     if (!this.cmdAttackMove(posse, target)) return;
+    // Rival bark (Kingpin energy) — throttle per target
+    this.barkRivalTaunt(session, target);
     const w = WEAPONS[shooter.weapon];
     const d = dist(shooter.x, shooter.y, target.x, target.y);
     if (d <= w.range + 0.35) {
