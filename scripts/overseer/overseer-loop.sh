@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Continuous Loose Cannon overseer loop (Git Bash / WSL / Linux / macOS)
 #
+# Idle stop: scripts/overseer/NO_WORK or OVERSEER_STOP: no_work ends the loop
+# (no endless empty health-check commits). Clear with --clear-no-work.
+#
 # Ctrl+C behavior:
 # - During idle sleep: stop immediately.
 # - During an active cycle (1st): request stop after the cycle finishes (do not kill the run).
@@ -16,19 +19,22 @@ MAX_CYCLES=0
 MAX_TURNS=80
 NO_PUSH=0
 NO_COMMIT=0
+CLEAR_NO_WORK=0
 SESSION_FILE="$(dirname "$0")/.session-id"
 PROMPT_BOOT="$(dirname "$0")/prompts/bootstrap.txt"
 PROMPT_CYCLE="$(dirname "$0")/prompts/cycle.txt"
 LOG_DIR="$(dirname "$0")/logs"
 COMMIT_SCRIPT="$(dirname "$0")/commit-cycle.sh"
+NO_WORK_FILE="$(dirname "$0")/NO_WORK"
 mkdir -p "$LOG_DIR"
 
 CYCLE_RUNNING=0
 STOP_REQUESTED=0
+IDLE_STOP=0
 CHILD_PID=""
 
 usage() {
-  echo "Usage: $0 [--yolo] [--sleep N] [--max-cycles N] [--max-turns N] [--no-push] [--no-commit]"
+  echo "Usage: $0 [--yolo] [--sleep N] [--max-cycles N] [--max-turns N] [--no-push] [--no-commit] [--clear-no-work]"
   exit 1
 }
 
@@ -40,10 +46,40 @@ while [[ $# -gt 0 ]]; do
     --max-turns) MAX_TURNS="${2:?}"; shift 2 ;;
     --no-push) NO_PUSH=1; shift ;;
     --no-commit) NO_COMMIT=1; shift ;;
+    --clear-no-work) CLEAR_NO_WORK=1; shift ;;
     -h|--help) usage ;;
     *) echo "Unknown: $1"; usage ;;
   esac
 done
+
+idle_stop_message() {
+  local when="${1:-after cycle}"
+  echo ""
+  echo "=== IDLE STOP ($when) ==="
+  echo "Mode A backlog is empty (or agent signaled OVERSEER_STOP: no_work)."
+  if [[ -f "$NO_WORK_FILE" ]]; then
+    echo "NO_WORK: $(head -n 1 "$NO_WORK_FILE" 2>/dev/null || true)"
+  fi
+  echo "Exiting loop — will not sleep/repeat empty health-check cycles."
+  echo "To run again after reopening work: rm scripts/overseer/NO_WORK"
+  echo "  or: $0 --yolo --clear-no-work"
+  echo ""
+}
+
+test_idle_stop_signal() {
+  # Machine signals from this run only — do not trust stale OVERSEER_LOG text.
+  # 1) Sentinel file (agent writes when Mode A backlog is empty)
+  if [[ -f "$NO_WORK_FILE" ]]; then
+    return 0
+  fi
+  # 2) Latest cycle log token
+  local latest
+  latest=$(ls -t "$LOG_DIR"/cycle-*.log 2>/dev/null | head -n 1 || true)
+  if [[ -n "${latest:-}" ]] && grep -qE 'OVERSEER_STOP:[[:space:]]*no_work' "$latest" 2>/dev/null; then
+    return 0
+  fi
+  return 1
+}
 
 if ! command -v grok >/dev/null 2>&1; then
   echo "grok CLI not found on PATH"
@@ -90,15 +126,27 @@ on_int() {
 }
 trap on_int INT
 
+if [[ "$CLEAR_NO_WORK" -eq 1 && -f "$NO_WORK_FILE" ]]; then
+  rm -f "$NO_WORK_FILE"
+  echo "Cleared scripts/overseer/NO_WORK (--clear-no-work)."
+fi
+
 echo "Loose Cannon overseer loop"
 echo "  Yolo:         $YOLO"
 echo "  Sleep:        ${SLEEP}s"
 echo "  MaxCycles:    $(if [[ $MAX_CYCLES -eq 0 ]]; then echo unlimited; else echo "$MAX_CYCLES"; fi)"
 echo "  MaxTurns:     $MAX_TURNS"
+echo "  Idle stop:    NO_WORK file or OVERSEER_STOP: no_work ends the loop"
 echo "  Ctrl+C idle:  stop immediately"
 echo "  Ctrl+C busy:  finish current cycle, then stop"
 echo "  Ctrl+C x2:    force-kill active cycle and exit"
 echo ""
+
+if [[ -f "$NO_WORK_FILE" ]]; then
+  idle_stop_message "before first cycle"
+  echo "Overseer loop ended after 0 cycle(s) (already idle)."
+  exit 0
+fi
 
 n=0
 while true; do
@@ -169,6 +217,15 @@ while true; do
 
   echo "Cycle $n finished with exit code $code"
 
+  # Idle / no-work: stop after publish, do not loop forever
+  if [[ "$STOP_REQUESTED" -eq 0 && "$code" -ne 130 ]]; then
+    if test_idle_stop_signal; then
+      IDLE_STOP=1
+      STOP_REQUESTED=1
+      idle_stop_message "after cycle $n"
+    fi
+  fi
+
   # Commit + push after cycle (skip force-kill mid-run)
   if [[ "$NO_COMMIT" -eq 0 && "$code" -ne 130 ]]; then
     echo "--- git publish (cycle $n) ---"
@@ -182,7 +239,11 @@ while true; do
   fi
 
   if [[ "$STOP_REQUESTED" -eq 1 ]]; then
-    echo "Stop was requested during the cycle — exiting without starting another."
+    if [[ "$IDLE_STOP" -eq 1 ]]; then
+      echo "Idle stop — exiting without starting another cycle."
+    else
+      echo "Stop was requested during the cycle — exiting without starting another."
+    fi
     break
   fi
 
@@ -206,6 +267,16 @@ while true; do
     fi
     # Unexpected sleep failure — continue rather than wedging the loop.
   fi
+
+  if [[ -f "$NO_WORK_FILE" ]]; then
+    IDLE_STOP=1
+    idle_stop_message "before next cycle"
+    break
+  fi
 done
 
-echo "Overseer loop ended after $n cycle(s)."
+if [[ "$IDLE_STOP" -eq 1 ]]; then
+  echo "Overseer loop ended after $n cycle(s) (idle stop)."
+else
+  echo "Overseer loop ended after $n cycle(s)."
+fi

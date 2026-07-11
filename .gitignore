@@ -12,3 +12,5 @@ deploy/
 # Overseer automation (local session + logs)
 scripts/overseer/.session-id
 scripts/overseer/logs/
+# Headless loop stop flag (written when Mode A backlog is empty)
+scripts/overseer/NO_WORK

@@ -49,6 +49,17 @@ description: >
 
 ## Stop conditions
 
-- Near-term criteria in `MASTER_PLAN.md` are met and backlog is empty of M3–M6 items you can do in Mode A.
+- Near-term criteria in `MASTER_PLAN.md` are met and Mode A backlog is empty (M0–M7 done; M8 deferred only).
 - Blocked on human design choice or credentials — record blocker and stop thrashing.
 - Do not invent Mode B infra work (Postgres/auth/k8s).
+
+### Idle stop (headless loop must exit)
+
+When there is **no** incomplete Mode A work and no critical player-facing bug:
+
+1. Write `scripts/overseer/NO_WORK` (gitignored) with one line: reason + ISO time.
+2. Do **not** re-stamp STATUS/OVERSEER_LOG or re-run build/smoke if the latest log entry is already an idle/health-check stop from today.
+3. End the final message with exactly: `OVERSEER_STOP: no_work`
+4. Delete `NO_WORK` only when you start real Mode A work again.
+
+The headless `overseer-loop` exits when `NO_WORK` exists or the cycle log contains `OVERSEER_STOP: no_work`. It will **not** sleep and repeat empty health-check commits.

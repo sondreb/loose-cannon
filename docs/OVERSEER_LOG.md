@@ -19,6 +19,27 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-11 — overseer idle-stop fix (no empty loop)
+- Focus: Headless overseer was sleeping forever on empty Mode A backlog (health-check doc stamps + commit every cycle)
+- Done:
+  - Agent writes gitignored `scripts/overseer/NO_WORK` + emits `OVERSEER_STOP: no_work` when backlog empty
+  - `overseer-loop.ps1` / `.sh` exit on `NO_WORK` (startup or after cycle); `-ClearNoWork` / `--clear-no-work` to reopen
+  - Skip re-stamp/build/smoke when already idle today (cycle.txt + skill + AGENTS)
+  - Documented in `docs/OVERSEER.md` and MASTER_PLAN cycle protocol
+- Verify: loop with existing `NO_WORK` exits after 0 cycles with idle-stop message
+- Next: Human decision — playtest / reopen backlog; restart any old loop process so it picks up the new scripts
+- Blocked: none (infra fix; Mode A game backlog still empty)
+
+### 2026-07-11 — cycle 55 (Mode A backlog empty — health-check stop)
+- Focus: Overseer select — next incomplete MASTER_PLAN item after M0–M7
+- Done:
+  - Confirmed M0–M7 all checked; unchecked items are M8 deferred only
+  - No critical player-facing bugs in STATUS; working tree clean of unfinished feature work
+  - Health check only (no greenfield — stop condition met)
+- Verify: `npm run build` OK; first smoke `SMOKE_FAIL` chapel after outdoor Neon Vipers wipe post–cold_storage (solo, no gear) → second run `SMOKE_OK` (cold/chop/chapel/temple + parties + realms)
+- Next: Human decision — playtest feedback, named polish, or reopen content backlog; never Mode B unless asked
+- Blocked: **No incomplete Mode A milestone.** Overseer should not invent parallel roadmap work.
+
 ### 2026-07-11 — cycle 54 (Mode A backlog empty — health-check stop)
 - Focus: Overseer select — next incomplete MASTER_PLAN item after M0–M7
 - Done:

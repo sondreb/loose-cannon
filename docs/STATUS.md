@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-11 (cycle 54 — Mode A backlog empty; health-check stop)  
+Last updated: 2026-07-11 (overseer idle-stop: loop exits when Mode A backlog empty)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -54,7 +54,7 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | **Parties / co-op** | **Done** | Invite/leave/kick; presence; party chat; shared jobs |
 | **M4 party polish** | **Done** | Kick/leave confirm; shared hold meter; wipe loot split |
 | **Crash Pad stash UX** | **Done** | Tutorial step + crew chips + cash half/all + risk banner |
-| Automated overseer scaffolding | Done | AGENTS + scripts/overseer |
+| Automated overseer scaffolding | Done | AGENTS + scripts/overseer; **idle stop** via `NO_WORK` / `OVERSEER_STOP: no_work` |
 
 ## Starter jobs (live)
 
@@ -369,7 +369,7 @@ Shared `gangs.ts` profiles keyed by map spawn id — server applies on spawn/res
 **Mode A near-term checklist is complete** (M0–M7 + optional packs). No incomplete MASTER_PLAN item remains short of deferred M8.
 
 1. **Stop greenfield** until a human re-opens backlog or reports a player-facing bug  
-2. Feel polish / critical bugs only if they appear (none open at cycle 54)  
+2. Feel polish / critical bugs only if they appear (none open; headless loop stops on empty backlog)  
 3. Optional content only if a human names it (e.g. more shells, club music bed, 8-dir art, balance pass)  
 4. **Never** Mode B (Postgres/auth/k8s) unless human asks  
 

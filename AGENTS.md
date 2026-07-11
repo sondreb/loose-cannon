@@ -53,11 +53,12 @@ When acting as the **development overseer** (headless loop or `/goal`):
 2. Pick the **next incomplete** milestone (highest priority unfinished item).  
    Default order: **M7 content density** (third instance, hustles, rivals, music) → optional M4/M3 polish (parties + memorial + realms + solo combat loop shipped).
 3. If STATUS marks a **critical player-facing bug**, fix that before greenfield.
-4. Implement it (spawn subagents for parallel research/impl/test when useful).
-5. Run verification: prefer `npm run smoke` and `npm run build` after structural changes.
-6. Update `docs/STATUS.md` (what landed, what’s next, date).
-7. Append a short cycle log entry to `docs/OVERSEER_LOG.md`.
-8. Stop if blocked on human decision (design ambiguity, paid services, deploy credentials).
+4. **If Mode A backlog is empty** (M0–M7 checked; only deferred M8 / human decisions remain): do **not** invent work. Write gitignored `scripts/overseer/NO_WORK`, end with `OVERSEER_STOP: no_work`, and exit. Skip re-stamping docs and re-running build/smoke when the latest log entry is already an idle stop. The headless loop exits on `NO_WORK` — it must not sleep and commit empty health-check cycles forever.
+5. Otherwise implement the milestone (spawn subagents for parallel research/impl/test when useful). Delete `scripts/overseer/NO_WORK` if you are starting real work again.
+6. Run verification: prefer `npm run smoke` and `npm run build` after structural changes.
+7. Update `docs/STATUS.md` (what landed, what’s next, date).
+8. Append a short cycle log entry to `docs/OVERSEER_LOG.md`.
+9. Stop if blocked on human decision (design ambiguity, paid services, deploy credentials) — record blocker; use `OVERSEER_STOP: blocked` when the loop should not thrash.
 
 **Do not regress:** free outdoor roam (no district soft-kicks), Titty Twister, combat-scene art path, longer kill/wipe toasts, mobile full-screen dialogue, 18+ tone.
 

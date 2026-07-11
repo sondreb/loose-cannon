@@ -13,6 +13,33 @@ Continue as the Loose Cannon development overseer in this repository.
    - M4 parties only when solo loop is solid (within a realm)
 4. If STATUS lists a critical player-facing bug (movement, crashes, unreadable UI), fix that first.
 
+## No work left — STOP (do not thrash)
+If **all** of these are true:
+- MASTER_PLAN Mode A items (M0–M7) are checked / complete
+- Only deferred items remain (e.g. M8 Mode B infra) — do **not** start them
+- STATUS has no **critical** player-facing bug to fix
+- You are not blocked mid-implementation of an unfinished feature
+
+Then the backlog is empty. **Do not invent greenfield work.** Do **not** run another health-check loop that only re-stamps docs.
+
+**Idle-stop protocol (mandatory):**
+1. Write (overwrite) the gitignored file `scripts/overseer/NO_WORK` with one short line: reason + ISO date/time.  
+   Example: `Mode A backlog empty (M0-M7 done; M8 deferred) 2026-07-11T12:00:00Z`  
+   The headless `overseer-loop` **exits permanently** when this file exists.
+2. If the latest OVERSEER_LOG entry is **already** a no-work / health-check stop from today:  
+   - Do **not** re-run build/smoke  
+   - Do **not** append another identical STATUS/OVERSEER_LOG stamp  
+   - Ensure `NO_WORK` exists, then end immediately
+3. Otherwise (first time discovering empty backlog this run):  
+   - Optional **one** build + smoke health check  
+   - One STATUS + OVERSEER_LOG stamp noting idle stop  
+   - Ensure `NO_WORK` exists
+4. End your final message with this exact line (loop parsers look for it):  
+   `OVERSEER_STOP: no_work`
+5. Delete `scripts/overseer/NO_WORK` **only** when you actually pick up new incomplete Mode A work in a later cycle.
+
+If blocked on a product/design decision or external credentials (but work remains): write the blocker in STATUS and OVERSEER_LOG, end with `OVERSEER_STOP: blocked`, and do not thrash on unrelated features. Prefer writing `scripts/overseer/NO_WORK` only for true empty backlog / human-decision-required; use `OVERSEER_STOP: blocked` text for temporary blockers where a human might unblock without deleting a flag.
+
 ## Product context (do not regress)
 - 18+ crime game: strong language, violence, suggestive club content OK.
 - Mode A: in-memory server only — NO Postgres, Redis, k8s, real auth.
@@ -20,8 +47,9 @@ Continue as the Loose Cannon development overseer in this repository.
 - The Titty Twister club, combat-scene graphics, longer kill toasts, mobile full-screen dialogue are live — preserve them.
 - Realms spec (docs/realms.md): no auth; realm string segregates full world state; default `public`; URL `?realm=`.
 
-## Execute
+## Execute (only when there is real work)
 - Implement that milestone (or a coherent vertical slice if the full item is too large for one cycle).
+- If `scripts/overseer/NO_WORK` exists and you found real work, delete it before implementing.
 - Spawn subagents when useful (explore before large edits; plan for multi-file systems).
 - Keep server authority: clients send intents only.
 - Protocol changes: packages/shared first, then server, then client.
@@ -30,11 +58,11 @@ Continue as the Loose Cannon development overseer in this repository.
 - Prefer: `npm run smoke` (server must already be on :3001, or start it)
 - After structural/protocol changes: `npm run build`
 - Fix breakages you introduced before ending the cycle.
+- Skip verify when following the no-work short path above (step 2).
 
 ## Close the cycle
-1. Update docs/STATUS.md (accurate live status + date).
-2. Append a cycle entry to docs/OVERSEER_LOG.md (focus, done, verify, next, blocked).
+1. Update docs/STATUS.md (accurate live status + date) — skip if no-work short path.
+2. Append a cycle entry to docs/OVERSEER_LOG.md (focus, done, verify, next, blocked) — skip if no-work short path.
 3. If MASTER_PLAN checkboxes should flip, update them.
 4. End with a short summary: what shipped, what's next, any human decision needed.
-
-If blocked on a product/design decision or external credentials, write the blocker clearly in STATUS and OVERSEER_LOG and stop implementing unrelated features.
+5. If idle: include `OVERSEER_STOP: no_work` as specified above.

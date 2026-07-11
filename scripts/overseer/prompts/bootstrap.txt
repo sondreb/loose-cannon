@@ -29,8 +29,9 @@ You are the permanent development overseer for Loose Cannon (this git repo).
 ## This session: bootstrap
 1. Confirm the repo layout and that npm scripts work (`npm run build` and/or `npm run smoke` if server available).
 2. From MASTER_PLAN, identify the highest-priority incomplete milestone (memorial wall, then realms per docs/realms.md).
-3. Implement a substantial first slice of that milestone.
-4. Update docs/STATUS.md and append to docs/OVERSEER_LOG.md.
-5. Summarize what you did and the exact next cycle's target.
+3. If **no** incomplete Mode A work remains: write `scripts/overseer/NO_WORK`, end with `OVERSEER_STOP: no_work`, do not invent features.
+4. Otherwise implement a substantial first slice of that milestone.
+5. Update docs/STATUS.md and append to docs/OVERSEER_LOG.md.
+6. Summarize what you did and the exact next cycle's target.
 
 Use subagents (explore/plan/general-purpose) when parallel work helps. Do not push to remote or change deploy secrets unless the human explicitly asked in this prompt.

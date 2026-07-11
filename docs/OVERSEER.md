@@ -91,12 +91,38 @@ The loop:
 1. Runs one headless overseer cycle (fresh session by default).
 2. If the worktree is dirty: **`git commit` + `git push`** via `scripts/overseer/commit-cycle.ps1`  
    (message from the latest `docs/OVERSEER_LOG.md` Focus/Done when present).
-3. Sleeps, then repeats until max cycles or you Ctrl+C.
+3. If the agent signals **idle stop** (see below), **exits the loop** — does not sleep and repeat.
+4. Otherwise sleeps, then repeats until max cycles or you Ctrl+C.
 
 | Flag | Effect |
 |------|--------|
 | `-NoPush` | Commit after each cycle, but do not push |
 | `-NoCommit` | Skip git entirely |
+| `-ClearNoWork` | Delete `scripts/overseer/NO_WORK` before starting (reopen after idle stop) |
+
+### Idle stop (no more Mode A work)
+
+When M0–M7 are done and there is nothing left to invent in Mode A, the agent:
+
+1. Writes gitignored `scripts/overseer/NO_WORK` (one-line reason + timestamp).
+2. Ends with the exact line `OVERSEER_STOP: no_work`.
+3. Skips re-stamping docs / re-running health checks if already idle today.
+
+The loop then:
+
+- Exits **immediately** if `NO_WORK` already exists at startup (no API burn).
+- After a cycle, exits if `NO_WORK` was written or the cycle log contains `OVERSEER_STOP: no_work`.
+- Does **not** keep committing empty “health-check stop” doc stamps forever.
+
+To run the loop again after you reopen the backlog:
+
+```powershell
+# remove the flag and start
+.\scripts\overseer\overseer-loop.ps1 -Yolo -ClearNoWork
+# or: Remove-Item scripts\overseer\NO_WORK -ErrorAction SilentlyContinue
+```
+
+Bash: `./scripts/overseer/overseer-loop.sh --yolo --clear-no-work`
 
 **Ctrl+C behavior**
 
