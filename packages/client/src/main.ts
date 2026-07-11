@@ -1567,11 +1567,38 @@ function renderMissionHud(): void {
     li.textContent = `${o.done ? "✓" : "○"} ${o.label}`;
     missionHudObjectives.appendChild(li);
   }
+  const holdMeta = document.getElementById("missionHudHoldMeta");
   if (m.progress != null) {
     missionHudProgress.classList.remove("hidden");
     missionHudBar.style.width = `${Math.round(m.progress * 100)}%`;
+    const partyHold =
+      m.holdersTotal != null && m.holdersTotal > 1 && m.holdersOnPoint != null;
+    missionHudProgress.classList.toggle("party-hold", !!partyHold);
+    if (holdMeta) {
+      if (partyHold) {
+        const on = m.holdersOnPoint ?? 0;
+        const total = m.holdersTotal ?? 0;
+        const secs =
+          m.timeLeft != null ? ` · ${Math.ceil(m.timeLeft)}s` : "";
+        holdMeta.textContent =
+          on > 0
+            ? `PARTY HOLD · ${on}/${total} on point${secs}`
+            : `PARTY HOLD · 0/${total} on point — get there${secs}`;
+        holdMeta.classList.remove("empty");
+      } else if (m.timeLeft != null && m.progress < 1) {
+        holdMeta.textContent = `HOLD · ${Math.ceil(m.timeLeft)}s left`;
+        holdMeta.classList.remove("empty");
+      } else {
+        holdMeta.textContent = "";
+        holdMeta.classList.add("empty");
+      }
+    }
   } else {
     missionHudProgress.classList.add("hidden");
+    if (holdMeta) {
+      holdMeta.textContent = "";
+      holdMeta.classList.add("empty");
+    }
   }
 }
 
@@ -2942,7 +2969,16 @@ function bindInput(): void {
     setPartyPanelOpen(!partyPanelOpen);
   });
   partyLeaveBtn?.addEventListener("click", () => {
-    socket.send({ type: "party.leave" });
+    void showConfirm({
+      kicker: "PARTY",
+      title: "Leave the party?",
+      body: "You'll lose shared jobs and party chat. They'll manage without you. Probably.",
+      okLabel: "LEAVE",
+      cancelLabel: "STAY",
+      danger: true,
+    }).then((ok) => {
+      if (ok) socket?.send({ type: "party.leave" });
+    });
   });
   partyInviteBanner?.addEventListener("click", (e) => {
     const t = e.target as HTMLElement;
@@ -2953,7 +2989,20 @@ function bindInput(): void {
   partyRoster?.addEventListener("click", (e) => {
     const t = e.target as HTMLElement;
     const kickId = t.closest("[data-party-kick]")?.getAttribute("data-party-kick");
-    if (kickId) socket.send({ type: "party.kick", posseId: kickId });
+    if (!kickId) return;
+    const row = t.closest(".party-row");
+    const nameEl = row?.querySelector(".pname");
+    const who = nameEl?.textContent?.replace(/\s*LEAD\s*/i, "").trim() || "this goon";
+    void showConfirm({
+      kicker: "PARTY",
+      title: `Kick ${who}?`,
+      body: "They're out of the van. Shared jobs stay with whoever's left. No refunds on friendship.",
+      okLabel: "KICK",
+      cancelLabel: "NEVER MIND",
+      danger: true,
+    }).then((ok) => {
+      if (ok) socket?.send({ type: "party.kick", posseId: kickId });
+    });
   });
   partyPresence?.addEventListener("click", (e) => {
     const t = e.target as HTMLElement;

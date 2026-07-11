@@ -1,6 +1,6 @@
 # Loose Cannon — Master Plan (Overseer Roadmap)
 
-Last updated: 2026-07-11 (M7 music bed)
+Last updated: 2026-07-11 (M4 party polish)
 
 Track completion in `docs/STATUS.md`. This file is the **ordered backlog** for autonomous development. Prefer finishing higher milestones before lower ones unless a dependency forces otherwise.
 
@@ -65,7 +65,7 @@ Full design: [realms.md](./realms.md). Friend groups on one beta/in-memory serve
 - [x] Presence / who is online in hub *(realm-scoped)*
 - [x] Chat channels: proximity (done) + party (`/p` or channel flag)
 - [x] Co-op mission start with party (same instance layer / shared outdoor contract, same realm)
-- [ ] Optional polish: party kick UI confirm, shared hold progress, loot split
+- [x] Optional polish: party kick UI confirm, shared hold progress, loot split
 
 ### M5 — Combat & AI depth
 
@@ -120,8 +120,8 @@ Each overseer cycle implements **one** primary milestone item (or a tightly rela
 
 ### Priority order for long unattended loops
 
-1. Optional M4 polish (loot split, shared hold meters) if co-op feel is rough
-2. Optional M3 stash UX polish
+1. Optional M3 stash UX polish / stash tutorial tip
+2. Feel bugs / polish from STATUS known debt when critical
 3. Never M8 / Mode B unless human asks
 
 ### Guardrails

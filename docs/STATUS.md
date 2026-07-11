@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-11 (M7 music bed)  
+Last updated: 2026-07-11 (M4 party polish)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -44,6 +44,7 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | **HUD / event-log readability** | **Done** | Kind-colored log lines; pin-to-read; stronger objective/toasts/mission HUD |
 | **Mobile touch polish** | **Done** | Long-press charge ring + fire on hold; drag cancel; larger slop; control hit targets |
 | **Parties / co-op** | **Done** | Invite/leave/kick; presence; party chat; shared jobs |
+| **M4 party polish** | **Done** | Kick/leave confirm; shared hold meter; wipe loot split |
 | Automated overseer scaffolding | Done | AGENTS + scripts/overseer |
 
 ## Starter jobs (live)
@@ -204,10 +205,13 @@ Server-authoritative; AI ignores ammo (always free fire). Players:
 - **Within a realm only** — invite by display name; max **4** players (`PARTY_MAX`)  
 - Protocol: `party.invite` / `accept` / `decline` / `leave` / `kick`; snapshot `party`, `partyInvite`, `presence`  
 - Client **PARTY** panel: roster + LEAD/job tags, online presence + INVITE, accept/decline banner, leave/kick  
+- **Kick / leave confirm:** in-game modal (no `window.confirm`) before `party.kick` / `party.leave`  
 - **Party chat:** `/p …` or `/party …` (or `channel: "party"`) — `[P]` lines to party only  
 - **Co-op jobs:** free mates (no active mission) auto-share when anyone accepts — outdoor same contract; instance uses shared `mi_<partyId>` layer + one enemy posse; each extracts/rewards separately  
+- **Shared hold:** outdoor hold jobs (Corner Tax / Parking Racket) — any party mate on the prop advances **all** shared meters once per tick; HUD shows `PARTY HOLD · N/M on point` + seconds left  
+- **Wipe loot split:** cash split evenly among online living party posses; street gear copies to each recipient; PARTY LOOT toast; chat notes N-way split  
 - Disconnect / leave dissolves party of &lt;2; shared hostiles only despawn when last party mate leaves the job  
-- Smoke: presence array; invite/accept/leave in realm `smoke-party`  
+- Smoke: presence; invite/accept/**kick**/leave in realm `smoke-party`  
 
 ### Street hustles / POI (live)
 
@@ -265,8 +269,8 @@ Shared `gangs.ts` profiles keyed by map spawn id — server applies on spawn/res
 
 ## Next for overseer (priority)
 
-1. Optional **M4 polish** — loot split, shared hold progress, kick confirm  
-2. Optional **M3** crash-pad stash UX polish  
+1. Optional **M3** crash-pad stash UX polish / stash tutorial tip  
+2. Feel bugs from known debt when critical (indoor micro-path, etc.)  
 3. **Never** Mode B (Postgres/auth/k8s) unless human asks  
 
 ## Known bugs / polish debt

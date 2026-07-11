@@ -699,6 +699,22 @@ if (lastMate.party.isLeader) fail("mate should not be leader");
 wsHost.send(JSON.stringify({ type: "chat", text: "/p smoke party check", channel: "party" }));
 await wait(300);
 
+// Leader kick (server authority; client confirms in UI)
+wsHost.send(JSON.stringify({ type: "party.kick", posseId: lastMate.you.posseId }));
+await wait(400);
+if (lastMate?.party) fail("mate should be solo after kick");
+if (lastHost?.party) fail("host party should dissolve after kick (size < 2)");
+console.log("party kick ok", hostName, mateName);
+
+// Re-form party for leave path
+wsHost.send(JSON.stringify({ type: "party.invite", targetName: mateName }));
+await wait(300);
+wsMate.send(JSON.stringify({ type: "party.accept" }));
+await wait(400);
+if (!lastHost?.party || lastHost.party.members.length !== 2) {
+  fail("party re-form failed after kick");
+}
+
 // Shared outdoor job attach
 // Skip job board UI: mate must not already be on mission (fresh spawn)
 // Host can't open Rita without walking — skip co-op mission in smoke; invite/leave is enough
@@ -706,7 +722,7 @@ wsMate.send(JSON.stringify({ type: "party.leave" }));
 await wait(400);
 if (lastMate?.party) fail("mate should be solo after leave");
 if (lastHost?.party) fail("host party should dissolve after mate leaves");
-console.log("party invite/accept/leave ok", hostName, mateName);
+console.log("party invite/accept/kick/leave ok", hostName, mateName);
 
 console.log("SMOKE_OK");
 ws2.close();

@@ -2314,114 +2314,176 @@ export class GameWorld {
       return;
     }
 
-    // Snapshot killer's best gear before loot (for upgrade detection)
-    let prevBestWeaponScore = 0;
-    let prevBestArmorScore = 0;
-    for (const m of this.members(killer)) {
-      for (const w of m.ownedWeapons) prevBestWeaponScore = Math.max(prevBestWeaponScore, weaponScore(w));
-      for (const a of m.ownedArmors) prevBestArmorScore = Math.max(prevBestArmorScore, armorScore(a));
-      prevBestWeaponScore = Math.max(prevBestWeaponScore, weaponScore(m.weapon));
-      prevBestArmorScore = Math.max(prevBestArmorScore, armorScore(m.armor));
-    }
+    // Party loot split: cash even among party posses; gear to each party crew (shared copies)
+    const lootRecipients = this.partyLootRecipients(killer);
+    const shareCount = lootRecipients.length;
+    const baseShare = shareCount > 0 ? Math.floor(cashTaken / shareCount) : cashTaken;
+    let remainder = shareCount > 0 ? cashTaken - baseShare * shareCount : 0;
 
-    killer.cash += cashTaken;
+    const weaponList = [...weapons];
+    const armorList = [...armors];
+    const gearTxt =
+      [...weaponList.map((w) => WEAPONS[w].name), ...armorList.map((a) => ARMORS[a].name)].join(
+        ", ",
+      ) || "nothing special";
 
-    // Give carried loot to killer members; equip best on leader
-    const living = this.members(killer);
-    for (const m of living) {
+    for (const recipient of lootRecipients) {
+      let cashShare = baseShare;
+      // Attributed killer gets leftover pennies so total cash is conserved
+      if (remainder > 0 && recipient.id === killer.id) {
+        cashShare += remainder;
+        remainder = 0;
+      } else if (remainder > 0 && recipient === lootRecipients[lootRecipients.length - 1]) {
+        cashShare += remainder;
+        remainder = 0;
+      }
+      recipient.cash += cashShare;
+
+      // Snapshot best gear before grant (upgrade toast per recipient)
+      let prevBestWeaponScore = 0;
+      let prevBestArmorScore = 0;
+      for (const m of this.members(recipient)) {
+        for (const w of m.ownedWeapons) prevBestWeaponScore = Math.max(prevBestWeaponScore, weaponScore(w));
+        for (const a of m.ownedArmors) prevBestArmorScore = Math.max(prevBestArmorScore, armorScore(a));
+        prevBestWeaponScore = Math.max(prevBestWeaponScore, weaponScore(m.weapon));
+        prevBestArmorScore = Math.max(prevBestArmorScore, armorScore(m.armor));
+      }
+
+      const living = this.members(recipient);
+      for (const m of living) {
+        for (const w of weapons) {
+          const had = m.ownedWeapons.has(w);
+          m.ownedWeapons.add(w);
+          if (!had) grantWeaponAmmo(m, w);
+        }
+        for (const a of armors) m.ownedArmors.add(a);
+      }
+      this.equipBestOnLeader(recipient);
+
+      const upgrades: Array<{
+        kind: "weapon" | "armor";
+        id: string;
+        name: string;
+        upgrade: boolean;
+      }> = [];
+      const otherItems: string[] = [];
       for (const w of weapons) {
-        const had = m.ownedWeapons.has(w);
-        m.ownedWeapons.add(w);
-        if (!had) grantWeaponAmmo(m, w);
+        const better = weaponScore(w) > prevBestWeaponScore + 0.01;
+        const entry = {
+          kind: "weapon" as const,
+          id: w,
+          name: WEAPONS[w].name,
+          upgrade: better,
+        };
+        if (better) upgrades.push(entry);
+        else otherItems.push(WEAPONS[w].name);
       }
-      for (const a of armors) m.ownedArmors.add(a);
-    }
-    const leader = this.leader(killer);
-    if (leader && leader.alive && !leader.incapacitated) {
-      let bestW: WeaponId = leader.weapon;
-      let bestScore = weaponScore(bestW);
-      for (const w of leader.ownedWeapons) {
-        const score = weaponScore(w);
-        if (score > bestScore) {
-          bestW = w;
-          bestScore = score;
-        }
+      for (const a of armors) {
+        const better = armorScore(a) > prevBestArmorScore + 0.001;
+        const entry = {
+          kind: "armor" as const,
+          id: a,
+          name: ARMORS[a].name,
+          upgrade: better,
+        };
+        if (better) upgrades.push(entry);
+        else otherItems.push(ARMORS[a].name);
       }
-      leader.weapon = bestW;
-      let bestA: ArmorId = "none";
-      let bestR = 0;
-      for (const a of leader.ownedArmors) {
-        const r = armorScore(a);
-        if (r > bestR) {
-          bestR = r;
-          bestA = a;
-        }
+
+      const sess = this.sessionForPosse(recipient.id);
+      if (sess) {
+        const splitNote =
+          shareCount > 1
+            ? ` Party split: $${cashShare}/${cashTaken} cash (${shareCount}-way).`
+            : "";
+        this.log(
+          sess,
+          recipient.id === killer.id
+            ? `Wiped ${victim.name}! Looted street gear: ${gearTxt}.${splitNote}`
+            : `Party wipe of ${victim.name}! Your cut: $${cashShare} + street gear: ${gearTxt}.`,
+        );
+        sess.conn?.send({
+          type: "notify",
+          kind: "loot",
+          title: upgrades.length
+            ? "GEAR UPGRADE!"
+            : shareCount > 1
+              ? "PARTY LOOT"
+              : "WIPE LOOT",
+          subtitle: upgrades.length
+            ? `Better iron from ${victim.name}`
+            : shareCount > 1
+              ? `Split spoils from ${victim.name}`
+              : `Spoils from ${victim.name}`,
+          cash: cashShare,
+          victimName: victim.name,
+          upgrades,
+          otherItems,
+        });
       }
-      leader.armor = bestA;
     }
 
-    const upgrades: Array<{
-      kind: "weapon" | "armor";
-      id: string;
-      name: string;
-      upgrade: boolean;
-    }> = [];
-    const otherItems: string[] = [];
-    for (const w of weapons) {
-      const better = weaponScore(w) > prevBestWeaponScore + 0.01;
-      const entry = {
-        kind: "weapon" as const,
-        id: w,
-        name: WEAPONS[w].name,
-        upgrade: better,
-      };
-      if (better) upgrades.push(entry);
-      else otherItems.push(WEAPONS[w].name);
-    }
-    for (const a of armors) {
-      const better = armorScore(a) > prevBestArmorScore + 0.001;
-      const entry = {
-        kind: "armor" as const,
-        id: a,
-        name: ARMORS[a].name,
-        upgrade: better,
-      };
-      if (better) upgrades.push(entry);
-      else otherItems.push(ARMORS[a].name);
-    }
-
-    const gearTxt = [...upgrades.map((u) => u.name), ...otherItems].join(", ") || "nothing special";
-
-    const killerSession = [...this.sessions.values()].find((s) => s.posseId === killer.id);
-    if (killerSession) {
-      this.log(
-        killerSession,
-        `Wiped ${victim.name}! Looted $${cashTaken} and street gear: ${gearTxt}.`,
-      );
-      killerSession.conn?.send({
-        type: "notify",
-        kind: "loot",
-        title: upgrades.length ? "GEAR UPGRADE!" : "WIPE LOOT",
-        subtitle: upgrades.length
-          ? `Better iron from ${victim.name}`
-          : `Spoils from ${victim.name}`,
-        cash: cashTaken,
-        victimName: victim.name,
-        upgrades,
-        otherItems,
-      });
-    }
     if (victimSession) {
+      const partyNote =
+        shareCount > 1
+          ? ` ${killer.name}'s party (${shareCount}) split the take.`
+          : "";
       this.log(
         victimSession,
-        `${killer.name} wiped your crew and took street gear${cashTaken ? ` and $${cashTaken}` : ""}.${stashNote}`,
+        `${killer.name} wiped your crew and took street gear${cashTaken ? ` and $${cashTaken}` : ""}.${partyNote}${stashNote}`,
       );
     }
     this.pushChat(
       null,
-      `${killer.name} wiped ${victim.name} and took their street gear.`,
+      shareCount > 1
+        ? `${killer.name}'s party wiped ${victim.name} and split the street loot (${shareCount}-way).`
+        : `${killer.name} wiped ${victim.name} and took their street gear.`,
       true,
     );
+  }
+
+  /** Player posses that share wipe loot with the attributed killer (party mates + self). */
+  private partyLootRecipients(killer: Posse): Posse[] {
+    if (!killer.isPlayer) return [killer];
+    if (!killer.partyId) return [killer];
+    const party = this.parties.get(killer.partyId);
+    if (!party) return [killer];
+    const out: Posse[] = [];
+    for (const mid of party.memberPosseIds) {
+      const p = this.posses.get(mid);
+      // Only living crews with a session (online) get a cut
+      if (!p?.isPlayer) continue;
+      if (!this.hasLivingMembers(p)) continue;
+      if (!this.sessionForPosse(mid)?.conn) continue;
+      out.push(p);
+    }
+    return out.length ? out : [killer];
+  }
+
+  /** Equip the best owned weapon/armor on the living leader (post-loot). */
+  private equipBestOnLeader(posse: Posse): void {
+    const leader = this.leader(posse);
+    if (!leader || !leader.alive || leader.incapacitated) return;
+    let bestW: WeaponId = leader.weapon;
+    let bestScore = weaponScore(bestW);
+    for (const w of leader.ownedWeapons) {
+      const score = weaponScore(w);
+      if (score > bestScore) {
+        bestW = w;
+        bestScore = score;
+      }
+    }
+    leader.weapon = bestW;
+    let bestA: ArmorId = "none";
+    let bestR = 0;
+    for (const a of leader.ownedArmors) {
+      const r = armorScore(a);
+      if (r > bestR) {
+        bestR = r;
+        bestA = a;
+      }
+    }
+    leader.armor = bestA;
   }
 
   /** Remove a unit from a posse; optionally delete the entity. */
@@ -4467,11 +4529,26 @@ export class GameWorld {
 
     let progress: number | undefined;
     let timeLeft: number | undefined;
+    let holdersOnPoint: number | undefined;
+    let holdersTotal: number | undefined;
     const holdObj = def.objectives.find((o) => o.kind === "hold");
     if (holdObj) {
       const need = holdObj.holdSeconds ?? 10;
       progress = Math.min(1, m.holdAccum / need);
       timeLeft = Math.max(0, need - m.holdAccum);
+      // Party co-op: surface how many mates are on the point (shared meter)
+      const coHold = this.partyHoldGroup(posse, def.id);
+      if (coHold.length > 1 && holdObj.propId) {
+        const prop = this.map.props.find((p) => p.id === holdObj.propId);
+        const range = holdObj.range ?? 2.5;
+        holdersTotal = coHold.length;
+        holdersOnPoint = 0;
+        if (prop) {
+          for (const mate of coHold) {
+            if (this.isPosseHoldingProp(mate, prop.x, prop.y, range)) holdersOnPoint++;
+          }
+        }
+      }
     }
 
     const tmpl = m.templateBuildingId
@@ -4485,6 +4562,8 @@ export class GameWorld {
       objectives,
       progress,
       timeLeft,
+      holdersOnPoint,
+      holdersTotal,
       rewardCash: def.rewardCash,
       rewardRep: def.rewardRep,
       hintX: def.hintX ?? (tmpl ? tmpl.exitX : undefined),
@@ -4548,8 +4627,38 @@ export class GameWorld {
     });
   }
 
+  /**
+   * Party members sharing the same outdoor mission def (including self).
+   * Solo → [posse] only.
+   */
+  private partyHoldGroup(posse: Posse, defId: string): Posse[] {
+    if (!posse.mission || posse.mission.defId !== defId) return [];
+    if (!posse.partyId) return [posse];
+    const party = this.parties.get(posse.partyId);
+    if (!party) return [posse];
+    const out: Posse[] = [];
+    for (const mid of party.memberPosseIds) {
+      const p = this.posses.get(mid);
+      if (p?.isPlayer && p.mission?.defId === defId && !p.mission.instanceLayerId) {
+        out.push(p);
+      }
+    }
+    return out.length ? out : [posse];
+  }
+
+  /** Leader outdoors and within range of a hold prop */
+  private isPosseHoldingProp(posse: Posse, px: number, py: number, range: number): boolean {
+    if (posse.insideBuildingId) return false;
+    const leader = this.leader(posse);
+    if (!leader?.alive) return false;
+    return dist(leader.x, leader.y, px, py) <= range;
+  }
+
   /** Hold / kill / instance progress each tick */
   private updateMissions(dt: number): void {
+    /** Keys already advanced this tick: `partyId:defId` or `posseId:defId` for solo */
+    const holdAdvanced = new Set<string>();
+
     for (const posse of this.posses.values()) {
       if (!posse.isPlayer || !posse.mission) continue;
       const session = [...this.sessions.values()].find((s) => s.posseId === posse.id);
@@ -4578,11 +4687,24 @@ export class GameWorld {
           const prop = this.map.props.find((p) => p.id === obj.propId);
           if (!prop) continue;
           const range = obj.range ?? 2.5;
-          if (
-            !posse.insideBuildingId &&
-            dist(leader.x, leader.y, prop.x, prop.y) <= range
-          ) {
-            posse.mission.holdAccum += dt;
+          const group = this.partyHoldGroup(posse, def.id);
+          const holdKey =
+            group.length > 1 && posse.partyId
+              ? `${posse.partyId}:${def.id}`
+              : `${posse.id}:${def.id}`;
+          if (!holdAdvanced.has(holdKey)) {
+            holdAdvanced.add(holdKey);
+            // Shared hold: any living party mate on the point advances everyone's meter once
+            const anyoneOnPoint = group.some((mate) =>
+              this.isPosseHoldingProp(mate, prop.x, prop.y, range),
+            );
+            if (anyoneOnPoint) {
+              for (const mate of group) {
+                if (mate.mission && mate.mission.defId === def.id) {
+                  mate.mission.holdAccum += dt;
+                }
+              }
+            }
           }
         }
         if (obj.kind === "kill_unit" && !posse.mission.targetUnitId && obj.targetPosseId) {

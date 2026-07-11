@@ -3129,6 +3129,26 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
 
 .mission-hud-progress {
   margin-top: 0.4rem;
+}
+
+.mission-hud-progress-meta {
+  min-height: 0;
+  margin-bottom: 0.2rem;
+}
+
+.mission-hud-hold-meta {
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #9ec8ef;
+  opacity: 0.95;
+}
+
+.mission-hud-hold-meta.empty {
+  display: none;
+}
+
+.mission-hud-bar-track {
   height: 6px;
   background: rgba(255, 255, 255, 0.08);
   border-radius: 4px;
@@ -3140,6 +3160,11 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
   width: 0%;
   background: linear-gradient(90deg, #3a8fd4, #8ec8ff);
   transition: width 0.15s linear;
+}
+
+/* Party hold: more bodies on point → warmer bar */
+.mission-hud-progress.party-hold .mission-hud-bar {
+  background: linear-gradient(90deg, #c48a2a, #ffcc55);
 }
 
 .muted {

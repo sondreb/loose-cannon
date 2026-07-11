@@ -19,6 +19,17 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-11 — cycle 22 (M4 party polish)
+- Focus: Optional M4 polish — kick/leave confirm, shared hold progress, wipe loot split
+- Done:
+  - Client: in-game confirm before party kick and leave (same modal as abandon job)
+  - Shared hold: outdoor hold missions shared across party on same contract — any mate on the prop advances everyone's `holdAccum` once/tick; `MissionRuntime.holdersOnPoint` / `holdersTotal`; HUD "PARTY HOLD · N/M on point" + warm progress bar
+  - Wipe loot: cash even-split among online living party posses; gear copies to each; PARTY LOOT toast + chat N-way line
+  - Smoke: party kick path before leave re-form
+- Verify: `npm run build` OK; `npm run smoke` → SMOKE_OK (party kick ok)
+- Next: Optional **M3** crash-pad stash UX polish / tutorial tip
+- Blocked: none
+
 ### 2026-07-11 — cycle 21 (M7 music bed)
 - Focus: Optional low-volume music bed — title / explore / action context loops
 - Done:

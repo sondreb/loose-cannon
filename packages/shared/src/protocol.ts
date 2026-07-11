@@ -276,6 +276,13 @@ export interface MissionRuntime {
   timeLeft?: number;
   /** Progress 0–1 for hold-style objectives */
   progress?: number;
+  /**
+   * Party hold co-op: how many crew leaders are currently standing on the point
+   * (shared progress — any one advances the meter for everyone on the contract).
+   */
+  holdersOnPoint?: number;
+  /** Party hold co-op: total party members sharing this outdoor hold contract */
+  holdersTotal?: number;
   rewardCash: number;
   rewardRep: number;
   /** World hint for the active objective */
