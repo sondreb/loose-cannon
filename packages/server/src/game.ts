@@ -3046,7 +3046,7 @@ export class GameWorld {
         posse.rep += 1;
         this.log(
           session,
-          `${label}: tip line. (−$${cost}, rep +1) "Dogs west, rats fringe, parking south, freezer east. Don't call this number again."`,
+          `${label}: tip line. (−$${cost}, rep +1) "Dogs west, rats fringe, toll strip, freeze crate docks, vipers south neon. Don't call this number again."`,
         );
       } else if (roll < 0.58) {
         // Collect-call scam
@@ -3873,7 +3873,7 @@ export class GameWorld {
         posse.cash -= cost;
       }
       d.text =
-        "\"Dumpster Dogs west, Rail Rats on the fringe, Parking Racket south. Phone booths and mailboxes pay if you're shameless. Warehouse, Chop Shop, Cold Storage, Chapel Cleanse if you want a sealed room with freeloaders. And for fuck's sake — stash cash at the Crash Pad before you die broke.\"";
+        "\"Dumpster Dogs west, Rail Rats on the fringe, Parking Racket south. Unofficial Toll on the war strip, freeze crate on the docks, Neon Vipers south of the Twister if you hate living. Phone booths and mailboxes pay if you're shameless. Warehouse, Chop Shop, Cold Storage, Chapel Cleanse for sealed rooms. And for fuck's sake — stash cash at the Crash Pad before you die broke.\"";
       this.setDialogueVoice(
         d,
         isRita ? "rita_tip" : femaleBar ? "venus_rumor" : "vince_rumor",

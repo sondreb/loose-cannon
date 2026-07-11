@@ -1,6 +1,6 @@
 # Loose Cannon — Master Plan (Overseer Roadmap)
 
-Last updated: 2026-07-11 (chapel_cleanse fourth instance)
+Last updated: 2026-07-11 (street contract pack)
 
 Track completion in `docs/STATUS.md`. This file is the **ordered backlog** for autonomous development. Prefer finishing higher milestones before lower ones unless a dependency forces otherwise.
 
@@ -101,6 +101,7 @@ Full design: [realms.md](./realms.md). Friend groups on one beta/in-memory serve
 - [x] More street hustles / POI interactions
 - [x] Rival gang variety (names, gear, aggression)
 - [x] Optional music bed (loop files, low volume; title / explore / action)
+- [x] Street contract pack (orphan props + elite Vipers: toll_booth / keep_frozen / viper_nest)
 
 ### M8 — Explicitly deferred (do not start unless user asks)
 

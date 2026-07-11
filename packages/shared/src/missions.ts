@@ -1,7 +1,8 @@
 /**
  * Starter job catalog (Mode A).
  * Outdoor jobs run on the hub map; instanced jobs use a private layer
- * (warehouse / garage / coldstore / church).
+ * (warehouse / garage / coldstore / church). Street pack adds hold / crate /
+ * elite kill contracts on orphan props and rival gangs.
  * Server is authoritative for progress and rewards.
  */
 
@@ -16,7 +17,10 @@ export type MissionId =
   | "rail_rats"
   | "cold_storage"
   | "pier_punch"
-  | "chapel_cleanse";
+  | "chapel_cleanse"
+  | "toll_booth"
+  | "keep_frozen"
+  | "viper_nest";
 
 export type MissionObjectiveKind =
   | "hold"
@@ -313,6 +317,66 @@ export const MISSIONS: Record<MissionId, MissionDef> = {
       },
     ],
   },
+  toll_booth: {
+    id: "toll_booth",
+    title: "Unofficial Toll",
+    blurb:
+      "Someone painted a booth on war asphalt and called it infrastructure. Hold the unofficial toll ~15s. Smile. Collect. If miniguns pass by, wave politely.",
+    difficulty: 2,
+    rewardCash: 430,
+    rewardRep: 4,
+    objectives: [
+      {
+        id: "hold_toll",
+        label: "Hold Unofficial Toll (~15s)",
+        kind: "hold",
+        propId: "p2",
+        holdSeconds: 15,
+        range: 2.5,
+      },
+    ],
+    hintX: 72,
+    hintY: 48,
+  },
+  keep_frozen: {
+    id: "keep_frozen",
+    title: "Keep Frozen",
+    blurb:
+      "Docks crate stamped 'Keep frozen (or else).' Rita wants the or-else opened. Bring a crowbar and a sense of humor about frostbite.",
+    difficulty: 1,
+    rewardCash: 320,
+    rewardRep: 2,
+    objectives: [
+      {
+        id: "crack_crate3",
+        label: "Smash the docks freeze crate",
+        kind: "interact_prop",
+        propId: "cr3",
+        range: 2.4,
+      },
+    ],
+    hintX: 84,
+    hintY: 56,
+  },
+  viper_nest: {
+    id: "viper_nest",
+    title: "Viper Nest",
+    blurb:
+      "Neon Vipers nested south of the strip with toys that go brrrt. Drop Queen Fang. Bring kevlar, ammo, and zero pride about dying twice.",
+    difficulty: 3,
+    rewardCash: 650,
+    rewardRep: 7,
+    objectives: [
+      {
+        id: "drop_vipers",
+        label: "Drop the Neon Vipers boss",
+        kind: "kill_unit",
+        targetPosseId: "ai_neon",
+      },
+    ],
+    hintX: 92,
+    hintY: 62,
+  },
 };
 
 export const MISSION_ORDER: MissionId[] = [
@@ -327,6 +391,9 @@ export const MISSION_ORDER: MissionId[] = [
   "cold_storage",
   "pier_punch",
   "chapel_cleanse",
+  "toll_booth",
+  "keep_frozen",
+  "viper_nest",
 ];
 
 export function listMissionOffers(opts?: {

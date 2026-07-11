@@ -498,6 +498,11 @@ for (const id of m6Ids) {
   if (!last.jobBoard.offers.some((o) => o.id === id)) fail(`missing M6 offer ${id}`);
 }
 console.log("M6 offers present", m6Ids.join(", "));
+const streetPackIds = ["toll_booth", "keep_frozen", "viper_nest"];
+for (const id of streetPackIds) {
+  if (!last.jobBoard.offers.some((o) => o.id === id)) fail(`missing street pack offer ${id}`);
+}
+console.log("street contract pack offers present", streetPackIds.join(", "));
 cash0 = last.you.cash;
 rep0 = last.you.rep;
 ws.send(JSON.stringify({ type: "jobBoard.accept", missionId: "still_not_guns" }));
@@ -510,6 +515,21 @@ if (last?.mission) fail("still_not_guns should complete");
 if (last.you.cash < cash0 + 300) fail(`still_not_guns pay expected +300 (cash ${last.you.cash} vs ${cash0})`);
 if (last.you.rep < rep0 + 2) fail("still_not_guns rep");
 console.log("still_not_guns outdoor ok cash", last.you.cash);
+
+// --- Street pack outdoor: keep_frozen (crate cr3) ---
+await openRitaBoard();
+cash0 = last.you.cash;
+rep0 = last.you.rep;
+ws.send(JSON.stringify({ type: "jobBoard.accept", missionId: "keep_frozen" }));
+await wait(500);
+if (last?.mission?.id !== "keep_frozen") fail("keep_frozen not active");
+me = await goTo(84, 56, 30);
+ws.send(JSON.stringify({ type: "intent.interact" }));
+await wait(600);
+if (last?.mission) fail("keep_frozen should complete");
+if (last.you.cash < cash0 + 320) fail(`keep_frozen pay expected +320 (cash ${last.you.cash} vs ${cash0})`);
+if (last.you.rep < rep0 + 2) fail("keep_frozen rep");
+console.log("keep_frozen outdoor ok cash", last.you.cash);
 
 // --- M6 instance: chop_shop_raid (garage template) ---
 await healCrew();

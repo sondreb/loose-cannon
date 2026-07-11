@@ -19,6 +19,18 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-11 — cycle 27 (street contract pack)
+- Focus: Optional M7+ content — outdoor contracts for orphan props + underused elite Vipers
+- Done:
+  - Mission `toll_booth` — hold prop `p2` Unofficial Toll ~15s; $430 + 4 rep
+  - Mission `keep_frozen` — smash docks crate `cr3`; $320 + 2 rep
+  - Mission `viper_nest` — kill Neon Vipers boss (`ai_neon`); elite $650 + 7 rep
+  - Board order append; Vince/Rita + phone tip lines mention toll / freeze crate / vipers
+  - Smoke: asserts three offers; full keep_frozen complete
+- Verify: `npm run build` OK; `npm run smoke` → SMOKE_OK (one prior bar-door pathing flake; re-run clean)
+- Next: Optional rival kill jobs (`ai_lot` / `ai_south` / `ai_chrome`) or gym dual-use instance; Mode A checklist still complete
+- Blocked: none
+
 ### 2026-07-11 — cycle 26 (chapel_cleanse fourth instance)
 - Focus: Optional M7+ content — fourth instanced mission (church template / Chapel Cleanse)
 - Done:
