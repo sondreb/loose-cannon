@@ -19,6 +19,17 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-11 — cycle 23 (M3 stash UX polish)
+- Focus: Optional M3 crash-pad stash UX polish + stash tutorial tip
+- Done:
+  - Tutorial step `stash_pad` after `finish_job` — open Crash Pad stash to complete (+$100 / +1 rep)
+  - Stash UI: risk banner (pocket ≥ $50), pocket-vs-house legend, half/all cash buttons, crew face chips, clearer wipe-risk item copy
+  - Onboard + Vince/Rita tip lines mention banking at the Crash Pad
+  - Smoke: crash pad enter → open stash → half deposit → tommy deposit/withdraw; hardened chop/cold hostiles poll (Frost epithets Ice/Chill/Shelf)
+- Verify: `npm run build` OK; `npm run smoke` → SMOKE_OK
+- Next: Feel bugs from known debt (indoor micro-path) or stop — Mode A near-term checklist is complete
+- Blocked: none
+
 ### 2026-07-11 — cycle 22 (M4 party polish)
 - Focus: Optional M4 polish — kick/leave confirm, shared hold progress, wipe loot split
 - Done:

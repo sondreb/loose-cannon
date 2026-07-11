@@ -8,7 +8,8 @@ export type TutorialStepId =
   | "hire_vince"
   | "talk_rita"
   | "take_job"
-  | "finish_job";
+  | "finish_job"
+  | "stash_pad";
 
 export interface TutorialStepDef {
   id: TutorialStepId;
@@ -49,10 +50,16 @@ export const TUTORIAL_STEPS: TutorialStepDef[] = [
   {
     id: "finish_job",
     title: "Get paid",
-    body: "Complete the objectives (and extract if it's an instance). Rita pays when the server says you're done. Don't die broke.",
+    body: "Complete the objectives (and extract if it's an instance). Rita pays when the server says you're done. Then bank the take before someone shoots you.",
+  },
+  {
+    id: "stash_pad",
+    title: "Bank it at the Crash Pad",
+    body: "Walk to Your Crash Pad (green roof, west of the bar). E to enter, walk into the room, E again to open the stash. Pocket cash & street gear drop on wipe — house stash does not.",
+    hintX: 8,
+    hintY: 25.5,
   },
 ];
-
 export const TUTORIAL_ORDER: TutorialStepId[] = TUTORIAL_STEPS.map((s) => s.id);
 
 export function tutorialStepIndex(id: TutorialStepId): number {

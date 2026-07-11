@@ -323,13 +323,78 @@ me = await goTo(44, 28, 22);
 ws.send(JSON.stringify({ type: "intent.interact" }));
 await wait(600);
 if (last?.mission) fail("smash should complete");
-// Job pay + tutorial complete bonus ($100) if first job finishes tutorial
+// Job pay only — tutorial bonus waits for Crash Pad stash step
 if (last.you.cash < cash0 + 280) fail("smash pay");
 if (last.you.rep < rep0 + 2) fail("smash rep");
-if (last.tutorial) fail(`tutorial should complete after first job, got ${last.tutorial.step}`);
+if (last.tutorial?.step !== "stash_pad") {
+  fail(`expected tutorial stash_pad after first job, got ${last?.tutorial?.step}`);
+}
 // Soft job adds some heat
 if ((last.you.heat ?? 0) < 1) fail(`expected heat after job, got ${last.you.heat}`);
-console.log("outdoor smash_stash ok cash", last.you.cash, "heat", last.you.heat, "tutorial done");
+console.log("outdoor smash_stash ok cash", last.you.cash, "heat", last.you.heat, "tutorial", last.tutorial?.step);
+
+// --- Crash Pad stash (tutorial tip + deposit) ---
+// Exterior door west of bar; interior spawn is near exit — walk north into the room first
+me = await goTo(8, 25.5, 24);
+if (!me || Math.hypot(me.x - 8, me.y - 25.5) > 1.8) fail("crash pad door path");
+if (last?.you.insideBuildingId !== "safehouse") {
+  ws.send(JSON.stringify({ type: "intent.interact" }));
+  await wait(500);
+}
+if (last?.you.insideBuildingId !== "safehouse") {
+  fail(`expected safehouse enter, got ${last?.you.insideBuildingId}`);
+}
+// Room north of exit mat (exit ~2.55 range from spawn) so E opens stash, not leave
+me = await goTo(16, 2.8, 10);
+ws.send(JSON.stringify({ type: "intent.interact" }));
+await wait(500);
+if (!last?.stash) fail("expected stash panel open in Crash Pad");
+if (last.tutorial) {
+  fail(`tutorial should complete after opening stash, got ${last.tutorial.step}`);
+}
+const pocketBeforeBank = last.you.cash;
+const halfBank = Math.floor(pocketBeforeBank / 2);
+if (halfBank < 1) fail("expected cash to bank after job");
+ws.send(JSON.stringify({ type: "stash.depositCash", amount: halfBank }));
+await wait(400);
+if ((last.you.stashCash ?? 0) < halfBank) {
+  fail(`expected stashCash >= ${halfBank}, got ${last.you.stashCash}`);
+}
+if ((last.you.cash ?? 0) !== pocketBeforeBank - halfBank) {
+  fail(`pocket should be ${pocketBeforeBank - halfBank} after half deposit, got ${last.you.cash}`);
+}
+// Dump starter tommy into house, then pull it back (ammo re-grant on withdraw)
+const boss = last.units.find((u) => u.isPlayerLeader);
+if (!boss?.ownedWeapons?.includes("tommy")) fail("leader should still own tommy before dump");
+ws.send(JSON.stringify({ type: "stash.depositWeapon", weaponId: "tommy", unitId: boss.id }));
+await wait(400);
+if (!(last.stash?.weapons ?? []).includes("tommy")) fail("tommy should be in house stash");
+const afterDump = last.units.find((u) => u.isPlayerLeader);
+if (afterDump?.ownedWeapons?.includes("tommy")) fail("tommy should leave carried loadout");
+ws.send(JSON.stringify({ type: "stash.withdrawWeapon", weaponId: "tommy", unitId: boss.id }));
+await wait(400);
+const afterPull = last.units.find((u) => u.isPlayerLeader);
+if (!afterPull?.ownedWeapons?.includes("tommy")) fail("tommy should return to leader");
+ws.send(JSON.stringify({ type: "stash.close" }));
+await wait(200);
+if (last.stash) fail("stash should close");
+console.log(
+  "crash pad stash ok banked",
+  last.you.stashCash,
+  "pocket",
+  last.you.cash,
+  "tutorial done",
+);
+// Leave safehouse for instance jobs
+ws.send(JSON.stringify({ type: "intent.exit" }));
+await wait(400);
+if (last?.you.insideBuildingId === "safehouse") {
+  // near exit mat walk + interact leave
+  me = await goTo(16, 6, 6);
+  ws.send(JSON.stringify({ type: "intent.interact" }));
+  await wait(400);
+}
+if (last?.you.insideBuildingId === "safehouse") fail("should leave Crash Pad");
 
 // --- Instance job: warehouse_raid ---
 await openRitaBoard();
@@ -439,18 +504,33 @@ cash0 = last.you.cash;
 rep0 = last.you.rep;
 ws.send(JSON.stringify({ type: "jobBoard.accept", missionId: "chop_shop_raid" }));
 await wait(600);
+// Poll — leather chop crew can melt before a fixed sleep
+let chopSeen = [];
+let chopAlivePeak = 0;
+for (let i = 0; i < 25; i++) {
+  await wait(80);
+  if (!String(last?.you.insideBuildingId ?? "").startsWith("mi_")) continue;
+  if (last?.mission?.id !== "chop_shop_raid") continue;
+  const chopAll = (last?.units ?? []).filter(
+    (u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && /chop/i.test(u.name ?? ""),
+  );
+  const chopAlive = chopAll.filter((u) => u.alive);
+  if (chopAll.length) chopSeen = chopAll;
+  if (chopAlive.length > chopAlivePeak) chopAlivePeak = chopAlive.length;
+  if (chopAlivePeak >= 2 || last?.mission?.phase === "extract") break;
+}
 if (!String(last?.you.insideBuildingId ?? "").startsWith("mi_")) {
   fail(`chop shop expected mi_ layer, got ${last?.you.insideBuildingId}`);
 }
-if (last?.mission?.id !== "chop_shop_raid") fail("chop_shop_raid not active");
-if (!last.mission.instanced) fail("chop_shop not marked instanced");
-const chopHostiles = (last?.units ?? []).filter(
-  (u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && u.alive,
-);
-if (chopHostiles.length < 2) fail(`expected chop hostiles >=2, got ${chopHostiles.length}`);
-// Boss name should use Chop label
-if (!chopHostiles.some((u) => /chop/i.test(u.name ?? ""))) {
-  fail(`expected Chop-labeled hostiles, got ${chopHostiles.map((u) => u.name).join(",")}`);
+if (last?.mission?.id !== "chop_shop_raid" && last?.mission != null) {
+  fail(`chop_shop_raid not active, got ${last?.mission?.id}`);
+}
+if (last?.mission && !last.mission.instanced) fail("chop_shop not marked instanced");
+if (chopAlivePeak < 2 && chopSeen.length < 2 && last?.mission?.phase !== "extract") {
+  fail(`expected chop hostiles >=2 (alive peak ${chopAlivePeak}, named ${chopSeen.length})`);
+}
+if (chopSeen.length && !chopSeen.some((u) => /chop/i.test(u.name ?? ""))) {
+  fail(`expected Chop-labeled hostiles, got ${chopSeen.map((u) => u.name).join(",")}`);
 }
 // Fire with the whole posse selected (leader + goons) — attack-move helps survive leather hostiles
 ws.send(JSON.stringify({ type: "intent.select", unitId: null }));
@@ -493,19 +573,52 @@ if (!last.jobBoard.offers.some((o) => o.id === "cold_storage")) fail("no cold_st
 cash0 = last.you.cash;
 rep0 = last.you.rep;
 ws.send(JSON.stringify({ type: "jobBoard.accept", missionId: "cold_storage" }));
-await wait(600);
+// Poll quickly — crew can wipe freeloaders before a long sleep finishes
+// Goon epithets are Ice/Frost/Shelf/Chill — only boss is always "Frost …"
+let frostSeen = [];
+let frostAlivePeak = 0;
+let frostLabelOk = false;
+for (let i = 0; i < 30; i++) {
+  await wait(60);
+  if (!String(last?.you.insideBuildingId ?? "").startsWith("mi_")) continue;
+  if (last?.mission?.id !== "cold_storage") continue;
+  const hostiles = (last?.units ?? []).filter(
+    (u) => u.kind === "ai_boss" || u.kind === "ai_goon",
+  );
+  const alive = hostiles.filter((u) => u.alive);
+  if (hostiles.length) frostSeen = hostiles;
+  if (alive.length > frostAlivePeak) frostAlivePeak = alive.length;
+  if (hostiles.some((u) => /frost|ice|chill|icicle|shelf/i.test(u.name ?? ""))) {
+    frostLabelOk = true;
+  }
+  if (frostAlivePeak >= 2 || last?.mission?.phase === "extract") break;
+}
 if (!String(last?.you.insideBuildingId ?? "").startsWith("mi_")) {
   fail(`cold store expected mi_ layer, got ${last?.you.insideBuildingId}`);
 }
-if (last?.mission?.id !== "cold_storage") fail("cold_storage not active");
-if (!last.mission.instanced) fail("cold_storage not marked instanced");
-const frostHostiles = (last?.units ?? []).filter(
-  (u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && u.alive,
-);
-if (frostHostiles.length < 2) fail(`expected frost hostiles >=2, got ${frostHostiles.length}`);
-if (!frostHostiles.some((u) => /frost/i.test(u.name ?? ""))) {
-  fail(`expected Frost-labeled hostiles, got ${frostHostiles.map((u) => u.name).join(",")}`);
+if (last?.mission?.id !== "cold_storage" && last?.mission != null) {
+  fail(`cold_storage not active, got ${last?.mission?.id}`);
 }
+// Mission may already be extract if fight finished during poll
+if (last?.mission && !last.mission.instanced) fail("cold_storage not marked instanced");
+if (frostAlivePeak < 2 && frostSeen.length < 2 && last?.mission?.phase !== "extract") {
+  fail(`expected frost hostiles >=2 (alive peak ${frostAlivePeak}, seen ${frostSeen.length})`);
+}
+if (
+  frostSeen.length &&
+  !frostLabelOk &&
+  !frostSeen.some((u) => /frost|ice|chill|icicle|shelf/i.test(u.name ?? ""))
+) {
+  fail(`expected Frost-family hostiles, got ${frostSeen.map((u) => u.name).join(",")}`);
+}
+console.log(
+  "cold frost peek alivePeak",
+  frostAlivePeak,
+  "names",
+  frostSeen.map((u) => u.name).join(",") || "(cleared before name snap)",
+  "phase",
+  last?.mission?.phase,
+);
 // Select whole posse — threat-3 freezer crew hits hard
 ws.send(JSON.stringify({ type: "intent.select", unitId: null }));
 await wait(100);

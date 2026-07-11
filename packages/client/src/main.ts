@@ -186,12 +186,16 @@ const stashModal = $("stashModal");
 const stashPocketCash = $("stashPocketCash");
 const stashCashAmt = $("stashCashAmt");
 const stashUnitName = $("stashUnitName");
+const stashUnitRow = $("stashUnitRow");
 const stashCarried = $("stashCarried");
 const stashStored = $("stashStored");
 const stashClose = $("stashClose");
 const stashDepositAllCash = $("stashDepositAllCash");
+const stashDepositHalfCash = $("stashDepositHalfCash");
 const stashWithdrawAllCash = $("stashWithdrawAllCash");
+const stashWithdrawHalfCash = $("stashWithdrawHalfCash");
 const stashDepositLoadout = $("stashDepositLoadout");
+const stashRiskBanner = $("stashRiskBanner");
 const jobBoardModal = $("jobBoardModal");
 const jobBoardTitle = $("jobBoardTitle");
 const jobBoardOffers = $("jobBoardOffers");
@@ -1777,11 +1781,46 @@ function renderStash(): void {
   stashCashAmt.textContent = `$${st.cash}`;
   stashUnitName.textContent = u?.name ?? "—";
 
+  // Nudge when pocket cash is still at risk
+  if (st.pocketCash >= 50) {
+    stashRiskBanner.classList.remove("hidden");
+    stashRiskBanner.textContent =
+      st.cash === 0
+        ? `$${st.pocketCash} in your pockets dies with you. Stash all (or half) before you hit the war zone.`
+        : `Still packing $${st.pocketCash} on the street. House is holding $${st.cash} safe.`;
+  } else {
+    stashRiskBanner.classList.add("hidden");
+  }
+
   const ownedW = (u?.ownedWeapons ?? []).slice().sort().join(",");
   const ownedA = (u?.ownedArmors ?? []).slice().sort().join(",");
-  const key = `${st.cash}|${st.pocketCash}|${st.weapons.join(",")}|${st.armors.join(",")}|${u?.id}|${ownedW}|${ownedA}`;
+  const rosterKey = myUnits()
+    .map((m) => `${m.id}:${m.alive ? 1 : 0}`)
+    .join(",");
+  const key = `${st.cash}|${st.pocketCash}|${st.weapons.join(",")}|${st.armors.join(",")}|${u?.id}|${ownedW}|${ownedA}|${rosterKey}`;
   if (key === lastStashKey) return;
   lastStashKey = key;
+
+  // Crew chips (same pattern as pawn shop)
+  stashUnitRow.innerHTML = "";
+  for (const m of myUnits()) {
+    if (!m.alive && !(m.isPlayerLeader || m.kind === "player")) continue;
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "shop-buyer-chip" + (m.id === u?.id ? " active" : "");
+    chip.dataset.selectUnit = m.id;
+    const img = unitFaceUrl(m.id + m.name, {
+      gender: m.gender,
+      name: m.name,
+      leader: !!(m.isPlayerLeader || m.kind === "player"),
+      dead: !m.alive,
+    });
+    chip.innerHTML = `
+      <img class="photo" src="${img}" alt="" width="32" height="32" draggable="false" />
+      <span>${escapeHtml(m.name.split(" ")[0] ?? m.name)}</span>
+    `;
+    stashUnitRow.appendChild(chip);
+  }
 
   stashCarried.innerHTML = "";
   if (u) {
@@ -1789,6 +1828,9 @@ function renderStash(): void {
       if (id === "pipe") continue;
       const w = WEAPONS[id];
       if (!w) continue;
+      const ammo = isUnlimitedAmmo(w)
+        ? "∞ ammo"
+        : formatWeaponAmmo(id, u.weaponAmmo?.[id]);
       const b = document.createElement("button");
       b.type = "button";
       b.className = "shop-item";
@@ -1798,7 +1840,7 @@ function renderStash(): void {
         <img class="shop-item-icon" src="${weaponIconDataUrl(id)}" alt="" width="40" height="40" draggable="false" />
         <div class="shop-item-body">
           <div class="shop-item-name">${escapeHtml(w.name)}</div>
-          <div class="shop-item-meta">On ${escapeHtml(u.name)}</div>
+          <div class="shop-item-meta">On ${escapeHtml(u.name)} · ${ammo} · drops on wipe</div>
         </div>
         <div class="shop-item-price">STASH →</div>`;
       stashCarried.appendChild(b);
@@ -1816,14 +1858,14 @@ function renderStash(): void {
         <img class="shop-item-icon" src="${armorIconDataUrl(id)}" alt="" width="40" height="40" draggable="false" />
         <div class="shop-item-body">
           <div class="shop-item-name">${escapeHtml(a.name)}</div>
-          <div class="shop-item-meta">On ${escapeHtml(u.name)}</div>
+          <div class="shop-item-meta">On ${escapeHtml(u.name)} · drops on wipe</div>
         </div>
         <div class="shop-item-price">STASH →</div>`;
       stashCarried.appendChild(b);
     }
   }
   if (!stashCarried.children.length) {
-    stashCarried.innerHTML = `<p class="muted tiny">Nothing worth stashing on this goon (pipe only).</p>`;
+    stashCarried.innerHTML = `<p class="muted tiny">Nothing worth stashing on this goon (pipe only). Pick another face above, or take gear from the house.</p>`;
   }
 
   stashStored.innerHTML = "";
@@ -1844,7 +1886,7 @@ function renderStash(): void {
       <img class="shop-item-icon" src="${weaponIconDataUrl(id as WeaponId)}" alt="" width="40" height="40" draggable="false" />
       <div class="shop-item-body">
         <div class="shop-item-name">${escapeHtml(w.name)}${n > 1 ? ` ×${n}` : ""}</div>
-        <div class="shop-item-meta">In the house</div>
+        <div class="shop-item-meta">Safe in the house · equip on ${escapeHtml(u?.name ?? "selected")}</div>
       </div>
       <div class="shop-item-price">← TAKE</div>`;
     stashStored.appendChild(b);
@@ -1861,13 +1903,13 @@ function renderStash(): void {
       <img class="shop-item-icon" src="${armorIconDataUrl(id as ArmorId)}" alt="" width="40" height="40" draggable="false" />
       <div class="shop-item-body">
         <div class="shop-item-name">${escapeHtml(a.name)}${n > 1 ? ` ×${n}` : ""}</div>
-        <div class="shop-item-meta">In the house</div>
+        <div class="shop-item-meta">Safe in the house · equip on ${escapeHtml(u?.name ?? "selected")}</div>
       </div>
       <div class="shop-item-price">← TAKE</div>`;
     stashStored.appendChild(b);
   }
   if (!stashStored.children.length) {
-    stashStored.innerHTML = `<p class="muted tiny">Empty shelves. Dump gear before a war zone run.</p>`;
+    stashStored.innerHTML = `<p class="muted tiny">Empty shelves. Dump a loadout or stash guns before a war zone run.</p>`;
   }
 }
 
@@ -3016,15 +3058,30 @@ function bindInput(): void {
   stashDepositAllCash.addEventListener("click", () =>
     socket.send({ type: "stash.depositCash", amount: 0 }),
   );
+  stashDepositHalfCash.addEventListener("click", () => {
+    const pocket = snap?.stash?.pocketCash ?? snap?.you.cash ?? 0;
+    const half = Math.floor(pocket / 2);
+    if (half > 0) socket.send({ type: "stash.depositCash", amount: half });
+  });
   stashWithdrawAllCash.addEventListener("click", () =>
     socket.send({ type: "stash.withdrawCash", amount: 0 }),
   );
+  stashWithdrawHalfCash.addEventListener("click", () => {
+    const banked = snap?.stash?.cash ?? snap?.you.stashCash ?? 0;
+    const half = Math.floor(banked / 2);
+    if (half > 0) socket.send({ type: "stash.withdrawCash", amount: half });
+  });
   stashDepositLoadout.addEventListener("click", () => {
     const unitId = selectedUnit()?.id ?? snap?.you.selectedUnitId;
     if (unitId) socket.send({ type: "stash.depositAll", unitId });
   });
   stashCarried.addEventListener("click", onStashClick);
   stashStored.addEventListener("click", onStashClick);
+  stashUnitRow.addEventListener("click", (e) => {
+    const btn = (e.target as HTMLElement).closest("button[data-select-unit]") as HTMLButtonElement | null;
+    if (!btn?.dataset.selectUnit || !socket) return;
+    socket.send({ type: "intent.select", unitId: btn.dataset.selectUnit });
+  });
   stashModal.addEventListener("click", (e) => {
     if (e.target === stashModal) socket.send({ type: "stash.close" });
   });
@@ -3240,10 +3297,10 @@ const ONBOARD_STEPS: OnboardStep[] = [
   },
   {
     title: "You're ready",
-    text: "After you join, a short first-session guide walks you through the bar, a hire, Rita's job book, and your first contract. Skip anytime.",
+    text: "After you join, a short first-session guide walks you through the bar, a hire, Rita's job book, your first contract, and banking loot at the Crash Pad. Skip anytime.",
     bullets: [
-      "Name → The Rusty Nail → hire Vince's meat → Rita Fix → take a job → get paid.",
-      "Crash Pad stash (north-west green roof) keeps gear safe when you die.",
+      "Name → The Rusty Nail → hire Vince's meat → Rita Fix → take a job → Crash Pad stash.",
+      "Crash Pad (west green roof): E inside, walk in, E to open stash. Pocket cash dies on wipe — house cash does not.",
       "Proximity chat for nearby players. Good luck, boss.",
     ],
     art: "/art/splash.jpg",

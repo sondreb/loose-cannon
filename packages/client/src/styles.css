@@ -2194,6 +2194,44 @@ img.photo {
   margin-top: 0.5rem;
 }
 
+.stash-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.75rem;
+  margin: 0.55rem 0 0.15rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.stash-legend-risk {
+  color: #e8a090;
+}
+
+.stash-legend-safe {
+  color: #7dcea0;
+}
+
+.stash-risk-banner {
+  margin: 0.55rem 0 0;
+  padding: 0.45rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid rgba(220, 120, 80, 0.45);
+  background: linear-gradient(90deg, rgba(80, 28, 18, 0.55), rgba(40, 22, 16, 0.35));
+  color: #f0c8b0;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.stash-risk-banner.hidden {
+  display: none;
+}
+
+.stash-crew {
+  margin-top: 0.45rem;
+}
+
 /* Dialogue with NPC portrait (bartenders, strippers, etc.) */
 .modal-card.dialogue-card {
   width: min(560px, 94vw);

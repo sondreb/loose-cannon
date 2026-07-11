@@ -1,6 +1,6 @@
 # Loose Cannon — Master Plan (Overseer Roadmap)
 
-Last updated: 2026-07-11 (M4 party polish)
+Last updated: 2026-07-11 (M3 stash UX polish)
 
 Track completion in `docs/STATUS.md`. This file is the **ordered backlog** for autonomous development. Prefer finishing higher milestones before lower ones unless a dependency forces otherwise.
 
@@ -44,7 +44,7 @@ A fun, playable **local multiplayer** crime sandbox: recruit a posse, run jobs, 
 - [x] District map UI (**free roam** — rep is advisory for outdoor walk; gates remain for gear/jobs)
 - [x] **Memorial wall** for dead named goons (Cannon Fodder beat)
 - [x] Goon stats feel distinct (aim / muscle / guts / speed clearly change outcomes + UI readability)
-- [ ] Optional: crash-pad stash UX polish / stash tutorial tip
+- [x] Optional: crash-pad stash UX polish / stash tutorial tip
 
 ### M3.5 — Realms (segregated instances) — **done**
 
@@ -120,8 +120,8 @@ Each overseer cycle implements **one** primary milestone item (or a tightly rela
 
 ### Priority order for long unattended loops
 
-1. Optional M3 stash UX polish / stash tutorial tip
-2. Feel bugs / polish from STATUS known debt when critical
+1. Feel bugs / polish from STATUS known debt when critical (indoor micro-path, etc.)
+2. Optional content / presentation extras only if backlog re-opens
 3. Never M8 / Mode B unless human asks
 
 ### Guardrails

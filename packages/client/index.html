@@ -423,24 +423,37 @@
                 </div>
               </div>
             </div>
+            <div id="stashRiskBanner" class="stash-risk-banner hidden" role="status">
+              Pocket cash walks out the door with you — bank it before a war zone run.
+            </div>
+            <div class="stash-legend" aria-hidden="true">
+              <span class="stash-legend-risk">POCKET / STREET — lost on wipe</span>
+              <span class="stash-legend-safe">HOUSE STASH — safe on wipe</span>
+            </div>
             <div class="stash-cash-actions">
               <button type="button" id="stashDepositAllCash" class="tiny-btn">Stash all cash</button>
+              <button type="button" id="stashDepositHalfCash" class="tiny-btn">Stash half</button>
               <button type="button" id="stashWithdrawAllCash" class="tiny-btn">Take all cash</button>
+              <button type="button" id="stashWithdrawHalfCash" class="tiny-btn">Take half</button>
               <button type="button" id="stashDepositLoadout" class="tiny-btn">Dump selected loadout</button>
             </div>
-            <p class="muted tiny">Acting for: <span id="stashUnitName">—</span> (select crew in POSSE panel)</p>
+            <div class="shop-buyer stash-crew">
+              <span class="equip-label">ACTING FOR</span>
+              <div id="stashUnitRow" class="shop-buyer-row"></div>
+              <p class="muted tiny">Selected: <span id="stashUnitName">—</span> · tap a face or use the POSSE panel</p>
+            </div>
             <div class="shop-cols stash-cols">
               <section class="shop-col">
-                <h3>On selected</h3>
+                <h3>On selected → house</h3>
                 <div id="stashCarried" class="shop-items"></div>
               </section>
               <section class="shop-col">
-                <h3>In the house</h3>
+                <h3>In the house → take</h3>
                 <div id="stashStored" class="shop-items"></div>
               </section>
             </div>
             <div class="shop-footer">
-              <p class="muted tiny">Press <b>E</b> or Esc to close. Die on the street and killers take only what you carried.</p>
+              <p class="muted tiny">Press <b>E</b> or Esc to close. Killers only take pocket cash &amp; what this crew is packing on the street.</p>
               <button type="button" id="stashClose" class="shop-leave-btn">CLOSE STASH</button>
             </div>
           </div>

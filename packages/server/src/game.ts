@@ -2689,6 +2689,8 @@ export class GameWorld {
           session,
           "Crash Pad stash. Deposit cash & gear so a wipe only costs what you're packing.",
         );
+        // First-session tip: open stash to complete tutorial
+        this.advanceTutorial(session, posse, "stash_pad");
         return;
       }
     }
@@ -3782,7 +3784,7 @@ export class GameWorld {
         posse.cash -= cost;
       }
       d.text =
-        "\"Dumpster Dogs west, Rail Rats on the fringe, Parking Racket south. Phone booths and mailboxes pay if you're shameless. Warehouse, Chop Shop, Cold Storage if you want a sealed room with freeloaders.\"";
+        "\"Dumpster Dogs west, Rail Rats on the fringe, Parking Racket south. Phone booths and mailboxes pay if you're shameless. Warehouse, Chop Shop, Cold Storage if you want a sealed room with freeloaders. And for fuck's sake — stash cash at the Crash Pad before you die broke.\"";
       this.setDialogueVoice(
         d,
         isRita ? "rita_tip" : femaleBar ? "venus_rumor" : "vince_rumor",
@@ -4437,7 +4439,7 @@ export class GameWorld {
         type: "notify",
         kind: "mission",
         title: "First session complete",
-        body: "Bar → hire → fixer → job. You know the loop. +$100 and a little street cred.",
+        body: "Bar → hire → fixer → job → Crash Pad stash. Bank the take before the war zone. +$100 and a little street cred.",
         cash: 100,
         rep: 1,
       });

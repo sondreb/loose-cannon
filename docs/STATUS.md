@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-11 (M4 party polish)  
+Last updated: 2026-07-11 (M3 stash UX polish)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -45,6 +45,7 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | **Mobile touch polish** | **Done** | Long-press charge ring + fire on hold; drag cancel; larger slop; control hit targets |
 | **Parties / co-op** | **Done** | Invite/leave/kick; presence; party chat; shared jobs |
 | **M4 party polish** | **Done** | Kick/leave confirm; shared hold meter; wipe loot split |
+| **Crash Pad stash UX** | **Done** | Tutorial step + crew chips + cash half/all + risk banner |
 | Automated overseer scaffolding | Done | AGENTS + scripts/overseer |
 
 ## Starter jobs (live)
@@ -63,7 +64,17 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 
 ### Tutorial (live)
 
-`go_bar` → `hire_vince` → `talk_rita` → `take_job` → `finish_job` (+$100 / +1 rep). Skip supported.
+`go_bar` → `hire_vince` → `talk_rita` → `take_job` → `finish_job` → **`stash_pad`** (+$100 / +1 rep on open). Skip supported.
+
+### Crash Pad stash (live)
+
+- Building: **Your Crash Pad** (`safehouse`) — green roof west of the bar; door ~(8, 26)
+- E inside (away from exit mat) opens stash panel; pocket cash + street gear drop on wipe; house stash does not
+- Cash: **Stash all / half**, **Take all / half**; loadout dump on selected goon
+- Crew chips in-panel (same pattern as pawn) to switch who deposits / withdraws gear
+- Risk banner when pocket ≥ $50; legend strip pocket-vs-house; item rows note wipe risk
+- Tutorial step `stash_pad` after first job; Vince/Rita tips mention banking at the Crash Pad
+- HUD `⌂$N` when stash cash &gt; 0; smoke: open → bank half → deposit/withdraw tommy
 
 ### Districts
 
@@ -269,8 +280,8 @@ Shared `gangs.ts` profiles keyed by map spawn id — server applies on spawn/res
 
 ## Next for overseer (priority)
 
-1. Optional **M3** crash-pad stash UX polish / stash tutorial tip  
-2. Feel bugs from known debt when critical (indoor micro-path, etc.)  
+1. Feel bugs from known debt when critical (indoor micro-path, etc.)  
+2. Optional content / presentation extras only if a new backlog item is added  
 3. **Never** Mode B (Postgres/auth/k8s) unless human asks  
 
 ## Known bugs / polish debt
