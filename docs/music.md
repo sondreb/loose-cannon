@@ -191,7 +191,15 @@ Prompts for a **music AI generator** (Suno, Udio, AIVA, Stable Audio, etc.) to p
 | Dialogue bed | `dialogue-bar.mp3` |
 | Kingpin | `theme-kingpin.mp3` |
 
-Current game already uses a single bed: `neon-heist-run.mp3` (exploration/title-adjacent). New tracks can replace or expand the `MusicBus` playlist by context later.
+**Live beds (client `MusicBus`, volume ~0.12 under SFX/VO):**
+
+| File | Role |
+|------|------|
+| `rain-city-ledger.mp3` | Title / login splash |
+| `neon-blackout.mp3` | Explore — safe streets / hub |
+| `neon-heist-run.mp3` | Action — war zone, instanced jobs, combat hold (~14s after last bang) |
+
+Settings → Audio can mute music. Further cues (club, memorial, victory stings) can reuse the prompt pack above when assets land.
 
 ---
 

@@ -349,6 +349,16 @@ export function assignGangRoles(
       else roles.push(r < 0.4 ? "rusher" : r < 0.75 ? "shooter" : "coward");
     }
   }
+  // Guarantee signature roles so crew identity (and smoke) aren't pure RNG
+  if (memberCount >= 2 && bias === "rush" && !roles.includes("rusher")) {
+    roles[1] = "rusher";
+  }
+  if (memberCount >= 2 && bias === "hold" && !roles.includes("shooter")) {
+    roles[1] = "shooter";
+  }
+  if (memberCount >= 2 && bias === "flee" && !roles.includes("coward")) {
+    roles[1] = "coward";
+  }
   return roles;
 }
 

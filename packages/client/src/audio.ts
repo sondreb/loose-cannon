@@ -6,13 +6,19 @@
 
 /** Title / splash (login) */
 const TITLE_TRACK = "/music/rain-city-ledger.mp3";
-/** In-game long bed (exploration / streets) */
-const GAME_TRACK = "/music/neon-blackout.mp3";
+/** In-game explore / safe streets */
+const EXPLORE_TRACK = "/music/neon-blackout.mp3";
+/** War zone, instances, active firefight energy */
+const ACTION_TRACK = "/music/neon-heist-run.mp3";
 
 /** Music bed level — must stay under SFX master (~0.55) and voice (~0.85). */
 const MUSIC_VOLUME = 0.12;
 /** Fade title out before starting the in-game track */
 const TITLE_FADE_MS = 2800;
+/** Crossfade between explore ↔ action beds */
+const MOOD_CROSSFADE_MS = 1600;
+/** Hold action bed after last combat cue so it doesn't thrash */
+const ACTION_HOLD_MS = 14_000;
 
 export type Sfx =
   | "gun"
@@ -36,6 +42,9 @@ export type Sfx =
   | "hurt"
   | "cash"
   | "dumpster";
+
+/** In-game bed mood (title is separate) */
+export type MusicMood = "explore" | "action";
 
 export class SfxBus {
   private ctx: AudioContext | null = null;
@@ -287,8 +296,9 @@ type MusicPhase = "idle" | "title" | "game";
 /**
  * Background music from /public/music.
  * - Title: rain-city-ledger (login / splash)
- * - Game: neon-blackout (long street bed after fade-out from title)
- * Starts on first user gesture (autoplay policy).
+ * - Explore: neon-blackout (safe streets / hub)
+ * - Action: neon-heist-run (war zone, instances, firefight hold)
+ * Starts on first user gesture (autoplay policy). Volume stays low under SFX/VO.
  */
 export class MusicBus {
   private audio: HTMLAudioElement | null = null;
@@ -297,8 +307,11 @@ export class MusicBus {
   /** Browser allowed playback after a user gesture */
   private gestureOk = false;
   private phase: MusicPhase = "idle";
+  private mood: MusicMood = "explore";
   private fading = false;
   private fadeRaf = 0;
+  /** performance.now() until which we prefer action bed after combat cues */
+  private actionUntil = 0;
 
   setMuted(m: boolean): void {
     this.muted = m;
@@ -317,7 +330,7 @@ export class MusicBus {
     } else if (this.phase === "title") {
       this.playTitle();
     } else if (this.phase === "game") {
-      this.playGame(false);
+      this.playMoodTrack(this.mood, false);
     }
   }
 
@@ -346,7 +359,7 @@ export class MusicBus {
       if (this.audio) {
         if (this.audio.paused) void this.audio.play().catch(() => undefined);
       } else {
-        this.playGame(false);
+        this.playMoodTrack(this.mood, false);
       }
     }
   }
@@ -362,11 +375,12 @@ export class MusicBus {
   }
 
   /**
-   * After "Hit the Streets": fade out title, then start the long in-game track.
+   * After "Hit the Streets": fade out title, then start the explore bed.
    * If title never played, starts game music immediately.
    */
   enterGame(fadeMs = TITLE_FADE_MS): void {
     this.gestureOk = true;
+    this.mood = "explore";
     if (this.muted) {
       this.phase = "game";
       this.cancelFade();
@@ -377,35 +391,107 @@ export class MusicBus {
       return;
     }
     if (this.phase === "title" && this.audio && !this.audio.paused) {
-      this.fadeOutThen(() => this.playGame(true), fadeMs);
+      this.fadeOutThen(() => this.playMoodTrack("explore", true), fadeMs);
       return;
     }
     this.cancelFade();
-    this.playGame(true);
+    this.playMoodTrack("explore", true);
+  }
+
+  /**
+   * Snapshot-driven mood: war / instances / combat hold → action bed;
+   * safe streets → explore. Crossfades; ignores title phase.
+   */
+  setGameMood(want: MusicMood, opts?: { force?: boolean }): void {
+    if (this.phase !== "game") return;
+    if (this.muted) {
+      this.mood = want;
+      return;
+    }
+    if (!opts?.force && want === this.mood && this.audio && !this.audio.paused && !this.fading) {
+      return;
+    }
+    if (want === this.mood && this.fading) return;
+    if (this.fading) return;
+    if (want === this.mood) {
+      this.playMoodTrack(want, false);
+      return;
+    }
+    this.mood = want;
+    if (this.audio && !this.audio.paused) {
+      this.fadeOutThen(() => this.playMoodTrack(want, true), MOOD_CROSSFADE_MS);
+    } else {
+      this.playMoodTrack(want, true);
+    }
+  }
+
+  /**
+   * Call from combat FX / fire SFX so action bed holds a few seconds after
+   * the last bang even if you step back into a quiet tile.
+   */
+  noteCombatActivity(): void {
+    this.actionUntil = performance.now() + ACTION_HOLD_MS;
+    if (this.phase === "game") this.setGameMood("action");
+  }
+
+  /** True while combat hold window is open (for snapshot mood merge). */
+  isActionHeld(): boolean {
+    return performance.now() < this.actionUntil;
+  }
+
+  /**
+   * Derive explore vs action from world state + recent combat.
+   * Prefer action for war zone, instanced jobs, or held combat.
+   */
+  syncFromWorld(state: {
+    inSafeZone: boolean;
+    instancedMission: boolean;
+    combatFx: boolean;
+  }): void {
+    if (this.phase !== "game") return;
+    if (state.combatFx) this.noteCombatActivity();
+    const wantAction =
+      this.isActionHeld() || !state.inSafeZone || state.instancedMission;
+    this.setGameMood(wantAction ? "action" : "explore");
   }
 
   stop(): void {
     this.cancelFade();
     this.disposeAudio();
     this.phase = "idle";
+    this.mood = "explore";
+    this.actionUntil = 0;
   }
 
-  private playGame(forceRestart: boolean): void {
+  private trackForMood(mood: MusicMood): string {
+    return mood === "action" ? ACTION_TRACK : EXPLORE_TRACK;
+  }
+
+  private trackMatches(el: HTMLAudioElement, src: string): boolean {
+    const path = src.split("/").pop() ?? src;
+    return el.src.includes(path);
+  }
+
+  private playMoodTrack(mood: MusicMood, forceRestart: boolean): void {
     if (this.muted) {
       this.phase = "game";
+      this.mood = mood;
       return;
     }
+    const src = this.trackForMood(mood);
     if (
       !forceRestart &&
       this.phase === "game" &&
+      this.mood === mood &&
       this.audio &&
-      this.audio.src.includes("neon-blackout")
+      this.trackMatches(this.audio, src)
     ) {
       this.audio.volume = this.volume;
       void this.audio.play().catch(() => undefined);
       return;
     }
-    this.startTrack(GAME_TRACK, true);
+    this.mood = mood;
+    this.startTrack(src, true);
     this.phase = "game";
   }
 

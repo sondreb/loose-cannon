@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-11 (M7 rival gang variety)  
+Last updated: 2026-07-11 (M7 music bed)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -38,6 +38,7 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | **Third instance (M7)** | **Done** | Cold Storage template + `cold_storage` Ice Box Eviction |
 | **Street hustles / POI (M7)** | **Done** | Phone/mail/hydrant/neon/cone hustles; fence NPC; prop `readyIn` |
 | **Rival gang variety (M7)** | **Done** | Per-gang names, gear, role bias, aggro/detect ranges; instance flavors |
+| **Music bed (M7)** | **Done** | Title / explore / action MP3 loops @ ~0.12; Settings mute; gesture unlock |
 | **Day/night + district light** | **Done** | ~6 min cycle; sky/overlay/neon/rain; district tints; HUD phase |
 | **Directional goons / walk bob** | **Done** | Iso screen flip; two-beat bob + lean; speed cadence; idle server facing |
 | **HUD / event-log readability** | **Done** | Kind-colored log lines; pin-to-read; stronger objective/toasts/mission HUD |
@@ -248,14 +249,25 @@ Shared `gangs.ts` profiles keyed by map spawn id — server applies on spawn/res
 | `ai_neon` | Neon Vipers | hold / elite | high, long | Queen Fang; minigun/tommy + plate |
 | `ai_chrome` | Chrome Fists | rush / knuckles | high, short | Iron Hands; melee muscle |
 
-**Also:** per-posse `aggroRange` / `detectRange`; combat logs include gang blurb; instance flavors **Bay** (readable pistols), **Chop** (tools/shotguns), **Frost** (uzi/hold). Smoke asserts Dogs vs Vipers names/gear.
+**Also:** per-posse `aggroRange` / `detectRange`; combat logs include gang blurb; instance flavors **Bay** (readable pistols), **Chop** (tools/shotguns), **Frost** (uzi/hold). Smoke asserts Dogs vs Vipers names/gear. Rush/hold/flee crews always keep ≥1 signature role (smoke-stable).
+
+### Music bed (live)
+
+| Track | File | When |
+|-------|------|------|
+| Title | `/music/rain-city-ledger.mp3` | Login / splash (after first gesture) |
+| Explore | `/music/neon-blackout.mp3` | Safe streets / hub |
+| Action | `/music/neon-heist-run.mp3` | War zone, instanced jobs, combat hold (~14s after last bang) |
+
+- Volume **~0.12** (under SFX ~0.55 / voice ~0.85); crossfade title→game and explore↔action  
+- Settings → **Music** mute persists (`lc_audio_v1`); autoplay unlock on pointer/key  
+- Prompts for more cues: [music.md](./music.md)
 
 ## Next for overseer (priority)
 
-1. **M7 content** — optional music bed (procedural or low-volume loop)  
-2. Optional **M4 polish** — loot split, shared hold progress, kick confirm  
-3. Optional **M3** crash-pad stash UX polish  
-4. **Never** Mode B (Postgres/auth/k8s) unless human asks  
+1. Optional **M4 polish** — loot split, shared hold progress, kick confirm  
+2. Optional **M3** crash-pad stash UX polish  
+3. **Never** Mode B (Postgres/auth/k8s) unless human asks  
 
 ## Known bugs / polish debt
 

@@ -19,6 +19,18 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-11 — cycle 21 (M7 music bed)
+- Focus: Optional low-volume music bed — title / explore / action context loops
+- Done:
+  - Client `MusicBus`: title (`rain-city-ledger`) → explore (`neon-blackout`) → action (`neon-heist-run`)
+  - Snapshot mood: war zone, instanced mission, or combat FX/ASSASSINATE/ENGAGING/ALERT → action bed; ~14s hold after last combat cue
+  - Crossfade explore↔action (~1.6s); title fade-out on Hit the Streets; mute + volume ~0.12 under SFX/VO
+  - Shared `assignGangRoles`: rush/hold/flee always keep ≥1 signature role (stabilizes Dogs melee smoke flake)
+  - Docs: music.md live track table; STATUS / MASTER_PLAN M7 music checked
+- Verify: `npm run build` OK; `npm run smoke` → SMOKE_OK (clean server)
+- Next: Optional **M4 polish** (loot split / shared hold / kick confirm) or **M3** stash UX
+- Blocked: none
+
 ### 2026-07-11 — cycle 20 (M7 rival gang variety)
 - Focus: Rival gang variety — names, gear, aggression (per-crew identity)
 - Done:

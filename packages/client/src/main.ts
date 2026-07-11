@@ -2208,6 +2208,17 @@ function onSnapshot(s: WorldSnapshot): void {
   view.applySnapshot(s);
   // Combat VFX SFX (visuals applied inside WorldView.applySnapshot)
   if (s.fx?.length) playCombatFxAudio(s.fx);
+  // Music beds: explore (safe) ↔ action (war / instance / firefight hold)
+  const combatFx =
+    !!s.fx?.length ||
+    s.you.action === "ASSASSINATE" ||
+    s.you.action === "ENGAGING" ||
+    s.you.action === "ALERT";
+  music.syncFromWorld({
+    inSafeZone: s.you.inSafeZone,
+    instancedMission: !!s.mission?.instanced,
+    combatFx,
+  });
   renderPosse();
   renderDialogue();
   renderShop();
@@ -2247,6 +2258,7 @@ function onSnapshot(s: WorldSnapshot): void {
 
 function weaponFireSfx(weapon: WeaponId): void {
   sfx.unlock();
+  music.noteCombatActivity();
   if (weapon === "shotgun") sfx.play("shotgun");
   else if (weapon === "minigun") sfx.play("minigun");
   else if (weapon === "tommy") sfx.play("tommy");
