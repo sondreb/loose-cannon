@@ -299,6 +299,9 @@ const TAP_SLOP_PX = 22;
 /** Dedicated on-screen joystick state */
 let joyPointerId: number | null = null;
 let joyActive = false;
+/** World-space unit vector while stick is held (0,0 = dead zone / released) */
+let joyWorldDx = 0;
+let joyWorldDy = 0;
 const JOY_MAX_PX = 52;
 /** Event log pinned open (tap on mobile / click desktop) */
 let eventLogPinned = false;
@@ -353,27 +356,29 @@ function resetJoyKnob(): void {
   mobJoystick?.classList.remove("active");
 }
 
-function sendJoyDir(dx: number, dy: number): void {
-  if (!socket) return;
-  // Screen drag → world dir (same iso mapping as WASD)
-  const worldDx = dx + dy;
-  const worldDy = dy - dx;
+/** Screen-space stick offset → world unit vector (same iso map as WASD). */
+function screenStickToWorld(sx: number, sy: number): { dx: number; dy: number } {
+  // Screen up (−sy) → decrease world x+y; right (+sx) → increase x, decrease y
+  const worldDx = sx + sy;
+  const worldDy = sy - sx;
   const n = Math.hypot(worldDx, worldDy) || 1;
-  socket.send({ type: "intent.dir", dx: worldDx / n, dy: worldDy / n });
-  keyMoving = true;
-  pendingInteract = null;
-  view?.clearLocalPrediction();
+  return { dx: worldDx / n, dy: worldDy / n };
 }
 
 function stopJoyMove(): void {
   joyActive = false;
   joyPointerId = null;
+  joyWorldDx = 0;
+  joyWorldDy = 0;
   resetJoyKnob();
-  if (!keyMoving) return;
-  keyMoving = false;
-  socket?.send({ type: "intent.dir", dx: 0, dy: 0 });
-  socket?.send({ type: "intent.stop" });
   view?.clearLocalPrediction();
+  if (keyMoving) {
+    keyMoving = false;
+    socket?.send({ type: "intent.dir", dx: 0, dy: 0 });
+    socket?.send({ type: "intent.stop" });
+  } else {
+    socket?.send({ type: "intent.dir", dx: 0, dy: 0 });
+  }
 }
 
 function bindMobileJoystick(): void {
@@ -395,15 +400,23 @@ function bindMobileJoystick(): void {
     }
     if (mobJoyKnob) mobJoyKnob.style.transform = `translate(${dx}px, ${dy}px)`;
     mobJoystick.classList.add("active");
-    if (len < 8) {
-      // Dead zone — hold still
-      if (keyMoving) {
-        keyMoving = false;
-        socket?.send({ type: "intent.dir", dx: 0, dy: 0 });
-      }
+
+    // Dead zone — hold finger at center = stop walking (but keep stick captured)
+    if (len < 10) {
+      joyWorldDx = 0;
+      joyWorldDy = 0;
       return;
     }
-    sendJoyDir(dx / maxR, dy / maxR);
+
+    // Store direction; continuous resend + prediction happen in applyKeyboardSteer rAF loop
+    const nx = dx / maxR;
+    const ny = dy / maxR;
+    const w = screenStickToWorld(nx, ny);
+    joyWorldDx = w.dx;
+    joyWorldDy = w.dy;
+    pendingInteract = null;
+    // Immediate first packet so response feels snappy (loop keeps it alive)
+    applySteerVector(w.dx, w.dy, true);
   };
 
   const onDown = (e: PointerEvent) => {
@@ -434,9 +447,8 @@ function bindMobileJoystick(): void {
   base.addEventListener("pointermove", onMove);
   base.addEventListener("pointerup", onUp);
   base.addEventListener("pointercancel", onUp);
-  base.addEventListener("lostpointercapture", () => {
-    if (joyActive) stopJoyMove();
-  });
+  // Don't stop on lostpointercapture alone if still "active" with pointer —
+  // some browsers fire it spuriously; pointerup/cancel is authoritative.
 }
 
 /** Fullscreen helpers (splash + settings). */
@@ -2395,11 +2407,14 @@ function updateZoneObjective(s: WorldSnapshot): void {
 
 /** Keep status bar just under floating CREW button / expanded crew strip (+ cash chip). */
 function syncMobileHudTop(): void {
-  if (!possePanel) return;
-  const r = possePanel.getBoundingClientRect();
-  let bottom = r.bottom;
-  // Collapsed: cashRep is position:fixed top-right, not inside panel box
-  if (possePanel.classList.contains("collapsed") && cashRep) {
+  // Toggle is position:fixed — always use its box so open/close doesn't jump HUD
+  const toggle = possePanelToggle ?? possePanel;
+  if (!toggle) return;
+  let bottom = toggle.getBoundingClientRect().bottom;
+  if (possePanel && !possePanel.classList.contains("collapsed")) {
+    bottom = Math.max(bottom, possePanel.getBoundingClientRect().bottom);
+  }
+  if (possePanel?.classList.contains("collapsed") && cashRep) {
     const c = cashRep.getBoundingClientRect();
     if (c.height > 0) bottom = Math.max(bottom, c.bottom);
   }
@@ -2576,9 +2591,57 @@ function canKeyboardMove(): boolean {
   return true;
 }
 
-/** Instant local prediction + optional network send (immediate on press). */
+/** Shared free-move: local prediction every frame + throttled intent.dir resend. */
+function applySteerVector(dx: number, dy: number, forceSend: boolean): void {
+  if (!view || !socket) return;
+  view.setLocalPrediction(dx, dy);
+  const now = performance.now();
+  if (forceSend || !keyMoving || now - lastKeyMoveSent >= DIR_RESEND_MS) {
+    lastKeyMoveSent = now;
+    keyMoving = true;
+    socket.send({ type: "intent.dir", dx, dy });
+  }
+}
+
+function clearSteer(): void {
+  if (!keyMoving && joyWorldDx === 0 && joyWorldDy === 0) {
+    view?.clearLocalPrediction();
+    return;
+  }
+  view?.clearLocalPrediction();
+  if (keyMoving) {
+    keyMoving = false;
+    lastKeyMoveSent = performance.now();
+    socket?.send({ type: "intent.dir", dx: 0, dy: 0 });
+  }
+}
+
+/**
+ * Instant local prediction + optional network send.
+ * Joystick owns steer while captured — keyboard must NOT zero it out.
+ */
 function applyKeyboardSteer(forceSend: boolean): void {
   if (!view) return;
+
+  // On-screen stick: hold direction continuously until release / dead zone
+  if (joyActive) {
+    if (!canKeyboardMove()) {
+      // Dialogue/shop open — freeze but keep stick state so we resume on close
+      if (keyMoving) {
+        view.clearLocalPrediction();
+        socket?.send({ type: "intent.dir", dx: 0, dy: 0 });
+        keyMoving = false;
+      }
+      return;
+    }
+    if (joyWorldDx === 0 && joyWorldDy === 0) {
+      clearSteer();
+      return;
+    }
+    applySteerVector(joyWorldDx, joyWorldDy, forceSend);
+    return;
+  }
+
   if (!canKeyboardMove()) {
     if (keyMoving) {
       view.clearLocalPrediction();
@@ -2590,27 +2653,12 @@ function applyKeyboardSteer(forceSend: boolean): void {
 
   const { wx, wy } = worldDirFromKeys();
   if (wx === 0 && wy === 0) {
-    view.clearLocalPrediction();
-    if (keyMoving) {
-      socket.send({ type: "intent.dir", dx: 0, dy: 0 });
-      keyMoving = false;
-      lastKeyMoveSent = performance.now();
-    }
+    clearSteer();
     return;
   }
 
   const len = Math.hypot(wx, wy) || 1;
-  const dx = wx / len;
-  const dy = wy / len;
-  // Local prediction every frame — zero perceived input lag
-  view.setLocalPrediction(dx, dy);
-
-  const now = performance.now();
-  if (forceSend || !keyMoving || now - lastKeyMoveSent >= DIR_RESEND_MS) {
-    lastKeyMoveSent = now;
-    keyMoving = true;
-    socket.send({ type: "intent.dir", dx, dy });
-  }
+  applySteerVector(wx / len, wy / len, forceSend);
 }
 
 function setKeyFromCode(code: string, down: boolean): boolean {
@@ -3133,7 +3181,8 @@ function bindInput(): void {
 
   window.addEventListener("blur", () => {
     keys.up = keys.down = keys.left = keys.right = false;
-    if (keyMoving) {
+    if (joyActive) stopJoyMove();
+    else if (keyMoving) {
       keyMoving = false;
       view?.clearLocalPrediction();
       socket?.send({ type: "intent.dir", dx: 0, dy: 0 });

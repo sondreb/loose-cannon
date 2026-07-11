@@ -3305,8 +3305,8 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
 
   /*
    * Phone posse chrome:
-   *  collapsed → small floating CREW button (not a full-width top bar)
-   *  expanded  → horizontal crew strip under the toggle
+   *  CREW toggle is FIXED top-left (same spot open/closed).
+   *  Expanded panel drops in under it without moving the button.
    */
   #possePanel {
     top: max(0.35rem, env(safe-area-inset-top, 0px));
@@ -3333,12 +3333,45 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
     z-index: 12;
   }
 
+  /* Always same screen position — open/close must not shift this control */
+  #possePanelToggle {
+    position: fixed;
+    top: max(0.4rem, env(safe-area-inset-top, 0px));
+    left: max(0.4rem, env(safe-area-inset-left, 0px));
+    z-index: 16;
+    flex-shrink: 0;
+    width: 2.85rem;
+    height: 2.85rem;
+    min-width: 2.85rem;
+    min-height: 2.85rem;
+    margin: 0;
+    padding: 0;
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    font-size: 0.95rem;
+    font-weight: 800;
+    letter-spacing: 0;
+    background: linear-gradient(180deg, #2a2038 0%, #18141f 100%);
+    border: 1px solid rgba(255, 102, 204, 0.45);
+    color: #ffe8f8;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+  }
+
+  #possePanelToggle:active {
+    transform: scale(0.96);
+  }
+
   .posse-panel-head {
     flex-direction: row;
     align-items: center;
     justify-content: flex-start;
     gap: 0.35rem;
     margin-bottom: 0;
+    /* Room for fixed 👤 so open head doesn't reflow under it */
+    padding-left: 3.15rem;
+    min-height: 2.85rem;
   }
 
   #possePanel .panel-title {
@@ -3358,26 +3391,6 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
     font-size: 0.68rem;
     gap: 0.35rem;
     max-width: min(58vw, 14rem);
-  }
-
-  /* Compact man / CREW control — primary mobile entry */
-  #possePanelToggle {
-    flex-shrink: 0;
-    min-width: 2.85rem;
-    min-height: 2.85rem;
-    padding: 0.35rem 0.55rem;
-    border-radius: 999px;
-    font-size: 0.72rem;
-    font-weight: 800;
-    letter-spacing: 0.08em;
-    background: linear-gradient(180deg, #2a2038 0%, #18141f 100%);
-    border: 1px solid rgba(255, 102, 204, 0.45);
-    color: #ffe8f8;
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
-  }
-
-  #possePanelToggle:active {
-    transform: scale(0.96);
   }
 
   #posseList {
@@ -3462,29 +3475,45 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
     margin: 0;
   }
 
-  /* Collapsed = just the CREW button (+ tiny cash chip floats top-right) */
+  /* Collapsed = invisible shell; fixed 👤 + cash chip only */
   #possePanel.collapsed #posseList,
   #possePanel.collapsed #gearEditor {
     display: none !important;
   }
 
   #possePanel.collapsed {
-    max-height: none;
-    width: auto;
-    max-width: none;
-    padding: 0.2rem;
+    /* Keep layout box under the fixed toggle for ResizeObserver / hit testing */
+    top: max(0.4rem, env(safe-area-inset-top, 0px));
+    left: max(0.4rem, env(safe-area-inset-left, 0px));
+    width: 2.85rem;
+    height: 2.85rem;
+    max-width: 2.85rem;
+    max-height: 2.85rem;
+    padding: 0;
+    margin: 0;
+    border: none;
     border-radius: 999px;
-    background: rgba(12, 12, 18, 0.82);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+    background: transparent;
+    box-shadow: none;
+    overflow: visible;
+    pointer-events: none;
   }
 
   #possePanel.collapsed .posse-panel-head {
     margin: 0;
     gap: 0;
+    padding: 0;
+    min-height: 0;
+    min-width: 0;
+    pointer-events: none;
   }
 
   #possePanel.collapsed .panel-title {
     display: none !important;
+  }
+
+  #possePanel.collapsed #possePanelToggle {
+    pointer-events: auto;
   }
 
   /* Cash chip sits left of the compact MAP button (top-right stack) */
@@ -3512,11 +3541,14 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
     display: none;
   }
 
+  /* Expanded: panel under/around fixed toggle; button stays put */
   #possePanel:not(.collapsed) {
-    right: max(0.4rem, env(safe-area-inset-right, 0px));
+    top: max(0.4rem, env(safe-area-inset-top, 0px));
     left: max(0.4rem, env(safe-area-inset-left, 0px));
+    right: max(0.4rem, env(safe-area-inset-right, 0px));
     width: auto;
     max-width: none;
+    padding-top: 0.35rem;
   }
 
   #possePanel:not(.collapsed) .posse-panel-head {
@@ -4456,9 +4488,23 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
   }
 
   #possePanelToggle {
+    width: 2.5rem;
+    height: 2.5rem;
     min-width: 2.5rem;
     min-height: 2.5rem;
-    font-size: 0.65rem;
+    font-size: 0.85rem;
+  }
+
+  #possePanel.collapsed {
+    width: 2.5rem;
+    height: 2.5rem;
+    max-width: 2.5rem;
+    max-height: 2.5rem;
+  }
+
+  #possePanel:not(.collapsed) .posse-panel-head {
+    padding-left: 2.8rem;
+    min-height: 2.5rem;
   }
 
   .portrait-wrap,

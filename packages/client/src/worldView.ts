@@ -963,13 +963,15 @@ export class WorldView {
           v.tx = u.x;
           v.ty = u.y;
         } else if (v.predMode === "dir") {
+          // Free-move (WASD/joystick) must not visually outrun click-move.
+          // Keep prediction for smoothness but cap lead over server authority.
           const err = Math.hypot(v.x - u.x, v.y - u.y);
-          if (err > 2.8) {
+          if (err > 0.85) {
             v.x = u.x;
             v.y = u.y;
-          } else if (err > 0.2) {
-            v.x += (u.x - v.x) * 0.1;
-            v.y += (u.y - v.y) * 0.1;
+          } else if (err > 0.12) {
+            v.x += (u.x - v.x) * 0.35;
+            v.y += (u.y - v.y) * 0.35;
           }
         } else if (v.predMode === "click") {
           // Never pull backward toward a lagging server position —
@@ -1030,8 +1032,16 @@ export class WorldView {
 
       const spdStat = u.stats?.speed ?? 5;
       if (v.predMode === "dir" && (v.predDirX !== 0 || v.predDirY !== 0)) {
+        // Same tiles/sec as server free-move and click-to-move (no stick boost)
         v.x += v.predDirX * speed * dt;
         v.y += v.predDirY * speed * dt;
+        // Soft clamp: never run more than ~0.7 tiles ahead of last server pos
+        const lead = Math.hypot(v.x - v.lastServerX, v.y - v.lastServerY);
+        if (lead > 0.7) {
+          const s = 0.7 / lead;
+          v.x = v.lastServerX + (v.x - v.lastServerX) * s;
+          v.y = v.lastServerY + (v.y - v.lastServerY) * s;
+        }
         v.facing = facingFromDelta(v.predDirX, v.predDirY);
         v.moving = true;
         v.phase += dt * walkPhaseRate(spdStat, true);
