@@ -1,4 +1,4 @@
-import type { DayPhase } from "./lighting.js";
+import type { DayPhase, WeatherKind } from "./lighting.js";
 import type { ArmorId, UpgradeId, WeaponId } from "./weapons.js";
 
 export type TileType =
@@ -316,6 +316,11 @@ export interface WorldSnapshot {
    * Client paints sky/overlay/neon; interiors still get district/club tint.
    */
   dayPhase: DayPhase;
+  /**
+   * Episodic outdoor weather (clear most of the time; rain/storm in short slots).
+   * Client draws full-screen rain only when not clear.
+   */
+  weather: WeatherKind;
   you: {
     characterId: string;
     posseId: string;

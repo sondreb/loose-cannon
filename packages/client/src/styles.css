@@ -512,6 +512,17 @@ body {
   color: #ff8060;
   background: rgba(70, 30, 20, 0.55);
 }
+#cashRep .weather-clear {
+  color: #a8c8e0;
+  opacity: 0.75;
+}
+#cashRep .weather-rain {
+  color: #70c0ff;
+}
+#cashRep .weather-storm {
+  color: #a090ff;
+  font-weight: 700;
+}
 #cashRep .day-night {
   color: #90a0ff;
   background: rgba(20, 20, 50, 0.65);

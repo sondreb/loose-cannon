@@ -2,7 +2,9 @@ import {
   ARMORS,
   combatPreviewLine,
   DAY_PHASE_LABEL,
+  WEATHER_LABEL,
   dayPhaseFromTick,
+  weatherFromTick,
   DEFAULT_REALM_ID,
   formatWeaponAmmo,
   heatBand,
@@ -950,11 +952,19 @@ function renderPosse(): void {
   const stash = snap.you.stashCash ?? 0;
   const phase: DayPhase = snap.dayPhase ?? dayPhaseFromTick(snap.tick);
   const phaseLabel = DAY_PHASE_LABEL[phase] ?? phase.toUpperCase();
+  const weather = snap.weather ?? weatherFromTick(snap.tick);
+  const weatherLabel = WEATHER_LABEL[weather] ?? weather.toUpperCase();
+  const weatherTitle =
+    weather === "clear"
+      ? "Clear skies — rain is occasional"
+      : weather === "storm"
+        ? "Storm — heavy rain for a short window"
+        : "Rain — episodic wet weather";
   cashRep.innerHTML = `<span class="cash" title="Pocket cash — lost on wipe">$${snap.you.cash}</span>${
     stash > 0
       ? ` <span class="stash-cash" title="Crash Pad stash — safe on wipe">⌂$${stash}</span>`
       : ""
-  } <span class="rep">Rep ${snap.you.rep}</span> <span class="heat heat-${band}" title="Street heat — cool off at the bar">Heat ${h}</span> <span class="day-phase day-${phase}" title="City day/night cycle (~6 min) — neon brighter at night">${phaseLabel}</span>`;
+  } <span class="rep">Rep ${snap.you.rep}</span> <span class="heat heat-${band}" title="Street heat — cool off at the bar">Heat ${h}</span> <span class="day-phase day-${phase}" title="City day/night cycle (~6 min) — neon brighter at night">${phaseLabel}</span> <span class="day-phase weather-${weather}" title="${weatherTitle}">${weatherLabel}</span>`;
   updateRealmHud(snap.you.realmId ?? myRealmId);
   const units = myUnits();
   const key = units

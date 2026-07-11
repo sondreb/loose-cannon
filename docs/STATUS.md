@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-11 (overseer idle-stop: loop exits when Mode A backlog empty)  
+Last updated: 2026-07-11 (weather events + buildings/gym/street art pass)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -12,8 +12,12 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | **Free outdoor roam** | **Done** | District rep no longer soft-kicks / clamps walks |
 | PvE safe downtown / PvP war zone | Done | y&lt;38 safe; no murders north |
 | Client prediction + 60 FPS path | Done | Viewport cull (spatial), not full-map scan |
-| Multi-story isometric buildings | Done | Walls, neon, awnings |
-| Combat-scene world look | Done | Wet asphalt, rain, props, street dressing |
+| Multi-story isometric buildings | Done | Tall façades, storefronts, windows, neon, awnings, roof gear |
+| Combat-scene world look | Done | Wet asphalt, episodic rain, props, street dressing |
+| **Street realism pass** | **Done** | Continuous charcoal asphalt (world-noise, oversized diamonds, no stripe grid); yellow center lines only on avenue middles; wet-only neon puddles |
+| **Episodic weather** | **Done** | Clear default; rain/storm ~22% in 75s slots; full-screen rain FX; HUD CLEAR/RAIN/STORM |
+| **Interior decor** | **Done** | Bar / gym / hospital / shop / safehouse / warehouse / church / club chrome |
+| **Iron Temple gym** | **Done** | Coach Brick dialogue: train selected / whole posse / muscle day |
 | Painted goon/prop sprites | Done | Imagine PNGs + procedural fallback |
 | **The Titty Twister** | **Done** | Club; 3 dancers; tip→reveal; VO; realistic profiles |
 | 18+ login warning | Done | Badge + copy on login; README warning |

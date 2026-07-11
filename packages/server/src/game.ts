@@ -17,6 +17,7 @@ import {
   DANCER_MAX_STAGE,
   dancerTipCost,
   dayPhaseFromTick,
+  weatherFromTick,
   DEFAULT_REALM_ID,
   listMissionOffers,
   layLowCost,
@@ -2827,7 +2828,12 @@ export class GameWorld {
         return;
       }
       if (spawn?.role === "coach") {
-        this.serviceGym(session, posse);
+        // Dialogue menu: train selected / whole posse (don't auto-bill on talk)
+        const dlg = this.buildDialogue(u, posse);
+        dlg.gender = u.gender;
+        posse.dialogue = dlg;
+        posse.shop = null;
+        session.conn?.send({ type: "voice.play", lineId: "coach_greet" });
         return;
       }
       const dlg = this.buildDialogue(u, posse);
@@ -2898,31 +2904,74 @@ export class GameWorld {
     );
   }
 
-  private serviceGym(session: CharacterSession, posse: Posse): void {
-    const cost = 150;
+  /**
+   * Iron Temple workout. mode:
+   *  - one: selected goon $150 +1 random combat stat
+   *  - muscle: selected $180 +1 muscle
+   *  - posse: every living crewmate $100 each +1 random stat
+   */
+  private serviceGym(
+    session: CharacterSession,
+    posse: Posse,
+    mode: "one" | "muscle" | "posse" = "one",
+  ): void {
+    const living = this.members(posse).filter((u) => u.alive);
+    if (living.length === 0) return;
+
+    const pickStat = (prefer?: keyof UnitStats): keyof UnitStats => {
+      if (prefer) return prefer;
+      const picks: (keyof UnitStats)[] = ["aim", "guts", "muscle", "speed"];
+      return picks[Math.floor(Math.random() * picks.length)]!;
+    };
+
+    const trainUnit = (unit: Unit, prefer?: keyof UnitStats): string => {
+      const pick = pickStat(prefer);
+      unit.stats[pick] = (unit.stats[pick] as number) + 1;
+      if (Math.random() < 0.3) {
+        unit.stats.maxHealth += 5;
+        unit.health = Math.min(unit.stats.maxHealth, unit.health + 5);
+      }
+      return `${unit.name} +1 ${String(pick).toUpperCase()}`;
+    };
+
+    if (mode === "posse") {
+      const cost = 100 * living.length;
+      if (posse.cash < cost) {
+        this.log(
+          session,
+          `Coach Brick: "Crew session is $${cost}. Come back when the wallet can bench press."`,
+        );
+        session.conn?.send({ type: "voice.play", lineId: "coach_greet" });
+        return;
+      }
+      posse.cash -= cost;
+      const lines = living.map((u) => trainUnit(u));
+      session.conn?.send({ type: "voice.play", lineId: "coach_train" });
+      this.log(
+        session,
+        `Coach Brick runs the whole posse through hell (−$${cost}). ${lines.join(" · ")}. "Pain is just weakness leaving the bullet holes."`,
+      );
+      return;
+    }
+
     const unit =
       this.units.get(posse.selectedUnitId) &&
-      this.units.get(posse.selectedUnitId)!.posseId === posse.id
+      this.units.get(posse.selectedUnitId)!.posseId === posse.id &&
+      this.units.get(posse.selectedUnitId)!.alive
         ? this.units.get(posse.selectedUnitId)!
-        : this.leader(posse);
-    if (!unit || !unit.alive) return;
+        : living[0]!;
+    const cost = mode === "muscle" ? 180 : 150;
     if (posse.cash < cost) {
       this.log(session, "Coach Brick: \"Guts ain't free, champ.\"");
       session.conn?.send({ type: "voice.play", lineId: "coach_greet" });
       return;
     }
     posse.cash -= cost;
-    const picks: (keyof UnitStats)[] = ["aim", "guts", "muscle", "speed"];
-    const pick = picks[Math.floor(Math.random() * picks.length)]!;
-    unit.stats[pick] = (unit.stats[pick] as number) + 1;
-    if (Math.random() < 0.35) {
-      unit.stats.maxHealth += 5;
-      unit.health = Math.min(unit.stats.maxHealth, unit.health + 5);
-    }
+    const line = trainUnit(unit, mode === "muscle" ? "muscle" : undefined);
     session.conn?.send({ type: "voice.play", lineId: "coach_train" });
     this.log(
       session,
-      `Coach Brick screams at ${unit.name} until +1 ${pick.toUpperCase()} appears. (−$${cost}) "Pain is just weakness leaving the bullet holes."`,
+      `Coach Brick screams until ${line}. (−$${cost}) "Again. Harder. Or leave the weights for the dead."`,
     );
   }
 
@@ -3608,17 +3657,40 @@ export class GameWorld {
         ],
       };
     }
-    if (role === "doc" || role === "coach") {
+    if (role === "doc") {
       return {
         npcId: npc.id,
         npcName: npc.name,
-        text:
-          role === "doc"
-            ? "Doc Bandage snaps on gloves that have seen things. \"Bleed on the mat, not the furniture.\""
-            : "Coach Brick flexes a vein the size of a garden hose. \"Pain builds character. Or corpses.\"",
+        text: "Doc Bandage snaps on gloves that have seen things. \"Bleed on the mat, not the furniture.\"",
+        voiceLineId,
+        choices: [{ id: "bye", label: "I'll… use the equipment.", tone: "business" }],
+      };
+    }
+    if (role === "coach") {
+      const crew = playerPosse ? this.members(playerPosse).filter((m) => m.alive).length : 1;
+      const posseCost = 100 * Math.max(1, crew);
+      return {
+        npcId: npc.id,
+        npcName: npc.name,
+        text: "Coach Brick flexes a vein the size of a garden hose. \"Iron Temple. Pain builds character — or corpses. Pick a program.\"",
         voiceLineId,
         choices: [
-          { id: "bye", label: "I'll… use the equipment.", tone: "business" },
+          {
+            id: "train_one",
+            label: "Train selected goon. ($150 · +1 random stat)",
+            tone: "business",
+          },
+          {
+            id: "train_posse",
+            label: `Train whole posse. ($${posseCost} · +1 each)`,
+            tone: "business",
+          },
+          {
+            id: "train_muscle",
+            label: "Muscle day — selected. ($180 · +1 muscle)",
+            tone: "threaten",
+          },
+          { id: "bye", label: "I'm just looking at the free weights.", tone: "smooth" },
         ],
       };
     }
@@ -3684,6 +3756,19 @@ export class GameWorld {
     const npc = this.units.get(d.npcId);
 
     if (choiceId === "bye") {
+      posse.dialogue = null;
+      return;
+    }
+
+    if (
+      (choiceId === "train_one" ||
+        choiceId === "train_posse" ||
+        choiceId === "train_muscle") &&
+      (npc?.npcRole === "coach" || d.npcName === "Coach Brick")
+    ) {
+      if (choiceId === "train_one") this.serviceGym(session, posse, "one");
+      else if (choiceId === "train_muscle") this.serviceGym(session, posse, "muscle");
+      else this.serviceGym(session, posse, "posse");
       posse.dialogue = null;
       return;
     }
@@ -6058,6 +6143,7 @@ export class GameWorld {
     return {
       tick: this.tick,
       dayPhase: dayPhaseFromTick(this.tick),
+      weather: weatherFromTick(this.tick),
       you: {
         characterId: session.characterId,
         posseId: session.posseId,

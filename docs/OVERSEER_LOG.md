@@ -19,6 +19,31 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-11 — weather + buildings + gym + streets
+- Focus: User feedback — no permanent rain, rain FX broken/tiny, tiles, buildings, gym workouts
+- Done:
+  - Episodic weather (`weatherFromTick`): clear default; rain/storm short slots; snapshot `weather`
+  - Full-screen screen-space rain (stage sibling); dry ground when clear
+  - Continuous asphalt tiles (no per-tile checkerboard); wet puddles only when raining
+  - Taller building façades + storefronts + windows + roof gear + kind flair
+  - Interior decor for bar/gym/hospital/shop/safehouse/warehouse/church (+ existing club)
+  - Coach Brick: train selected / whole posse / muscle day
+- Verify: `npm run build` + `npm run smoke` → SMOKE_OK
+- Next: Playtest outdoors + Iron Temple; more façade art if still flat at distance
+- Blocked: none
+
+### 2026-07-11 — street graphics pass (concept art)
+- Focus: Streets closer to `combat-scene.jpg` — continuous wet asphalt vs purple diamond grid
+- Done:
+  - Charcoal asphalt palette, soft seams, micro grit, cracks, oil slicks
+  - Iso-aligned yellow center dashes on middle lanes; hub crosswalk stripes
+  - Neon magenta/cyan puddles + curb lips on sidewalks
+  - Manholes, storm drains, hydrants, boxes; stronger wet-ground glints
+  - STATUS row for street realism pass
+- Verify: `npm run build` OK
+- Next: Playtest outdoors; optional building façade density if streets still feel empty
+- Blocked: none
+
 ### 2026-07-11 — overseer idle-stop fix (no empty loop)
 - Focus: Headless overseer was sleeping forever on empty Mode A backlog (health-check doc stamps + commit every cycle)
 - Done:

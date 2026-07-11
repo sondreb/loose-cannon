@@ -8,11 +8,13 @@ import {
   SAFE_Y_MAX,
   TILE_H,
   TILE_W,
+  weatherFromTick,
   WEAPONS,
   type BuildingPublic,
   type CombatFxEvent,
   type DayPhase,
   type LightingLook,
+  type WeatherKind,
   propHustleAction,
   type PropPublic,
   type UnitPublic,
@@ -20,6 +22,7 @@ import {
   type WorldSnapshot,
 } from "@loose-cannon/shared";
 import { Application, Container, Graphics, Sprite, Text } from "pixi.js";
+import { asphaltColor, asphaltGrit, asphaltNoise, sidewalkColor } from "./asphalt.js";
 import { screenToWorld as isoScreenToWorld, worldToScreen } from "./iso.js";
 import {
   clubPropTexture,
@@ -166,7 +169,8 @@ export type HoverTarget =
   | { kind: "prop"; id: string; label: string; action: string }
   | null;
 
-const FLOOR_PX = 18;
+/** Exterior floor height in px — tall enough façades read as buildings, not flat roofs */
+const FLOOR_PX = 40;
 /** Fallback when unit stats missing — matches baseline speed 5 */
 const PRED_SPEED_DEFAULT = moveSpeedTilesPerSec(5);
 const MIN_ZOOM = 0.65;
@@ -231,8 +235,9 @@ export class WorldView {
   private wasInside = false;
   private interiorZoomLocked = false;
   /** Cached lighting for this frame / map redraw */
-  private look: LightingLook = lightingLook("night", "downtown", false);
+  private look: LightingLook = lightingLook("night", "downtown", false, "clear");
   private lastDayPhase: DayPhase | null = null;
+  private lastWeather: WeatherKind | null = null;
   private lastLightKey = "";
 
   constructor(private canvas: HTMLCanvasElement) {
@@ -253,14 +258,14 @@ export class WorldView {
     });
     // Load painted goons / props (non-blocking if fail → procedural fallback)
     await loadGameSprites().catch(() => undefined);
-    this.app.stage.addChild(this.root, this.atmosphereGfx);
+    // Rain is screen-space (sibling of root) so it covers the full viewport, not a world corner
+    this.app.stage.addChild(this.root, this.rainGfx, this.atmosphereGfx);
     this.root.addChild(
       this.mapLayer,
       this.buildingLayer,
       this.propGfx,
       this.propSpriteLayer,
       this.entityLayer,
-      this.rainGfx,
       this.overlayLayer,
     );
     this.mapLayer.addChild(this.tileGfx);
@@ -304,6 +309,7 @@ export class WorldView {
 
   private refreshLighting(snap: WorldSnapshot): void {
     const phase = snap.dayPhase ?? dayPhaseFromTick(snap.tick);
+    const weather: WeatherKind = snap.weather ?? weatherFromTick(snap.tick);
     const indoor = !!snap.you.insideBuildingId;
     let place = indoor
       ? (snap.you.insideBuildingId ?? snap.you.districtId)
@@ -313,13 +319,14 @@ export class WorldView {
       const tmpl = snap.buildings.find((b) => b.id === place);
       if (tmpl?.kind) place = tmpl.kind;
     }
-    const key = `${phase}|${place}|${indoor ? 1 : 0}`;
+    const key = `${phase}|${weather}|${place}|${indoor ? 1 : 0}`;
     if (key !== this.lastLightKey) {
       this.lastLightKey = key;
-      this.look = lightingLook(phase, place, indoor);
-      if (this.lastDayPhase !== phase) {
+      this.look = lightingLook(phase, place, indoor, weather);
+      if (this.lastDayPhase !== phase || this.lastWeather !== weather) {
         this.lastDayPhase = phase;
-        // Phase shift changes ground palette — rebuild viewport when outdoors
+        this.lastWeather = weather;
+        // Phase / weather change ground wetness — rebuild outdoor tiles
         if (!indoor) this.mapRedrawPending = true;
       }
       // District / indoor changes also need horizon/neon refresh
@@ -1214,26 +1221,29 @@ export class WorldView {
   private drawGroundTile(g: Graphics, x: number, y: number, type: string, indoor = false): void {
     const { sx, sy } = worldToScreen(x, y);
     const hw = TILE_W / 2;
+    const hh = TILE_H / 2;
     const war = indoor ? 0 : warFactor(y + 0.5);
     const seed = (x * 17 + y * 31) >>> 0;
     const bright = indoor ? 1 : this.look.groundBright;
+    const wet = indoor ? 0 : this.look.wet;
+    const neonBoost = indoor ? 0 : Math.max(0.2, this.look.neon);
+    // Tile center in world space for continuous noise (not discrete per-tile tones)
+    const wx = x + 0.5;
+    const wy = y + 0.5;
+    const cx = sx;
+    const cy = sy + hh;
 
-    // Combat-scene wet-night palette (cool asphalt, purple sidewalks) + day brighten
     let color = 0x2a2840;
     if (type === "road") {
-      // Slight tonal variation so asphalt reads as textured, not flat purple grid
-      const tones = [0x2a2838, 0x262436, 0x2e2a40, 0x242232, 0x302c42];
-      color = lerpColor(tones[seed % tones.length]!, 0x1c1418, war * 0.85);
+      color = asphaltColor(wx, wy, wet, war, bright);
     } else if (type === "sidewalk") {
-      color = lerpColor((seed % 3) === 0 ? 0x4a465c : 0x3e3a50, 0x3a2830, war);
-    } else if (type === "parking") color = lerpColor(0x28263a, 0x221820, war);
-    else if (type === "wall") color = indoor ? 0x2a221c : 0x2c2638;
+      color = sidewalkColor(wx, wy, war, bright);
+    } else if (type === "parking") {
+      color = shade(lerpColor(0x222028, 0x1a181e, asphaltNoise(wx, wy) * 0.4), bright);
+      if (war > 0) color = lerpColor(color, 0x1a1416, war * 0.4);
+    } else if (type === "wall") color = indoor ? 0x2a221c : 0x2c2638;
     else if (type === "floor")
-      color = indoor
-        ? (x + y) % 2 === 0
-          ? 0x3a2e38
-          : 0x322830
-        : 0x342c38;
+      color = indoor ? ((x + y) % 2 === 0 ? 0x3a2e38 : 0x322830) : 0x342c38;
     else if (type === "door") color = indoor ? 0xb07030 : 0x9a6230;
     else if (type === "bar") color = 0x5a2848;
     else if (type === "shop") color = 0x283858;
@@ -1241,133 +1251,256 @@ export class WorldView {
     else if (type === "gym") color = 0x3a3430;
     else if (type === "void") color = 0x0a0812;
     else if (type === "grass") {
-      // Vacant lots / alleys — dark wet concrete, never lawn green
-      const tones = [0x1a1e2a, 0x181c28, 0x1c202e, 0x161a26, 0x1e222e];
-      color = lerpColor(tones[seed % tones.length]!, 0x1a1014, war);
-    }
-    if (!indoor && bright !== 1) color = shade(color, bright);
-
-    // Main diamond (slight inset stroke later for cartoon edge)
-    g.poly([sx, sy, sx + hw, sy + TILE_H / 2, sx, sy + TILE_H, sx - hw, sy + TILE_H / 2]);
-    g.fill({ color });
-
-    // Subtle diamond outline so tiles read without looking like a void grid
-    if (type === "road" || type === "sidewalk" || type === "parking" || type === "grass") {
-      g.poly([sx, sy, sx + hw, sy + TILE_H / 2, sx, sy + TILE_H, sx - hw, sy + TILE_H / 2]);
-      g.stroke({ color: 0x0a0814, width: 0.8, alpha: type === "road" ? 0.22 : 0.14 });
+      const t = asphaltNoise(wx * 0.8, wy * 0.8);
+      color = shade(lerpColor(0x181a20, 0x1e2028, t * 0.5), bright);
+      if (war > 0) color = lerpColor(color, 0x161218, war * 0.35);
     }
 
-    // Wet road sheen + lane paint (combat-scene crosswalk energy)
+    // ——— ROAD: oversized diamond kills iso seams (continuous asphalt sheet) ———
     if (type === "road") {
-      // Specular wet highlight blotch
-      if (seed % 3 === 0) {
-        g.ellipse(sx + ((seed % 7) - 3), sy + 10, 10 + (seed % 4), 4);
-        g.fill({ color: 0x6a88c8, alpha: 0.06 + (seed % 3) * 0.015 });
+      // Expand ~2px past tile edge so neighbors blend; no stroke ever
+      const pad = 2.2;
+      g.poly([
+        sx,
+        sy - pad * 0.5,
+        sx + hw + pad,
+        sy + hh,
+        sx,
+        sy + TILE_H + pad * 0.5,
+        sx - hw - pad,
+        sy + hh,
+      ]);
+      g.fill({ color });
+
+      // Continuous grit: world-noise speckles (same field across tile boundaries)
+      const grit = asphaltGrit(wx, wy);
+      if (grit > 0.62) {
+        const gx = cx + (asphaltNoise(wx + 2, wy) - 0.5) * 18;
+        const gy = cy + (asphaltNoise(wx, wy + 2) - 0.5) * 8;
+        g.ellipse(gx, gy, 2.2 + grit * 2, 1 + grit);
+        g.fill({ color: 0x0c0c12, alpha: 0.12 + grit * 0.1 });
       }
-      // Neon-tinted puddles (magenta / cyan) — rain reflections
-      if (seed % 5 === 0) {
-        const neon = seed % 2 === 0 ? 0xd040b0 : 0x40d0e8;
-        g.ellipse(sx + ((seed % 5) - 2), sy + 11, 9, 4);
-        g.fill({ color: neon, alpha: 0.1 + (seed % 3) * 0.02 });
-        g.ellipse(sx + ((seed % 5) - 2), sy + 11, 5, 2);
-        g.fill({ color: 0xffffff, alpha: 0.04 });
+      if (grit < 0.28) {
+        g.ellipse(cx + (grit - 0.14) * 40, cy + 1, 3, 1.3);
+        g.fill({ color: 0x323240, alpha: 0.08 });
       }
-      // Subtle center dashed lane (muted — never bleach the whole tile)
-      if ((x + y) % 3 === 0) {
-        const mark = war > 0.35 ? 0x6a2830 : 0x6a6878;
-        g.rect(sx - 4, sy + 9, 8, 1.2);
-        g.fill({ color: mark, alpha: 0.28 });
+
+      // Wet sheet + neon puddles (concept-art reflections) — only when raining
+      if (wet > 0.2) {
+        // Broad cool sheen across the continuous surface
+        const sheenA = 0.035 + wet * 0.04;
+        g.ellipse(cx, cy - 1, 16, 6);
+        g.fill({ color: 0x4a6a98, alpha: sheenA });
+        // Sparse neon puddles from world noise (not seed % N checker)
+        if (asphaltNoise(wx * 0.55, wy * 0.55) > 0.72) {
+          const neon = asphaltGrit(wx, wy) > 0.5 ? 0xe050c0 : 0x40d8f0;
+          const pr = 6 + asphaltNoise(wx + 1, wy) * 8;
+          g.ellipse(cx + (asphaltNoise(wx, wy + 3) - 0.5) * 10, cy + 1, pr, pr * 0.34);
+          g.fill({ color: neon, alpha: 0.1 * wet * neonBoost });
+          g.ellipse(cx, cy, pr * 0.4, pr * 0.12);
+          g.fill({ color: 0xffffff, alpha: 0.05 * wet });
+        }
       }
-      // Cracks
-      if (seed % 8 === 0) {
-        g.moveTo(sx - 8, sy + 6);
-        g.lineTo(sx + 1, sy + 13);
-        g.lineTo(sx + 10, sy + 10);
-        g.stroke({ color: 0x0a0810, width: 1.2, alpha: 0.4 });
+
+      // Cracks — sparse, world-noise driven (branching hairlines)
+      if (asphaltNoise(wx * 0.9, wy * 1.1) > 0.78) {
+        const ox = (asphaltGrit(wx, wy) - 0.5) * 12;
+        g.moveTo(cx - 11 + ox, cy - 4);
+        g.lineTo(cx - 2 + ox, cy + 1);
+        g.lineTo(cx + 9 + ox, cy - 0.5);
+        g.stroke({ color: 0x06060a, width: 1.05, alpha: 0.42 });
+        if (asphaltGrit(wx + 1, wy) > 0.55) {
+          g.moveTo(cx - 2 + ox, cy + 1);
+          g.lineTo(cx + 2 + ox, cy + 5);
+          g.stroke({ color: 0x06060a, width: 0.8, alpha: 0.28 });
+        }
       }
-      // Crosswalk: only true 4-way / T hubs, thin dim stripes (no white diamonds)
+
       const roadN = this.tileType(x, y - 1) === "road";
       const roadS = this.tileType(x, y + 1) === "road";
       const roadE = this.tileType(x + 1, y) === "road";
       const roadW = this.tileType(x - 1, y) === "road";
-      const axes = (roadN || roadS ? 1 : 0) + (roadE || roadW ? 1 : 0);
-      const arms = (roadN ? 1 : 0) + (roadS ? 1 : 0) + (roadE ? 1 : 0) + (roadW ? 1 : 0);
-      if (axes === 2 && arms >= 3 && seed % 5 === 0) {
-        for (let i = -1; i <= 1; i++) {
-          g.rect(sx - 7, sy + 9 + i * 3.5, 14, 1.4);
-          g.fill({ color: 0x7a7888, alpha: 0.22 });
+
+      // Yellow dashed center lines — combat-scene style (ONE strip per avenue, not a grid)
+      // True H-avenue center: both N+S road, and row above is NOT the deep middle
+      // (for 4-wide 18–21, only y where y-2 is not road → northern middle row)
+      const yellow = war > 0.4 ? 0xb87820 : 0xe0b820;
+      const hCenter =
+        roadN && roadS && this.tileType(x, y - 2) !== "road" && (roadE || roadW);
+      const vCenter =
+        roadE && roadW && this.tileType(x - 2, y) !== "road" && (roadN || roadS);
+
+      // Dashed: every other tile along the center line
+      if (hCenter && x % 2 === 0) {
+        // Along +X world → screen diagonal down-right
+        g.moveTo(cx - 11, cy - 5.5);
+        g.lineTo(cx + 11, cy + 5.5);
+        g.stroke({ color: yellow, width: 2.2, alpha: 0.78 });
+        g.moveTo(cx - 10, cy - 6.2);
+        g.lineTo(cx + 10, cy + 4.8);
+        g.stroke({ color: 0xfff0a8, width: 0.7, alpha: 0.22 });
+      }
+      if (vCenter && y % 2 === 0) {
+        // Along +Y world → screen diagonal down-left
+        g.moveTo(cx + 11, cy - 5.5);
+        g.lineTo(cx - 11, cy + 5.5);
+        g.stroke({ color: yellow, width: 2.2, alpha: 0.78 });
+        g.moveTo(cx + 10, cy - 6.2);
+        g.lineTo(cx - 10, cy + 4.8);
+        g.stroke({ color: 0xfff0a8, width: 0.7, alpha: 0.22 });
+      }
+      // At true intersection hub, both lines can meet → concept-art yellow X (no white stripes)
+
+      // Oil stain — rare
+      if (asphaltNoise(wx * 1.4, wy * 1.4) > 0.88) {
+        g.ellipse(cx - 2, cy + 2, 9, 3.5);
+        g.fill({ color: 0x080a10, alpha: 0.42 });
+        if (wet > 0.2) {
+          g.ellipse(cx - 3, cy + 1.5, 5, 1.8);
+          g.fill({ color: 0x304860, alpha: 0.12 * wet });
         }
       }
-      // Blood spatter in war zone
-      if (war > 0.35 && seed % 7 === 0) {
-        g.ellipse(sx + 3, sy + 9, 5, 2.5);
+      // Blood — war zone only, rare
+      if (war > 0.35 && asphaltGrit(wx + 5, wy) > 0.82) {
+        g.ellipse(cx + 3, cy, 5.5, 2.4);
         g.fill({ color: 0x6a1820, alpha: 0.45 });
-        g.circle(sx - 4, sy + 12, 1.5);
-        g.fill({ color: 0x5a1420, alpha: 0.35 });
       }
-      // Oil stain
-      if (seed % 13 === 0) {
-        g.ellipse(sx - 2, sy + 12, 8, 3.5);
-        g.fill({ color: 0x0a0c10, alpha: 0.4 });
+      // Soft curb shade into sidewalk (no hard tile edge)
+      if (this.tileType(x, y - 1) === "sidewalk") {
+        g.moveTo(sx, sy + 1);
+        g.lineTo(sx + hw - 2, sy + hh);
+        g.lineTo(sx - hw + 2, sy + hh);
+        g.closePath();
+        g.fill({ color: 0x000000, alpha: 0.16 });
       }
+      if (this.tileType(x, y + 1) === "sidewalk") {
+        g.moveTo(sx, sy + TILE_H - 1);
+        g.lineTo(sx + hw - 2, sy + hh);
+        g.lineTo(sx - hw + 2, sy + hh);
+        g.closePath();
+        g.fill({ color: 0x000000, alpha: 0.12 });
+      }
+      return;
     }
+
+    // Non-road: normal diamond (slight oversize on sidewalk for continuity)
+    const pad = type === "sidewalk" ? 1.2 : 0;
+    g.poly([
+      sx,
+      sy - pad * 0.4,
+      sx + hw + pad,
+      sy + hh,
+      sx,
+      sy + TILE_H + pad * 0.4,
+      sx - hw - pad,
+      sy + hh,
+    ]);
+    g.fill({ color });
+
     if (type === "sidewalk") {
-      // Raised curb highlight + shadow
-      g.moveTo(sx - hw + 4, sy + TILE_H / 2);
-      g.lineTo(sx, sy + TILE_H - 2);
-      g.lineTo(sx + hw - 4, sy + TILE_H / 2);
-      g.stroke({ color: 0x1a1828, width: 1.5, alpha: 0.45 });
-      if (seed % 4 === 0) {
-        const graf = [0xff40aa, 0x40e0ff, 0xa0ff40, 0xffc040][seed % 4]!;
-        g.rect(sx - 6, sy + 4, 8, 5);
-        g.fill({ color: graf, alpha: 0.28 });
-        g.rect(sx - 4, sy + 5, 3, 3);
-        g.fill({ color: 0xffffff, alpha: 0.08 });
+      // Very soft slab joints (not a hard grid)
+      if ((x + y) % 2 === 0) {
+        g.poly([
+          sx,
+          sy + 3,
+          sx + hw - 3,
+          sy + hh,
+          sx,
+          sy + TILE_H - 3,
+          sx - hw + 3,
+          sy + hh,
+        ]);
+        g.stroke({ color: 0x2a2834, width: 0.7, alpha: 0.1 });
       }
-      if (war > 0.2 && (x + y) % 3 === 0) {
-        g.rect(sx - 5, sy + 6, 10, 3);
-        g.fill({ color: 0x1a1210, alpha: 0.4 });
+      const nearRoad =
+        this.tileType(x + 1, y) === "road" ||
+        this.tileType(x - 1, y) === "road" ||
+        this.tileType(x, y + 1) === "road" ||
+        this.tileType(x, y - 1) === "road";
+      if (nearRoad) {
+        g.moveTo(sx - hw + 6, sy + hh);
+        g.lineTo(sx, sy + TILE_H - 3);
+        g.lineTo(sx + hw - 6, sy + hh);
+        g.stroke({ color: 0x1a1824, width: 2.2, alpha: 0.5 });
+        g.moveTo(sx - hw + 8, sy + hh - 1);
+        g.lineTo(sx, sy + 5);
+        g.lineTo(sx + hw - 8, sy + hh - 1);
+        g.stroke({ color: 0x7a7890, width: 1.2, alpha: 0.35 });
       }
-    }
-    if (type === "grass") {
-      // Sparse rubble / dark weeds
-      if (seed % 6 === 0) {
-        g.circle(sx + (seed % 5) - 2, sy + 10, 2);
-        g.fill({ color: 0x2a3038, alpha: 0.5 });
+      if (asphaltNoise(wx, wy) > 0.8) {
+        const graf = [0xff40aa, 0x40e0ff, 0xa0ff40, 0xffc040, 0xc060ff][seed % 5]!;
+        g.ellipse(cx - 1, cy - 1, 6, 2.8);
+        g.fill({ color: graf, alpha: 0.16 * neonBoost });
       }
-      if (seed % 11 === 0) {
-        g.rect(sx - 3, sy + 8, 5, 2);
-        g.fill({ color: 0x3a2a20, alpha: 0.35 });
+      if (wet > 0.3 && asphaltGrit(wx, wy) > 0.65) {
+        g.ellipse(cx + 2, cy, 7, 2.6);
+        g.fill({ color: 0x80a0d0, alpha: 0.06 * wet });
       }
-    }
-    if (type === "parking") {
-      if ((x + y) % 4 === 0) {
-        g.rect(sx - 8, sy + 8, 16, 1.5);
-        g.fill({ color: 0xc0a840, alpha: 0.25 });
+    } else if (type === "parking") {
+      if ((x + y) % 3 === 0) {
+        g.moveTo(cx - 10, cy - 3);
+        g.lineTo(cx + 10, cy + 5);
+        g.stroke({ color: 0xc0a840, width: 1.5, alpha: 0.28 });
       }
-    }
-    if (type === "door") {
+    } else if (type === "grass") {
+      if (asphaltGrit(wx, wy) > 0.7) {
+        g.ellipse(cx, cy + 1, 4, 1.8);
+        g.fill({ color: 0x12141a, alpha: 0.35 });
+      }
+      if (seed % 8 === 0) {
+        g.circle(cx - 2, cy, 1.5);
+        g.fill({ color: 0x2a3830, alpha: 0.3 });
+      }
+    } else if (type === "door") {
       g.roundRect(sx - 5, sy + 2, 10, 12, 1);
       g.fill({ color: 0x5a3018 });
     }
   }
 
-  /** Decorative street clutter — manholes, cones, trash bags (no collision). */
+  /** Decorative street clutter — manholes, drains, cones, trash (no collision). */
   private drawStreetDressing(g: Graphics, x: number, y: number, type: string): void {
     const seed = (x * 73 + y * 149) >>> 0;
     const { sx, sy } = worldToScreen(x + 0.5, y + 0.5);
     const war = warFactor(y);
+    const neonBoost = Math.max(0.35, this.look.neon);
 
-    // Manhole covers on roads
-    if (type === "road" && seed % 17 === 0) {
-      g.ellipse(sx, sy + 2, 7, 3.5);
-      g.fill({ color: 0x1a1a22, alpha: 0.85 });
-      g.ellipse(sx, sy + 2, 5, 2.5);
-      g.stroke({ color: 0x3a3a48, width: 1, alpha: 0.7 });
-      g.moveTo(sx - 4, sy + 2);
-      g.lineTo(sx + 4, sy + 2);
-      g.stroke({ color: 0x2a2a35, width: 1, alpha: 0.6 });
+    // Manhole covers on roads (combat-scene circular lids) — sparse
+    if (type === "road" && seed % 41 === 0) {
+      g.ellipse(sx, sy + 2, 8, 4);
+      g.fill({ color: 0x000000, alpha: 0.35 });
+      g.ellipse(sx, sy + 1, 7.5, 3.6);
+      g.fill({ color: 0x1a1c24, alpha: 0.92 });
+      g.ellipse(sx, sy + 1, 6, 2.8);
+      g.stroke({ color: 0x4a4c58, width: 1.1, alpha: 0.75 });
+      // Cross bars
+      g.moveTo(sx - 5, sy + 1);
+      g.lineTo(sx + 5, sy + 1);
+      g.stroke({ color: 0x2a2c34, width: 1, alpha: 0.7 });
+      g.moveTo(sx, sy - 1.5);
+      g.lineTo(sx, sy + 3.5);
+      g.stroke({ color: 0x2a2c34, width: 1, alpha: 0.55 });
+      // Bolt dots
+      for (const [bx, by] of [
+        [-3.5, 0],
+        [3.5, 0],
+        [0, -1.2],
+        [0, 2.2],
+      ] as const) {
+        g.circle(sx + bx, sy + 1 + by, 0.7);
+        g.fill({ color: 0x3a3c48, alpha: 0.7 });
+      }
     }
+
+    // Storm drain grates — rare
+    if (type === "road" && seed % 47 === 4) {
+      g.rect(sx - 7, sy, 14, 5);
+      g.fill({ color: 0x0c0c12, alpha: 0.75 });
+      for (let i = -2; i <= 2; i++) {
+        g.rect(sx + i * 2.6 - 0.6, sy + 0.5, 1.2, 4);
+        g.fill({ color: 0x2a2c34, alpha: 0.55 });
+      }
+    }
+
     // Traffic cone
     if ((type === "road" || type === "sidewalk") && seed % 23 === 3) {
       g.ellipse(sx, sy + 4, 5, 2);
@@ -1380,15 +1513,45 @@ export class WorldView {
       g.rect(sx - 3, sy - 4, 6, 2.5);
       g.fill({ color: 0xf0f0f0, alpha: 0.9 });
     }
-    // Trash bag
-    if (type === "sidewalk" && seed % 19 === 5) {
+
+    // Trash bag / pile
+    if (type === "sidewalk" && seed % 17 === 5) {
       g.ellipse(sx, sy + 3, 6, 2.5);
       g.fill({ color: 0x000000, alpha: 0.3 });
       g.ellipse(sx, sy - 1, 5, 5);
       g.fill({ color: 0x1a1a1a });
       g.ellipse(sx - 1, sy - 3, 2, 1.5);
       g.fill({ color: 0x3a3a3a, alpha: 0.5 });
+      if (seed % 2 === 0) {
+        g.ellipse(sx + 4, sy + 1, 3.5, 3);
+        g.fill({ color: 0x222018 });
+      }
     }
+
+    // Cardboard box / crate (sidewalk clutter)
+    if (type === "sidewalk" && seed % 31 === 11) {
+      g.ellipse(sx, sy + 3, 5, 2);
+      g.fill({ color: 0x000000, alpha: 0.25 });
+      g.rect(sx - 5, sy - 4, 10, 7);
+      g.fill({ color: 0x6a5030 });
+      g.rect(sx - 5, sy - 4, 10, 2);
+      g.fill({ color: 0x8a6840, alpha: 0.7 });
+    }
+
+    // Fire hydrant
+    if (type === "sidewalk" && seed % 37 === 9) {
+      g.ellipse(sx, sy + 3, 4, 1.8);
+      g.fill({ color: 0x000000, alpha: 0.3 });
+      g.rect(sx - 2.5, sy - 8, 5, 10);
+      g.fill({ color: 0xc02828 });
+      g.rect(sx - 4, sy - 5, 8, 3);
+      g.fill({ color: 0xa02020 });
+      g.circle(sx, sy - 10, 2.5);
+      g.fill({ color: 0xd03030 });
+      g.circle(sx, sy - 10, 4);
+      g.fill({ color: 0xff4040, alpha: 0.08 * neonBoost });
+    }
+
     // Traffic light post (sidewalk corners near roads)
     if (type === "sidewalk" && seed % 29 === 7) {
       const nearRoad =
@@ -1409,62 +1572,85 @@ export class WorldView {
         g.circle(sx, sy - 22, 2.5);
         g.fill({ color: lit === 2 ? 0x40e060 : 0x104a18, alpha: lit === 2 ? 0.95 : 0.5 });
         if (lit === 0) {
-          g.circle(sx, sy - 32, 6);
-          g.fill({ color: 0xff3030, alpha: 0.12 });
+          g.circle(sx, sy - 32, 7);
+          g.fill({ color: 0xff3030, alpha: 0.14 });
+          // Red light bounce on wet ground
+          g.ellipse(sx, sy + 2, 10, 3);
+          g.fill({ color: 0xff3030, alpha: 0.08 * neonBoost });
+        } else if (lit === 2) {
+          g.ellipse(sx, sy + 2, 10, 3);
+          g.fill({ color: 0x40e060, alpha: 0.06 * neonBoost });
         }
       }
     }
-    // War-zone debris
+
+    // War-zone debris / shell casings pile
     if (war > 0.3 && type === "road" && seed % 11 === 2) {
       g.rect(sx - 4, sy, 8, 3);
       g.fill({ color: 0x4a4038, alpha: 0.55 });
       g.rect(sx + 2, sy - 2, 4, 4);
       g.fill({ color: 0x3a3028, alpha: 0.45 });
+      g.circle(sx - 3, sy + 1, 1);
+      g.fill({ color: 0xc0a040, alpha: 0.4 });
     }
   }
 
-  /** Rain + wet sparkles — combat-scene atmosphere, every frame. */
+  /**
+   * Full-viewport rain in **screen space** (rainGfx is a stage sibling of root).
+   * Only draws when weather is rain/storm — clear days stay dry.
+   */
   private drawWeather(snap: WorldSnapshot): void {
     const g = this.rainGfx;
     g.clear();
     if (snap.you.insideBuildingId) return;
 
-    const { sx: camSx, sy: camSy } = worldToScreen(this.followX, this.followY);
-    const w = this.app.renderer.width / this.zoom;
-    const h = this.app.renderer.height / this.zoom;
-    const t = this.time;
-    const rainScale = Math.max(0.05, this.look.rain);
-    const neonScale = Math.max(0.15, this.look.neon);
+    const rainScale = this.look.rain;
+    if (rainScale < 0.05) return; // clear weather — no streaks, no glints
 
-    // Diagonal rain streaks (stable pseudo-random field) — keep light for FPS
-    // Day: sparse drizzle; night/dusk: full wet neon look
-    const count = Math.max(8, Math.round(55 * rainScale));
+    const w = this.app.renderer.width;
+    const h = this.app.renderer.height;
+    const t = this.time;
+    const storm = rainScale > 1;
+    const neonScale = Math.max(0.2, this.look.neon) * (0.5 + rainScale * 0.5);
+
+    // Dense diagonal rain across entire screen
+    const count = Math.round((storm ? 140 : 95) * Math.min(1.2, rainScale));
     for (let i = 0; i < count; i++) {
       const h1 = ((i * 1103515245 + 12345) >>> 0) / 0xffffffff;
       const h2 = ((i * 1664525 + 1013904223) >>> 0) / 0xffffffff;
-      const drift = ((t * 220 + h1 * 500) % (h + 100)) - 50;
-      const px = camSx - w * 0.55 + h2 * w * 1.1 + Math.sin(t * 1.2 + i) * 10;
-      const py = camSy - h * 0.55 + drift;
-      const len = 12 + (i % 6) * 3;
+      const speed = storm ? 380 : 260;
+      const drift = ((t * speed + h1 * (h + 120)) % (h + 120)) - 40;
+      const px = h2 * w + Math.sin(t * 1.1 + i * 0.7) * 8;
+      const py = drift;
+      const len = (storm ? 18 : 14) + (i % 7) * 3;
+      const slant = storm ? 7 : 5;
       g.moveTo(px, py);
-      g.lineTo(px + 4, py + len);
+      g.lineTo(px + slant, py + len);
       g.stroke({
-        color: 0xd0e0ff,
-        width: 1.1,
-        alpha: (0.1 + (i % 4) * 0.035) * rainScale,
+        color: 0xd8e8ff,
+        width: storm ? 1.35 : 1.15,
+        alpha: (0.12 + (i % 5) * 0.03) * Math.min(1, rainScale),
       });
     }
 
-    // Ground wet glints + neon bounce near camera (stronger at night / neon_edge)
-    const glints = Math.max(4, Math.round(18 * neonScale));
+    // Screen-space wet neon glints (puddle shimmer) while raining
+    const glints = Math.round(28 * neonScale);
     for (let i = 0; i < glints; i++) {
       const h1 = ((i * 2654435761) >>> 0) / 0xffffffff;
       const h2 = ((i * 2246822519) >>> 0) / 0xffffffff;
-      const gx = camSx + (h1 - 0.5) * w * 0.75;
-      const gy = camSy + (h2 - 0.5) * h * 0.55 + 18;
-      const pulse = (0.035 + Math.sin(t * 2.8 + i) * 0.02) * neonScale;
-      g.ellipse(gx, gy, 12 + (i % 5), 3.5);
-      g.fill({ color: i % 2 === 0 ? 0xff50c8 : 0x50e8ff, alpha: pulse });
+      const gx = h1 * w;
+      const gy = h2 * h * 0.85 + h * 0.08;
+      const pulse = (0.035 + Math.sin(t * 2.6 + i) * 0.02) * neonScale;
+      const rw = 14 + (i % 8) * 2;
+      g.ellipse(gx, gy, rw, rw * 0.28);
+      g.fill({
+        color: i % 3 === 0 ? 0xff50c8 : i % 3 === 1 ? 0x50e8ff : 0xa070ff,
+        alpha: pulse,
+      });
+      if (i % 2 === 0) {
+        g.ellipse(gx - 1, gy - 0.5, rw * 0.32, rw * 0.1);
+        g.fill({ color: 0xffffff, alpha: pulse * 0.4 });
+      }
     }
   }
 
@@ -1521,10 +1707,18 @@ export class WorldView {
     const bounds = this.interiorBounds(b);
     if (!bounds) return;
 
-    const isTwister = b.id === "club_neon" || /titty|twister/i.test(b.name);
-    if (isTwister) {
-      this.drawClubInteriorDecor(bounds);
-    }
+    const kind = b.kind ?? "";
+    const isTwister = b.id === "club_neon" || kind === "club" || /titty|twister/i.test(b.name);
+    if (isTwister) this.drawClubInteriorDecor(bounds);
+    else if (kind === "bar" || /nail|bar/i.test(b.name)) this.drawBarInteriorDecor(bounds);
+    else if (kind === "gym" || /temple|gym/i.test(b.name)) this.drawGymInteriorDecor(bounds);
+    else if (kind === "hospital" || /doc|stitch/i.test(b.name)) this.drawHospitalInteriorDecor(bounds);
+    else if (kind === "shop" || /pawn|ammo|liquor/i.test(b.name)) this.drawShopInteriorDecor(bounds);
+    else if (kind === "safehouse" || /crash|pad/i.test(b.name)) this.drawSafehouseInteriorDecor(bounds);
+    else if (kind === "warehouse" || kind === "garage" || kind === "coldstore")
+      this.drawWarehouseInteriorDecor(bounds, kind);
+    else if (kind === "church") this.drawChurchInteriorDecor(bounds);
+    else this.drawGenericInteriorDecor(bounds);
 
     // Small EXIT marker on the door tile only (not the room title)
     if (b.exitX != null && b.exitY != null) {
@@ -1548,6 +1742,296 @@ export class WorldView {
       exit.y = door.sy - 36;
       this.overlayLayer.addChild(exit);
       this.buildingLabelPool.push(exit);
+    }
+  }
+
+  private drawIsoFloorWash(
+    g: Graphics,
+    bounds: { x0: number; y0: number; x1: number; y1: number },
+    c0: number,
+    c1: number,
+    alpha = 0.55,
+  ): void {
+    const hw = TILE_W / 2;
+    for (let y = bounds.y0; y <= bounds.y1; y++) {
+      for (let x = bounds.x0; x <= bounds.x1; x++) {
+        const { sx, sy } = worldToScreen(x, y);
+        const tone = (x + y) % 2 === 0 ? c0 : c1;
+        g.poly([sx, sy, sx + hw, sy + TILE_H / 2, sx, sy + TILE_H, sx - hw, sy + TILE_H / 2]);
+        g.fill({ color: tone, alpha });
+      }
+    }
+  }
+
+  private drawBarInteriorDecor(bounds: {
+    x0: number;
+    y0: number;
+    x1: number;
+    y1: number;
+  }): void {
+    const g = this.buildingGfx;
+    this.drawIsoFloorWash(g, bounds, 0x2a1c18, 0x241814, 0.5);
+    // Bar counter along back wall
+    for (let x = bounds.x0 + 1; x <= bounds.x1 - 1; x++) {
+      const p = worldToScreen(x + 0.5, bounds.y0 + 1.2);
+      g.roundRect(p.sx - 10, p.sy - 8, 20, 12, 2);
+      g.fill({ color: 0x3a2418, alpha: 0.9 });
+      g.rect(p.sx - 8, p.sy - 14, 3, 8);
+      g.fill({ color: 0x60a0ff, alpha: 0.35 }); // bottle
+      g.rect(p.sx - 2, p.sy - 12, 3, 6);
+      g.fill({ color: 0xff8060, alpha: 0.4 });
+      g.rect(p.sx + 4, p.sy - 13, 3, 7);
+      g.fill({ color: 0xffe080, alpha: 0.35 });
+    }
+    // Stools
+    for (let x = bounds.x0 + 2; x <= bounds.x1 - 2; x += 2) {
+      const p = worldToScreen(x + 0.5, bounds.y0 + 2.4);
+      g.ellipse(p.sx, p.sy + 2, 6, 3);
+      g.fill({ color: 0x1a1010, alpha: 0.5 });
+      g.circle(p.sx, p.sy - 2, 5);
+      g.fill({ color: 0x4a3020 });
+      g.rect(p.sx - 1, p.sy - 2, 2, 6);
+      g.fill({ color: 0x2a2018 });
+    }
+    // Neon beer sign
+    const mid = worldToScreen((bounds.x0 + bounds.x1) / 2, bounds.y0 + 0.5);
+    g.roundRect(mid.sx - 18, mid.sy - 40, 36, 12, 2);
+    g.fill({ color: 0x0a0810, alpha: 0.85 });
+    g.roundRect(mid.sx - 16, mid.sy - 38, 32, 8, 1);
+    g.fill({ color: 0xff40aa, alpha: 0.45 + Math.sin(this.time * 2) * 0.1 });
+  }
+
+  private drawGymInteriorDecor(bounds: {
+    x0: number;
+    y0: number;
+    x1: number;
+    y1: number;
+  }): void {
+    const g = this.buildingGfx;
+    // Rubber mat floor
+    this.drawIsoFloorWash(g, bounds, 0x1a1814, 0x161410, 0.6);
+    // Center mat square
+    const mx0 = bounds.x0 + 2;
+    const mx1 = bounds.x1 - 2;
+    const my0 = bounds.y0 + 1;
+    const my1 = bounds.y1 - 1;
+    for (let y = my0; y <= my1; y++) {
+      for (let x = mx0; x <= mx1; x++) {
+        const { sx, sy } = worldToScreen(x, y);
+        const hw = TILE_W / 2;
+        g.poly([sx, sy, sx + hw, sy + TILE_H / 2, sx, sy + TILE_H, sx - hw, sy + TILE_H / 2]);
+        g.fill({ color: (x + y) % 2 === 0 ? 0x2a2018 : 0x241c14, alpha: 0.45 });
+      }
+    }
+    // Weight racks along walls
+    for (let x = bounds.x0 + 1; x <= bounds.x1 - 1; x += 2) {
+      const p = worldToScreen(x + 0.5, bounds.y0 + 0.8);
+      g.rect(p.sx - 8, p.sy - 18, 16, 4);
+      g.fill({ color: 0x3a3a40 });
+      g.rect(p.sx - 6, p.sy - 14, 3, 12);
+      g.fill({ color: 0x2a2a30 });
+      g.rect(p.sx + 3, p.sy - 14, 3, 12);
+      g.fill({ color: 0x2a2a30 });
+      g.ellipse(p.sx - 4.5, p.sy - 4, 5, 3);
+      g.fill({ color: 0x1a1a20 });
+      g.ellipse(p.sx + 4.5, p.sy - 4, 5, 3);
+      g.fill({ color: 0x1a1a20 });
+    }
+    // Punching bag
+    const bag = worldToScreen(bounds.x1 - 1.5, bounds.y0 + 2.5);
+    g.rect(bag.sx - 1, bag.sy - 36, 2, 12);
+    g.fill({ color: 0x4a4030 });
+    g.ellipse(bag.sx, bag.sy - 12, 8, 14);
+    g.fill({ color: 0x3a2018 });
+    g.ellipse(bag.sx, bag.sy - 18, 6, 4);
+    g.fill({ color: 0x5a3020, alpha: 0.6 });
+    // Mirror strip
+    for (let x = bounds.x0 + 1; x <= bounds.x1 - 1; x++) {
+      const p = worldToScreen(x + 0.5, bounds.y0 + 0.3);
+      g.rect(p.sx - 8, p.sy - 28, 16, 10);
+      g.fill({ color: 0x4a6078, alpha: 0.25 });
+    }
+    // IRON TEMPLE floor decal
+    const center = worldToScreen((bounds.x0 + bounds.x1) / 2, (bounds.y0 + bounds.y1) / 2);
+    g.ellipse(center.sx, center.sy + 4, 22, 10);
+    g.stroke({ color: 0xffc040, width: 2, alpha: 0.35 });
+    g.ellipse(center.sx, center.sy + 4, 14, 6);
+    g.stroke({ color: 0xffc040, width: 1.2, alpha: 0.25 });
+  }
+
+  private drawHospitalInteriorDecor(bounds: {
+    x0: number;
+    y0: number;
+    x1: number;
+    y1: number;
+  }): void {
+    const g = this.buildingGfx;
+    this.drawIsoFloorWash(g, bounds, 0x2a3038, 0x242c34, 0.55);
+    // Exam beds
+    for (const spot of [
+      { x: bounds.x0 + 2, y: bounds.y0 + 2 },
+      { x: bounds.x1 - 2, y: bounds.y0 + 2 },
+    ]) {
+      const p = worldToScreen(spot.x, spot.y);
+      g.ellipse(p.sx, p.sy + 4, 14, 6);
+      g.fill({ color: 0x000000, alpha: 0.25 });
+      g.roundRect(p.sx - 14, p.sy - 6, 28, 12, 2);
+      g.fill({ color: 0xd8dce8, alpha: 0.85 });
+      g.rect(p.sx - 14, p.sy - 8, 8, 6);
+      g.fill({ color: 0xffffff, alpha: 0.7 });
+    }
+    // Cabinet
+    const cab = worldToScreen(bounds.x0 + 1.5, bounds.y0 + 1);
+    g.roundRect(cab.sx - 10, cab.sy - 20, 20, 18, 2);
+    g.fill({ color: 0x3a4850 });
+    g.rect(cab.sx - 8, cab.sy - 16, 6, 8);
+    g.fill({ color: 0x60c8ff, alpha: 0.25 });
+    // Red cross
+    const mid = worldToScreen((bounds.x0 + bounds.x1) / 2, bounds.y0 + 0.5);
+    g.rect(mid.sx - 2, mid.sy - 36, 4, 14);
+    g.fill({ color: 0xff4040, alpha: 0.7 });
+    g.rect(mid.sx - 6, mid.sy - 32, 12, 4);
+    g.fill({ color: 0xff4040, alpha: 0.7 });
+  }
+
+  private drawShopInteriorDecor(bounds: {
+    x0: number;
+    y0: number;
+    x1: number;
+    y1: number;
+  }): void {
+    const g = this.buildingGfx;
+    this.drawIsoFloorWash(g, bounds, 0x282430, 0x221e2a, 0.5);
+    // Shelves back wall
+    for (let x = bounds.x0 + 1; x <= bounds.x1 - 1; x++) {
+      const p = worldToScreen(x + 0.5, bounds.y0 + 0.9);
+      g.rect(p.sx - 10, p.sy - 22, 20, 16);
+      g.fill({ color: 0x3a3430, alpha: 0.85 });
+      for (let r = 0; r < 3; r++) {
+        g.rect(p.sx - 8, p.sy - 20 + r * 5, 16, 1);
+        g.fill({ color: 0x1a1814, alpha: 0.5 });
+        g.rect(p.sx - 7 + (r % 2) * 4, p.sy - 18 + r * 5, 4, 3);
+        g.fill({ color: [0x40e0ff, 0xffc040, 0x60ff90][r]!, alpha: 0.35 });
+      }
+    }
+    // Counter
+    const c = worldToScreen((bounds.x0 + bounds.x1) / 2, bounds.y0 + 2.5);
+    g.roundRect(c.sx - 22, c.sy - 6, 44, 14, 2);
+    g.fill({ color: 0x4a3a28, alpha: 0.9 });
+    g.ellipse(c.sx, c.sy - 8, 6, 3);
+    g.fill({ color: 0x2a2018 });
+  }
+
+  private drawSafehouseInteriorDecor(bounds: {
+    x0: number;
+    y0: number;
+    x1: number;
+    y1: number;
+  }): void {
+    const g = this.buildingGfx;
+    this.drawIsoFloorWash(g, bounds, 0x2a2830, 0x242028, 0.5);
+    // Mattress
+    const bed = worldToScreen(bounds.x0 + 2, bounds.y0 + 2);
+    g.ellipse(bed.sx, bed.sy + 4, 16, 7);
+    g.fill({ color: 0x000000, alpha: 0.3 });
+    g.roundRect(bed.sx - 16, bed.sy - 4, 32, 14, 3);
+    g.fill({ color: 0x3a4850, alpha: 0.9 });
+    g.rect(bed.sx - 14, bed.sy - 2, 10, 6);
+    g.fill({ color: 0x5a6870, alpha: 0.7 });
+    // Table + lamp
+    const tab = worldToScreen(bounds.x1 - 2, bounds.y0 + 2.5);
+    g.ellipse(tab.sx, tab.sy + 2, 10, 4);
+    g.fill({ color: 0x3a2a20 });
+    g.rect(tab.sx - 1, tab.sy - 10, 2, 10);
+    g.fill({ color: 0x2a2018 });
+    g.circle(tab.sx, tab.sy - 12, 5);
+    g.fill({ color: 0xffc060, alpha: 0.45 });
+    g.circle(tab.sx, tab.sy - 12, 10);
+    g.fill({ color: 0xffa040, alpha: 0.08 });
+    // Stash glow
+    const st = worldToScreen((bounds.x0 + bounds.x1) / 2, bounds.y1 - 0.5);
+    g.ellipse(st.sx, st.sy + 2, 12, 5);
+    g.fill({ color: 0x40ff80, alpha: 0.1 + Math.sin(this.time * 2) * 0.04 });
+  }
+
+  private drawWarehouseInteriorDecor(
+    bounds: { x0: number; y0: number; x1: number; y1: number },
+    kind: string,
+  ): void {
+    const g = this.buildingGfx;
+    const cold = kind === "coldstore";
+    this.drawIsoFloorWash(
+      g,
+      bounds,
+      cold ? 0x1a2830 : 0x2a2a24,
+      cold ? 0x162028 : 0x24241e,
+      0.5,
+    );
+    // Pillars
+    for (const px of [bounds.x0 + 2, bounds.x1 - 2]) {
+      for (const py of [bounds.y0 + 1, bounds.y1 - 1]) {
+        const p = worldToScreen(px, py);
+        g.rect(p.sx - 4, p.sy - 28, 8, 28);
+        g.fill({ color: cold ? 0x3a5060 : 0x4a4838, alpha: 0.85 });
+      }
+    }
+    // Crates
+    for (let i = 0; i < 4; i++) {
+      const p = worldToScreen(bounds.x0 + 1.5 + (i % 2) * 2, bounds.y0 + 1.5 + Math.floor(i / 2) * 1.5);
+      g.roundRect(p.sx - 8, p.sy - 8, 16, 12, 1);
+      g.fill({ color: cold ? 0x3a6070 : 0x6a5030, alpha: 0.85 });
+      g.rect(p.sx - 6, p.sy - 4, 12, 2);
+      g.fill({ color: 0x000000, alpha: 0.25 });
+    }
+  }
+
+  private drawChurchInteriorDecor(bounds: {
+    x0: number;
+    y0: number;
+    x1: number;
+    y1: number;
+  }): void {
+    const g = this.buildingGfx;
+    this.drawIsoFloorWash(g, bounds, 0x2a2420, 0x241e1a, 0.5);
+    // Aisle runner
+    for (let y = bounds.y0 + 1; y <= bounds.y1 - 1; y++) {
+      const p = worldToScreen((bounds.x0 + bounds.x1) / 2, y);
+      const hw = TILE_W / 3;
+      g.poly([
+        p.sx,
+        p.sy,
+        p.sx + hw,
+        p.sy + TILE_H / 2,
+        p.sx,
+        p.sy + TILE_H,
+        p.sx - hw,
+        p.sy + TILE_H / 2,
+      ]);
+      g.fill({ color: 0x5a1820, alpha: 0.4 });
+    }
+    // Altar
+    const a = worldToScreen((bounds.x0 + bounds.x1) / 2, bounds.y0 + 1);
+    g.roundRect(a.sx - 14, a.sy - 8, 28, 12, 2);
+    g.fill({ color: 0x3a3020 });
+    g.rect(a.sx - 2, a.sy - 22, 4, 14);
+    g.fill({ color: 0xc9a227, alpha: 0.7 });
+    g.rect(a.sx - 6, a.sy - 18, 12, 3);
+    g.fill({ color: 0xc9a227, alpha: 0.7 });
+  }
+
+  private drawGenericInteriorDecor(bounds: {
+    x0: number;
+    y0: number;
+    x1: number;
+    y1: number;
+  }): void {
+    const g = this.buildingGfx;
+    this.drawIsoFloorWash(g, bounds, 0x2a2830, 0x242028, 0.4);
+    // Soft wall wash
+    for (let x = bounds.x0; x <= bounds.x1; x++) {
+      const p = worldToScreen(x + 0.5, bounds.y0);
+      g.rect(p.sx - 10, p.sy - 30, 20, 8);
+      g.fill({ color: 0xffc080, alpha: 0.04 });
     }
   }
 
@@ -1681,25 +2165,24 @@ export class WorldView {
     const y0 = b.ey0!;
     const x1 = b.ex1!;
     const y1 = b.ey1!;
-    const stories = b.stories ?? 2;
-    const h = stories * FLOOR_PX;
-    // Cool brick night walls (combat-scene)
-    let wall = b.wallColor ?? 0x2e2a38;
-    wall = lerpColor(wall, 0x2a2438, 0.55);
-    let roof = b.roofColor ?? 0x14101c;
+    const stories = Math.max(2, b.stories ?? 2);
+    // Extra height so large footprints still read as vertical buildings
+    const h = stories * FLOOR_PX + 10;
+    let wall = b.wallColor ?? 0x3a3648;
+    wall = lerpColor(wall, 0x342e42, 0.35);
+    let roof = b.roofColor ?? 0x18141e;
     let accent = b.accentColor ?? 0xff40aa;
-    // Kind-based neon accent
     if (b.kind === "bar" || b.kind === "club") accent = 0xff40c8;
     else if (b.kind === "shop") accent = 0x40e0ff;
-    else if (b.kind === "hospital") accent = 0x60ffb0;
+    else if (b.kind === "hospital") accent = 0xff5050;
     else if (b.kind === "gym") accent = 0xffc040;
     else if (b.kind === "safehouse") accent = 0x60c080;
     else if (b.kind === "church") accent = 0xc9a227;
     else if (b.kind === "coldstore" || b.kind === "warehouse") accent = 0x60d0ff;
     else if (b.kind === "garage") accent = 0x60a0e0;
     if (war > 0.15) {
-      wall = lerpColor(wall, 0x221018, war);
-      roof = lerpColor(roof, 0x10080c, war);
+      wall = lerpColor(wall, 0x221018, war * 0.7);
+      roof = lerpColor(roof, 0x10080c, war * 0.7);
     }
 
     const c00 = worldToScreen(x0, y0);
@@ -1712,156 +2195,228 @@ export class WorldView {
     const t01 = top(c01);
     const t11 = top(c11);
 
-    // Ground contact shadow under footprint
-    g.poly([
-      c00.sx,
-      c00.sy + 4,
-      c10.sx,
-      c10.sy + 4,
-      c11.sx,
-      c11.sy + 4,
-      c01.sx,
-      c01.sy + 4,
-    ]);
-    g.fill({ color: 0x000000, alpha: 0.25 });
+    // Ground shadow
+    g.poly([c00.sx, c00.sy + 6, c10.sx, c10.sy + 6, c11.sx, c11.sy + 6, c01.sx, c01.sy + 6]);
+    g.fill({ color: 0x000000, alpha: 0.32 });
 
+    // Four wall faces with strong value separation (reads as 3D, not flat diamond)
     g.poly([c00.sx, c00.sy, c01.sx, c01.sy, t01.sx, t01.sy, t00.sx, t00.sy]);
-    g.fill({ color: shade(wall, 0.7) });
+    g.fill({ color: shade(wall, 0.62) });
     g.poly([c00.sx, c00.sy, c10.sx, c10.sy, t10.sx, t10.sy, t00.sx, t00.sy]);
-    g.fill({ color: shade(wall, 0.95) });
+    g.fill({ color: shade(wall, 1.05) });
     g.poly([c01.sx, c01.sy, c11.sx, c11.sy, t11.sx, t11.sy, t01.sx, t01.sy]);
-    g.fill({ color: shade(wall, 0.58), alpha: 0.95 });
+    g.fill({ color: shade(wall, 0.48) });
     g.poly([c10.sx, c10.sy, c11.sx, c11.sy, t11.sx, t11.sy, t10.sx, t10.sy]);
-    g.fill({ color: shade(wall, 0.78), alpha: 0.95 });
+    g.fill({ color: shade(wall, 0.72) });
 
-    // Brick row lines on front face
-    for (let row = 1; row < stories * 3; row++) {
-      const ty = c00.sy - (h * row) / (stories * 3);
-      const t = row / (stories * 3);
-      const xL = c00.sx + (t10.sx - c00.sx) * 0.02;
-      const xR = c10.sx + (t10.sx - c10.sx) * 0.02;
-      g.moveTo(c00.sx + (c10.sx - c00.sx) * 0.08, ty);
-      g.lineTo(c00.sx + (c10.sx - c00.sx) * 0.92, ty);
-      g.stroke({ color: 0x0a0812, width: 1, alpha: 0.18 });
-      void xL;
-      void xR;
-      void t;
+    // Brick / panel courses on the front face
+    const courseN = stories * 4;
+    for (let row = 1; row < courseN; row++) {
+      const t = row / courseN;
+      const ax = c00.sx + (t00.sx - c00.sx) * t;
+      const ay = c00.sy + (t00.sy - c00.sy) * t;
+      const bx = c10.sx + (t10.sx - c10.sx) * t;
+      const by = c10.sy + (t10.sy - c10.sy) * t;
+      g.moveTo(ax + (bx - ax) * 0.05, ay + (by - ay) * 0.05);
+      g.lineTo(ax + (bx - ax) * 0.95, ay + (by - ay) * 0.95);
+      g.stroke({ color: 0x0a0812, width: 1, alpha: 0.14 });
     }
 
-    // Black outline (cartoon combat-scene)
-    g.poly([c00.sx, c00.sy, c10.sx, c10.sy, t10.sx, t10.sy, t00.sx, t00.sy]);
-    g.stroke({ color: 0x0a0812, width: 1.5, alpha: 0.65 });
-    g.poly([c00.sx, c00.sy, c01.sx, c01.sy, t01.sx, t01.sy, t00.sx, t00.sy]);
-    g.stroke({ color: 0x0a0812, width: 1.2, alpha: 0.45 });
-
-    const neonPalette = [0xff40aa, 0x40e0ff, 0x60ff90, 0xffc040, 0xc060ff];
-    const neonMul = Math.max(0.12, this.look.neon);
-    for (let f = 0; f < stories; f++) {
-      const fy = 1 - (f + 0.55) / stories;
-      for (let i = 1; i <= 3; i++) {
-        const t = i / 4;
+    // Ground-floor storefront strip (front face)
+    {
+      const storeH = h * 0.28;
+      const s00 = { sx: c00.sx, sy: c00.sy };
+      const s10 = { sx: c10.sx, sy: c10.sy };
+      const s00t = { sx: c00.sx, sy: c00.sy - storeH };
+      const s10t = { sx: c10.sx, sy: c10.sy - storeH };
+      g.poly([s00.sx, s00.sy, s10.sx, s10.sy, s10t.sx, s10t.sy, s00t.sx, s00t.sy]);
+      g.fill({ color: shade(wall, 0.35), alpha: 0.92 });
+      // Glass panes
+      const paneN = Math.min(5, Math.max(2, Math.floor((x1 - x0 + 1) / 2)));
+      for (let i = 1; i <= paneN; i++) {
+        const t = i / (paneN + 1);
         const bx = c00.sx + (c10.sx - c00.sx) * t;
         const by = c00.sy + (c10.sy - c00.sy) * t;
-        const broken = war > 0.25 && (b.id.charCodeAt(0) + f + i) % 3 === 0;
-        // Day: fewer lit windows; night/neon districts almost all glow
-        const litChance = neonMul > 0.7 ? 2 : neonMul > 0.4 ? 3 : 5;
-        const lit =
-          !broken && (b.id.charCodeAt(0) + f + i) % litChance === 0;
+        g.rect(bx - 7, by - storeH * 0.75, 14, storeH * 0.55);
+        g.fill({ color: 0x0a1020, alpha: 0.85 });
+        g.rect(bx - 6, by - storeH * 0.72, 12, storeH * 0.48);
+        g.fill({
+          color: accent,
+          alpha: 0.12 + 0.2 * Math.max(0.15, this.look.neon),
+        });
+      }
+    }
+
+    // Outlines
+    g.poly([c00.sx, c00.sy, c10.sx, c10.sy, t10.sx, t10.sy, t00.sx, t00.sy]);
+    g.stroke({ color: 0x0a0812, width: 1.8, alpha: 0.7 });
+    g.poly([c00.sx, c00.sy, c01.sx, c01.sy, t01.sx, t01.sy, t00.sx, t00.sy]);
+    g.stroke({ color: 0x0a0812, width: 1.4, alpha: 0.5 });
+
+    // Upper-floor windows on front + left faces
+    const neonPalette = [0xff40aa, 0x40e0ff, 0x60ff90, 0xffc040, 0xc060ff];
+    const neonMul = Math.max(0.12, this.look.neon);
+    const winCols = Math.min(6, Math.max(3, Math.floor((x1 - x0 + 1) / 1.5)));
+    for (let f = 1; f < stories; f++) {
+      const fy = 1 - (f + 0.45) / stories;
+      for (let i = 1; i <= winCols; i++) {
+        const t = i / (winCols + 1);
+        // Front face
+        const bx = c00.sx + (c10.sx - c00.sx) * t;
+        const by = c00.sy + (c10.sy - c00.sy) * t;
+        const broken = war > 0.25 && (b.id.charCodeAt(0) + f + i) % 4 === 0;
+        const litChance = neonMul > 0.7 ? 2 : neonMul > 0.4 ? 3 : 4;
+        const lit = !broken && (b.id.charCodeAt(0) + f + i) % litChance !== 0;
         const winNeon = neonPalette[(b.id.charCodeAt(0) + f + i) % neonPalette.length]!;
-        // Window frame
+        g.rect(bx - 5, by - h * fy - 6, 10, 9);
+        g.fill({ color: 0x0a0810, alpha: 0.92 });
         g.rect(bx - 4, by - h * fy - 5, 8, 7);
-        g.fill({ color: 0x0a0810, alpha: 0.9 });
-        g.rect(bx - 3, by - h * fy - 4, 6, 5);
         if (broken) {
           g.fill({ color: 0x0a0808, alpha: 0.85 });
-          g.rect(bx - 1, by - h * fy - 2, 3, 2);
-          g.fill({ color: 0x3a2010, alpha: 0.6 });
         } else if (lit) {
-          g.fill({ color: winNeon, alpha: 0.55 + 0.4 * neonMul });
-          g.circle(bx, by - h * fy - 1, 7);
-          g.fill({ color: winNeon, alpha: 0.06 + 0.12 * neonMul });
+          g.fill({ color: winNeon, alpha: 0.5 + 0.45 * neonMul });
+          g.circle(bx, by - h * fy - 1, 8);
+          g.fill({ color: winNeon, alpha: 0.07 + 0.1 * neonMul });
         } else {
-          g.fill({ color: 0x12101c, alpha: 0.75 });
+          g.fill({ color: 0x12101c, alpha: 0.8 });
         }
       }
     }
 
+    // Roof slab + parapet
     g.poly([t00.sx, t00.sy, t10.sx, t10.sy, t11.sx, t11.sy, t01.sx, t01.sy]);
     g.fill({ color: roof });
-    if (war > 0.4) {
-      g.poly([t10.sx, t10.sy, t11.sx, t11.sy, (t10.sx + t11.sx) / 2, t10.sy + 6]);
-      g.fill({ color: 0x0c0a08, alpha: 0.7 });
-    } else {
-      g.poly([t00.sx, t00.sy, t10.sx, t10.sy, t11.sx, t11.sy, t01.sx, t01.sy]);
-      g.stroke({ color: shade(accent, 0.85), width: 1.4, alpha: 0.6 });
-    }
+    g.poly([t00.sx, t00.sy, t10.sx, t10.sy, t11.sx, t11.sy, t01.sx, t01.sy]);
+    g.stroke({ color: shade(accent, 0.75), width: 1.6, alpha: 0.55 });
+    // Parapet lip
+    const ph = 5;
+    g.poly([
+      t00.sx,
+      t00.sy,
+      t10.sx,
+      t10.sy,
+      t10.sx,
+      t10.sy - ph,
+      t00.sx,
+      t00.sy - ph,
+    ]);
+    g.fill({ color: shade(roof, 1.15), alpha: 0.9 });
 
-    // Vertical neon sign on street face (like LIQUOR / LOANS)
+    // Roof gear: AC units / vents
     {
-      const neonMul = Math.max(0.15, this.look.neon);
-      const midX = (c00.sx + c10.sx) / 2;
-      const midY = (c00.sy + c10.sy) / 2;
-      const signH = Math.min(h * 0.65, 34);
-      // Pole glow
-      g.circle(midX - 14, midY - h * 0.55, 14);
-      g.fill({
-        color: accent,
-        alpha: (0.08 + Math.sin(this.time * 3 + b.id.charCodeAt(0)) * 0.03) * neonMul,
-      });
-      g.roundRect(midX - 20, midY - h * 0.78, 10, signH, 2);
-      g.fill({ color: 0x0a0810, alpha: 0.9 });
-      g.roundRect(midX - 19, midY - h * 0.78 + 1, 8, signH - 2, 1);
-      g.fill({ color: accent, alpha: 0.45 + 0.4 * neonMul });
-      // Fake letter bars on neon
-      for (let i = 0; i < 4; i++) {
-        g.rect(midX - 17, midY - h * 0.75 + 4 + i * (signH / 5), 4, 2);
-        g.fill({ color: 0xffffff, alpha: 0.2 + 0.2 * neonMul });
+      const rcx = (t00.sx + t11.sx) / 2;
+      const rcy = (t00.sy + t11.sy) / 2;
+      g.roundRect(rcx - 10, rcy - 6, 14, 10, 1);
+      g.fill({ color: 0x2a2c34, alpha: 0.9 });
+      g.rect(rcx - 8, rcy - 4, 4, 3);
+      g.fill({ color: 0x1a1c22 });
+      g.roundRect(rcx + 6, rcy - 2, 10, 8, 1);
+      g.fill({ color: 0x32343c, alpha: 0.85 });
+      // Antenna / water tower hint for taller buildings
+      if (stories >= 3) {
+        g.rect(rcx + 2, rcy - 22, 2, 16);
+        g.fill({ color: 0x4a4a55 });
+        g.circle(rcx + 3, rcy - 24, 3);
+        g.fill({ color: accent, alpha: 0.4 * neonMul });
       }
     }
 
-    // Awning over door for bars/shops/clubs
-    if (b.kind === "bar" || b.kind === "shop" || b.kind === "club") {
-      const door = worldToScreen(b.doorX + 0.5, b.doorY + 0.5);
-      g.poly([
-        door.sx - 14,
-        door.sy - 16,
-        door.sx + 14,
-        door.sy - 16,
-        door.sx + 12,
-        door.sy - 10,
-        door.sx - 12,
-        door.sy - 10,
-      ]);
-      g.fill({ color: shade(accent, 0.55), alpha: 0.85 });
-      g.poly([
-        door.sx - 14,
-        door.sy - 16,
-        door.sx + 14,
-        door.sy - 16,
-        door.sx + 12,
-        door.sy - 10,
-        door.sx - 12,
-        door.sy - 10,
-      ]);
-      g.stroke({ color: 0x0a0810, width: 1, alpha: 0.5 });
+    // Kind-specific roof flair
+    if (b.kind === "church") {
+      const sp = { sx: (t00.sx + t11.sx) / 2, sy: (t00.sy + t11.sy) / 2 - 8 };
+      g.moveTo(sp.sx, sp.sy - 28);
+      g.lineTo(sp.sx + 10, sp.sy);
+      g.lineTo(sp.sx - 10, sp.sy);
+      g.closePath();
+      g.fill({ color: 0x3a3028 });
+      g.rect(sp.sx - 1.5, sp.sy - 36, 3, 12);
+      g.fill({ color: 0xc9a227, alpha: 0.8 });
+    }
+    if (b.kind === "gym") {
+      const sp = { sx: (t00.sx + t10.sx) / 2, sy: (t00.sy + t10.sy) / 2 };
+      g.roundRect(sp.sx - 22, sp.sy - h * 0.55, 44, 12, 2);
+      g.fill({ color: 0x0a0810, alpha: 0.9 });
+      g.roundRect(sp.sx - 20, sp.sy - h * 0.55 + 1, 40, 10, 1);
+      g.fill({ color: 0xffc040, alpha: 0.5 + 0.35 * neonMul });
     }
 
-    const door = worldToScreen(b.doorX + 0.5, b.doorY + 0.5);
-    g.roundRect(door.sx - 7, door.sy - 16, 14, 18, 1);
-    g.fill({ color: 0x0a0810 });
-    g.roundRect(door.sx - 6, door.sy - 15, 12, 16, 1);
-    g.fill({ color: shade(wall, 0.35) });
-    // Door handle
-    g.circle(door.sx + 3, door.sy - 6, 1.5);
-    g.fill({ color: 0xc0a060, alpha: 0.8 });
-    // Neon door glow (brighter at night / neon edge)
+    // Vertical neon sign (street face)
     {
-      const neonMul = Math.max(0.2, this.look.neon);
-      g.circle(door.sx, door.sy - 4, 10);
-      g.stroke({ color: accent, width: 1.8, alpha: 0.25 + 0.35 * neonMul });
-      g.circle(door.sx, door.sy - 4, 16);
-      g.stroke({ color: accent, width: 1, alpha: 0.06 + 0.12 * neonMul });
+      const midX = (c00.sx + c10.sx) / 2;
+      const midY = (c00.sy + c10.sy) / 2;
+      const signH = Math.min(h * 0.55, 42);
+      g.circle(midX - 16, midY - h * 0.5, 16);
+      g.fill({
+        color: accent,
+        alpha: (0.1 + Math.sin(this.time * 3 + b.id.charCodeAt(0)) * 0.04) * neonMul,
+      });
+      g.roundRect(midX - 22, midY - h * 0.72, 11, signH, 2);
+      g.fill({ color: 0x0a0810, alpha: 0.92 });
+      g.roundRect(midX - 21, midY - h * 0.72 + 1, 9, signH - 2, 1);
+      g.fill({ color: accent, alpha: 0.5 + 0.4 * neonMul });
+      for (let i = 0; i < 5; i++) {
+        g.rect(midX - 19, midY - h * 0.7 + 4 + i * (signH / 6), 5, 2.2);
+        g.fill({ color: 0xffffff, alpha: 0.22 + 0.2 * neonMul });
+      }
     }
+
+    // Awning / canopy for public fronts
+    if (
+      b.kind === "bar" ||
+      b.kind === "shop" ||
+      b.kind === "club" ||
+      b.kind === "hospital" ||
+      b.kind === "gym"
+    ) {
+      const door = worldToScreen(b.doorX + 0.5, b.doorY + 0.5);
+      g.poly([
+        door.sx - 18,
+        door.sy - 20,
+        door.sx + 18,
+        door.sy - 20,
+        door.sx + 15,
+        door.sy - 12,
+        door.sx - 15,
+        door.sy - 12,
+      ]);
+      g.fill({ color: shade(accent, 0.5), alpha: 0.88 });
+      g.poly([
+        door.sx - 18,
+        door.sy - 20,
+        door.sx + 18,
+        door.sy - 20,
+        door.sx + 15,
+        door.sy - 12,
+        door.sx - 15,
+        door.sy - 12,
+      ]);
+      g.stroke({ color: 0x0a0810, width: 1.2, alpha: 0.55 });
+      // Stripe on awning
+      for (let i = -2; i <= 2; i++) {
+        g.rect(door.sx + i * 6 - 2, door.sy - 19, 3, 6);
+        g.fill({ color: 0x0a0810, alpha: 0.15 });
+      }
+    }
+
+    // Door with steps
+    const door = worldToScreen(b.doorX + 0.5, b.doorY + 0.5);
+    g.ellipse(door.sx, door.sy + 4, 10, 4);
+    g.fill({ color: 0x000000, alpha: 0.3 });
+    g.rect(door.sx - 9, door.sy - 2, 18, 4);
+    g.fill({ color: 0x3a3a48, alpha: 0.7 });
+    g.roundRect(door.sx - 8, door.sy - 20, 16, 20, 1);
+    g.fill({ color: 0x0a0810 });
+    g.roundRect(door.sx - 7, door.sy - 19, 14, 18, 1);
+    g.fill({ color: shade(wall, 0.28) });
+    // Door window
+    g.rect(door.sx - 4, door.sy - 16, 8, 6);
+    g.fill({ color: accent, alpha: 0.25 + 0.3 * neonMul });
+    g.circle(door.sx + 4, door.sy - 8, 1.6);
+    g.fill({ color: 0xc0a060, alpha: 0.85 });
+    g.circle(door.sx, door.sy - 6, 12);
+    g.stroke({ color: accent, width: 2, alpha: 0.3 + 0.4 * neonMul });
+    g.circle(door.sx, door.sy - 6, 18);
+    g.stroke({ color: accent, width: 1, alpha: 0.08 + 0.12 * neonMul });
   }
 
   private drawProps(props: PropPublic[]): void {
