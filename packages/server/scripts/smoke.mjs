@@ -6,13 +6,39 @@
 import WebSocket from "ws";
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const WS_URL = "ws://127.0.0.1:3001";
 
 function fail(msg) {
   console.error("SMOKE_FAIL:", msg);
   process.exit(1);
 }
 
-const ws = new WebSocket("ws://127.0.0.1:3001");
+/** Open a WS with open/error handlers attached immediately (avoids missed-open hang). */
+function connectWs(url = WS_URL, openTimeoutMs = 12_000) {
+  const ws = new WebSocket(url);
+  const opened = new Promise((res, rej) => {
+    const t = setTimeout(() => rej(new Error(`ws open timeout after ${openTimeoutMs}ms`)), openTimeoutMs);
+    const finish = (fn) => (arg) => {
+      clearTimeout(t);
+      fn(arg);
+    };
+    if (ws.readyState === WebSocket.OPEN) {
+      clearTimeout(t);
+      res();
+      return;
+    }
+    if (ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED) {
+      clearTimeout(t);
+      rej(new Error("ws already closed before open"));
+      return;
+    }
+    ws.once("open", finish(res));
+    ws.once("error", finish(rej));
+  });
+  return { ws, opened };
+}
+
+const { ws, opened: wsOpened } = connectWs();
 let last = null;
 
 ws.on("message", (d) => {
@@ -29,10 +55,7 @@ ws.on("message", (d) => {
   }
 });
 
-await new Promise((res, rej) => {
-  ws.on("open", res);
-  ws.on("error", (err) => rej(err));
-});
+await wsOpened;
 
 const name = "Walker" + Math.floor(Math.random() * 999);
 ws.send(JSON.stringify({ type: "auth", name, protocolVersion: 1 }));
@@ -958,7 +981,19 @@ if (last?.you.insideBuildingId) fail("should be outdoors after temple extract");
 console.log("temple_sweat instance ok cash", last.you.cash);
 
 // --- Shop quick check ---
-me = await goTo(51.5, 15.2, 20);
+// Post-instance may be low HP; heal first so pathing isn't on 0.35× limp if extract race lagged
+await healCrew({ gear: false });
+me = await goTo(51.5, 15.2, 28);
+if (!me || Math.hypot(me.x - 51.5, me.y - 15.2) > 1.8) {
+  // Retry from a mid-map hop if long route stalled
+  await goVia(
+    [
+      [70, 18],
+      [51.5, 15.2],
+    ],
+    16,
+  );
+}
 ws.send(JSON.stringify({ type: "intent.interact" }));
 await wait(500);
 if (last?.you.insideBuildingId !== "shop_pawn") fail("shop enter");
@@ -974,17 +1009,14 @@ await wait(400);
 // Reconnect (same name, public realm — Mode A removes posse on disconnect)
 ws.close();
 await wait(300);
-const ws2 = new WebSocket("ws://127.0.0.1:3001");
+const { ws: ws2, opened: ws2Opened } = connectWs();
 let last2 = null;
 ws2.on("message", (d) => {
   const msg = JSON.parse(String(d));
   if (msg.type === "snapshot") last2 = msg.data;
   if (msg.type === "auth.fail") process.exit(1);
 });
-await new Promise((res, rej) => {
-  ws2.on("open", res);
-  ws2.on("error", rej);
-});
+await ws2Opened;
 ws2.send(JSON.stringify({ type: "auth", name, protocolVersion: 1 }));
 await wait(500);
 if (!last2?.you) fail("reconnect");
@@ -994,7 +1026,7 @@ console.log("reconnect ok realm", last2.you.realmId);
 // --- Realms isolation: private realm must not see public player ---
 const publicName = name;
 const isoName = "Iso" + Math.floor(Math.random() * 999);
-const wsIso = new WebSocket("ws://127.0.0.1:3001");
+const { ws: wsIso, opened: wsIsoOpened } = connectWs();
 let lastIso = null;
 wsIso.on("message", (d) => {
   const msg = JSON.parse(String(d));
@@ -1004,10 +1036,7 @@ wsIso.on("message", (d) => {
     process.exit(1);
   }
 });
-await new Promise((res, rej) => {
-  wsIso.on("open", res);
-  wsIso.on("error", rej);
-});
+await wsIsoOpened;
 wsIso.send(
   JSON.stringify({
     type: "auth",
@@ -1035,16 +1064,13 @@ if (publicPlayers.some((u) => u.name === isoName)) {
   fail("public realm should not see private-realm player");
 }
 // Invalid realm rejected
-const wsBad = new WebSocket("ws://127.0.0.1:3001");
+const { ws: wsBad, opened: wsBadOpened } = connectWs();
 let badFail = null;
 wsBad.on("message", (d) => {
   const msg = JSON.parse(String(d));
   if (msg.type === "auth.fail") badFail = msg.reason;
 });
-await new Promise((res, rej) => {
-  wsBad.on("open", res);
-  wsBad.on("error", rej);
-});
+await wsBadOpened;
 wsBad.send(
   JSON.stringify({
     type: "auth",
@@ -1061,26 +1087,27 @@ console.log("realm isolation ok", lastIso.you.realmId, "invalid realm rejected")
 const partyRealm = "smoke-party";
 const hostName = "Host" + Math.floor(Math.random() * 999);
 const mateName = "Mate" + Math.floor(Math.random() * 999);
-const wsHost = new WebSocket("ws://127.0.0.1:3001");
-const wsMate = new WebSocket("ws://127.0.0.1:3001");
+const { ws: wsHost, opened: hostOpened } = connectWs();
+const { ws: wsMate, opened: mateOpened } = connectWs();
 let lastHost = null;
 let lastMate = null;
 wsHost.on("message", (d) => {
   const msg = JSON.parse(String(d));
   if (msg.type === "snapshot") lastHost = msg.data;
+  if (msg.type === "auth.fail") {
+    console.error("party host auth.fail", msg);
+    process.exit(1);
+  }
 });
 wsMate.on("message", (d) => {
   const msg = JSON.parse(String(d));
   if (msg.type === "snapshot") lastMate = msg.data;
+  if (msg.type === "auth.fail") {
+    console.error("party mate auth.fail", msg);
+    process.exit(1);
+  }
 });
-await new Promise((res, rej) => {
-  wsHost.on("open", res);
-  wsHost.on("error", rej);
-});
-await new Promise((res, rej) => {
-  wsMate.on("open", res);
-  wsMate.on("error", rej);
-});
+await Promise.all([hostOpened, mateOpened]);
 wsHost.send(
   JSON.stringify({ type: "auth", name: hostName, protocolVersion: 1, realm: partyRealm }),
 );

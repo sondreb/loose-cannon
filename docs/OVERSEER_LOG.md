@@ -19,6 +19,17 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-11 — cycle 35 (smoke hang + extract limp; Mode A backlog empty)
+- Focus: Overseer select — no incomplete MASTER_PLAN item; health-check hit smoke hang + shop path flake (ops debt, not greenfield)
+- Done:
+  - Confirmed M0–M7 all checked; no critical player-facing bugs beyond smoke reliability
+  - Smoke: `connectWs()` with immediate open/error handlers + 12s open timeout (avoids missed-open hang on party sockets)
+  - Smoke: party `auth.fail` logs; post-temple heal before shop; longer shop goTo + mid-map hop retry
+  - Server: successful instance extract clears living-crew `incapacitated` (no 0.35× limp walk-out)
+- Verify: `npm run build` OK; `npm run smoke` → SMOKE_OK (clean server; cold/chop/chapel/temple + parties + realms)
+- Next: Human decision — playtest feedback, named polish, or reopen content backlog; never Mode B unless asked
+- Blocked: **No incomplete Mode A milestone.** Overseer should not invent parallel roadmap work.
+
 ### 2026-07-11 — cycle 34 (Mode A backlog empty — health-check stop)
 - Focus: Overseer select — next incomplete MASTER_PLAN item after M0–M7
 - Done:

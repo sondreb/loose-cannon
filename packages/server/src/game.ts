@@ -4547,6 +4547,12 @@ export class GameWorld {
       }
     }
     m.extracted = true;
+    // Room clear + walking out — get living crew off the 0.35× downed limp
+    for (const u of this.members(posse)) {
+      if (u.alive && u.incapacitated) {
+        u.incapacitated = false;
+      }
+    }
     this.log(session, "Extract confirmed. Walking out like you own the bay.");
     this.tryCompleteMission(session, posse);
   }
