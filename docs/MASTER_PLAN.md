@@ -1,6 +1,6 @@
 # Loose Cannon — Master Plan (Overseer Roadmap)
 
-Last updated: 2026-07-11 (safe-zone throttle + pier_punch + payday)
+Last updated: 2026-07-11 (chapel_cleanse fourth instance)
 
 Track completion in `docs/STATUS.md`. This file is the **ordered backlog** for autonomous development. Prefer finishing higher milestones before lower ones unless a dependency forces otherwise.
 
@@ -97,6 +97,7 @@ Full design: [realms.md](./realms.md). Friend groups on one beta/in-memory serve
 
 - [x] Second instanced mission (garage / Chop Shop Sweep — shipped with M6 pack)
 - [x] Third+ instanced mission (coldstore / Ice Box Eviction)
+- [x] Fourth instanced mission (church / Chapel Cleanse)
 - [x] More street hustles / POI interactions
 - [x] Rival gang variety (names, gear, aggression)
 - [x] Optional music bed (loop files, low volume; title / explore / action)

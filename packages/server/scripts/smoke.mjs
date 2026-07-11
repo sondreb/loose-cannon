@@ -673,6 +673,92 @@ if (last.you.rep < rep0 + 6) fail("cold rep");
 if (last?.you.insideBuildingId) fail("should be outdoors after cold extract");
 console.log("cold_storage instance ok cash", last.you.cash);
 
+// --- M7+ instance: chapel_cleanse (church template) ---
+await healCrew();
+await openRitaBoard();
+if (!last.jobBoard.offers.some((o) => o.id === "chapel_cleanse")) fail("no chapel_cleanse offer");
+cash0 = last.you.cash;
+rep0 = last.you.rep;
+ws.send(JSON.stringify({ type: "jobBoard.accept", missionId: "chapel_cleanse" }));
+// Choir epithets: Psalm/Vesper/Bell/Candle/Altar/Hymn; boss "Choir Lead"
+let choirSeen = [];
+let choirAlivePeak = 0;
+let choirLabelOk = false;
+for (let i = 0; i < 30; i++) {
+  await wait(60);
+  if (!String(last?.you.insideBuildingId ?? "").startsWith("mi_")) continue;
+  if (last?.mission?.id !== "chapel_cleanse") continue;
+  const hostiles = (last?.units ?? []).filter(
+    (u) => u.kind === "ai_boss" || u.kind === "ai_goon",
+  );
+  const alive = hostiles.filter((u) => u.alive);
+  if (hostiles.length) choirSeen = hostiles;
+  if (alive.length > choirAlivePeak) choirAlivePeak = alive.length;
+  if (
+    hostiles.some((u) =>
+      /choir|psalm|vesper|bell|candle|altar|hymn|brother|sister|mercy|monk|grace|silent|father|halo|lament/i.test(
+        u.name ?? "",
+      ),
+    )
+  ) {
+    choirLabelOk = true;
+  }
+  if (choirAlivePeak >= 2 || last?.mission?.phase === "extract") break;
+}
+if (!String(last?.you.insideBuildingId ?? "").startsWith("mi_")) {
+  fail(`chapel expected mi_ layer, got ${last?.you.insideBuildingId}`);
+}
+if (last?.mission?.id !== "chapel_cleanse" && last?.mission != null) {
+  fail(`chapel_cleanse not active, got ${last?.mission?.id}`);
+}
+if (last?.mission && !last.mission.instanced) fail("chapel_cleanse not marked instanced");
+if (choirAlivePeak < 2 && choirSeen.length < 2 && last?.mission?.phase !== "extract") {
+  fail(`expected choir hostiles >=2 (alive peak ${choirAlivePeak}, seen ${choirSeen.length})`);
+}
+if (choirSeen.length && !choirLabelOk) {
+  fail(`expected Choir-family hostiles, got ${choirSeen.map((u) => u.name).join(",")}`);
+}
+console.log(
+  "chapel choir peek alivePeak",
+  choirAlivePeak,
+  "names",
+  choirSeen.map((u) => u.name).join(",") || "(cleared before name snap)",
+  "phase",
+  last?.mission?.phase,
+);
+ws.send(JSON.stringify({ type: "intent.select", unitId: null }));
+await wait(100);
+for (let i = 0; i < 280; i++) {
+  const foe = last?.units.find(
+    (u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && u.alive,
+  );
+  if (!foe) break;
+  ws.send(JSON.stringify({ type: "intent.fire", targetId: foe.id }));
+  await wait(65);
+  if (last?.mission?.phase === "extract") break;
+  if (last?.mission == null && last?.you.respawnIn != null) {
+    fail("chapel job failed (died) before extract");
+  }
+}
+for (let i = 0; i < 70; i++) {
+  if (last?.mission?.phase === "extract") break;
+  const foe = last?.units.find((u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && u.alive);
+  if (foe) ws.send(JSON.stringify({ type: "intent.fire", targetId: foe.id }));
+  await wait(100);
+}
+if (last?.mission?.phase !== "extract") {
+  fail(`chapel expected extract, got ${last?.mission?.phase}`);
+}
+// Church template exit ~ (63, 6)
+me = await goTo(63.5, 6.5, 16);
+ws.send(JSON.stringify({ type: "intent.interact" }));
+await wait(600);
+if (last?.mission) fail("chapel_cleanse should clear after extract");
+if (last.you.cash < cash0 + 540) fail(`chapel pay expected +540 (cash ${last.you.cash} vs ${cash0})`);
+if (last.you.rep < rep0 + 5) fail("chapel rep");
+if (last?.you.insideBuildingId) fail("should be outdoors after chapel extract");
+console.log("chapel_cleanse instance ok cash", last.you.cash);
+
 // --- Shop quick check ---
 me = await goTo(51.5, 15.2, 20);
 ws.send(JSON.stringify({ type: "intent.interact" }));

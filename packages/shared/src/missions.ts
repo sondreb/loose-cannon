@@ -1,6 +1,7 @@
 /**
  * Starter job catalog (Mode A).
- * Outdoor jobs run on the hub map; instanced jobs use a private layer (warehouse / garage / coldstore).
+ * Outdoor jobs run on the hub map; instanced jobs use a private layer
+ * (warehouse / garage / coldstore / church).
  * Server is authoritative for progress and rewards.
  */
 
@@ -14,7 +15,8 @@ export type MissionId =
   | "chop_shop_raid"
   | "rail_rats"
   | "cold_storage"
-  | "pier_punch";
+  | "pier_punch"
+  | "chapel_cleanse";
 
 export type MissionObjectiveKind =
   | "hold"
@@ -284,6 +286,33 @@ export const MISSIONS: Record<MissionId, MissionDef> = {
     hintX: 84,
     hintY: 52,
   },
+  chapel_cleanse: {
+    id: "chapel_cleanse",
+    title: "Chapel Cleanse",
+    blurb:
+      "Private job. Choir freeloaders locked the confessional after hours. Clear the nave, then extract before the collection plate starts shooting back. Casualties: blessed. Heart rate: optional.",
+    difficulty: 2,
+    rewardCash: 540,
+    rewardRep: 5,
+    instance: {
+      templateBuildingId: "church",
+      enemyCount: 2,
+      enemyThreat: 2,
+      enemyLabel: "Choir",
+    },
+    objectives: [
+      {
+        id: "clear_nave",
+        label: "Neutralize hostiles in the chapel",
+        kind: "clear_hostiles",
+      },
+      {
+        id: "extract",
+        label: "Extract at the exit door",
+        kind: "extract",
+      },
+    ],
+  },
 };
 
 export const MISSION_ORDER: MissionId[] = [
@@ -297,6 +326,7 @@ export const MISSION_ORDER: MissionId[] = [
   "rail_rats",
   "cold_storage",
   "pier_punch",
+  "chapel_cleanse",
 ];
 
 export function listMissionOffers(opts?: {

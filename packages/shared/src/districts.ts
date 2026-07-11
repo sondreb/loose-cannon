@@ -88,7 +88,7 @@ export const DISTRICTS: DistrictDef[] = [
     y1: 54,
     minRep: 0,
     danger: "risky",
-    landmark: "Tracks south",
+    landmark: "Our Lady / tracks south",
   },
   {
     id: "downtown",

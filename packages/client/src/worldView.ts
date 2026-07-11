@@ -1694,7 +1694,7 @@ export class WorldView {
     else if (b.kind === "hospital") accent = 0x60ffb0;
     else if (b.kind === "gym") accent = 0xffc040;
     else if (b.kind === "safehouse") accent = 0x60c080;
-    else if (b.kind === "church") accent = 0xc0a0ff;
+    else if (b.kind === "church") accent = 0xc9a227;
     else if (b.kind === "coldstore" || b.kind === "warehouse") accent = 0x60d0ff;
     else if (b.kind === "garage") accent = 0x60a0e0;
     if (war > 0.15) {

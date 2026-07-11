@@ -3873,7 +3873,7 @@ export class GameWorld {
         posse.cash -= cost;
       }
       d.text =
-        "\"Dumpster Dogs west, Rail Rats on the fringe, Parking Racket south. Phone booths and mailboxes pay if you're shameless. Warehouse, Chop Shop, Cold Storage if you want a sealed room with freeloaders. And for fuck's sake — stash cash at the Crash Pad before you die broke.\"";
+        "\"Dumpster Dogs west, Rail Rats on the fringe, Parking Racket south. Phone booths and mailboxes pay if you're shameless. Warehouse, Chop Shop, Cold Storage, Chapel Cleanse if you want a sealed room with freeloaders. And for fuck's sake — stash cash at the Crash Pad before you die broke.\"";
       this.setDialogueVoice(
         d,
         isRita ? "rita_tip" : femaleBar ? "venus_rumor" : "vince_rumor",
@@ -4604,7 +4604,7 @@ export class GameWorld {
           if (session) {
             this.log(
               session,
-              "Bay clear. Get to the EXIT door (north wall) and press E / click EXIT to extract.",
+              "Room clear. Get to the EXIT door and press E / click EXIT to extract.",
             );
           }
         }

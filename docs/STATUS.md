@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-11 (safe-zone log throttle + pier_punch + payday SFX)  
+Last updated: 2026-07-11 (chapel_cleanse fourth instance)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -39,6 +39,7 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | **Mission feedback polish** | **Done** | Payday / fail SFX + toast kickers; notify `outcome` |
 | **Safe-zone fire log spam** | **Done** | Throttled holster / dry-ammo / assassinate combat logs |
 | **Third instance (M7)** | **Done** | Cold Storage template + `cold_storage` Ice Box Eviction |
+| **Fourth instance (M7+)** | **Done** | Church template + `chapel_cleanse` Chapel Cleanse |
 | **Street hustles / POI (M7)** | **Done** | Phone/mail/hydrant/neon/cone hustles; fence NPC; prop `readyIn` |
 | **Rival gang variety (M7)** | **Done** | Per-gang names, gear, role bias, aggro/detect ranges; instance flavors |
 | **Music bed (M7)** | **Done** | Title / explore / action MP3 loops @ ~0.12; Settings mute; gesture unlock |
@@ -65,6 +66,7 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | `rail_rats` | Rail Rat Removal | Outdoor | Kill Rail Rats boss | $420 + 4 rep |
 | `cold_storage` | Ice Box Eviction | Instance (coldstore) | Clear → extract | $580 + 6 rep |
 | `pier_punch` | Pier Punch | Outdoor | Kill Pier Punchers boss | $480 + 4 rep |
+| `chapel_cleanse` | Chapel Cleanse | Instance (church) | Clear → extract | $540 + 5 rep |
 
 ### Tutorial (live)
 
@@ -85,7 +87,7 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | Id | Name | minRep | Outdoor walk |
 |----|------|--------|--------------|
 | downtown | Safe Downtown | 0 | Always |
-| war_fringe | War Fringe | 0 | Always |
+| war_fringe | War Fringe | 0 | Always — landmark Our Lady / tracks south |
 | neon_edge | Neon Edge / Titty Twister | 0 | Always |
 | war_deep | Deep War Zone | 3* | Always (*advisory) |
 | docks | Pier District | 5* | Always (*advisory) — Cold Storage landmark |
@@ -178,9 +180,9 @@ Server-authoritative; AI ignores ammo (always free fire). Players:
 
 ### M6 extra missions (live)
 
-- Board order: starter 4 + `still_not_guns`, `parking_tax`, `chop_shop_raid`, `rail_rats`, `pier_punch`  
-- Map: `cr2`, `p3`, `ai_rats`, garage interior template for chop instance; pier job targets `ai_docks` ~(84, 52)  
-- Smoke: asserts M6 offers (incl. pier_punch); completes still_not_guns + full chop_shop extract  
+- Board order: starter 4 + `still_not_guns`, `parking_tax`, `chop_shop_raid`, `rail_rats`, `pier_punch`, `chapel_cleanse`  
+- Map: `cr2`, `p3`, `ai_rats`, garage / coldstore / church instance templates; pier job targets `ai_docks` ~(84, 52)  
+- Smoke: asserts M6 offers (incl. pier_punch); completes still_not_guns + full chop/cold/chapel extracts 
 
 ### Mission feedback (live)
 
@@ -200,6 +202,15 @@ Server-authoritative; AI ignores ammo (always free fire). Players:
 - Client: coldstore cyan accent; frost indoor lighting (template kind on `mi_*` layers)  
 - Pier Punchers spawn shifted west of shell (84, 52); street props COLD neon + frozen crate  
 - Smoke: full cold_storage clear → extract → pay  
+
+### M7+ fourth instance (live)
+
+- Template: **Our Lady of Bad Decisions** (`church`) — existing shell ~(22–32, 48–58); interior pocket 59–67×2–5 (hub still has Father Trouble memorial)  
+- Job: `chapel_cleanse` / **Chapel Cleanse** — private clear → extract; Choir-labeled hostiles (threat 2); $540 + 5 rep  
+- Instance flavor **Choir**: hold bias, pistols/blades, psalm/vesper epithets  
+- Client: chapel candle-gold indoor lighting; church exterior accent gold  
+- Vince/Rita tips mention chapel among sealed rooms; fringe map landmark “Our Lady / tracks south”  
+- Smoke: full chapel_cleanse clear → extract → pay  
 
 ### Day/night + district lighting (live)
 
@@ -282,7 +293,7 @@ Shared `gangs.ts` profiles keyed by map spawn id — server applies on spawn/res
 | `ai_neon` | Neon Vipers | hold / elite | high, long | Queen Fang; minigun/tommy + plate |
 | `ai_chrome` | Chrome Fists | rush / knuckles | high, short | Iron Hands; melee muscle |
 
-**Also:** per-posse `aggroRange` / `detectRange`; combat logs include gang blurb; instance flavors **Bay** (readable pistols), **Chop** (tools/shotguns), **Frost** (uzi/hold). Smoke asserts Dogs vs Vipers names/gear. Rush/hold/flee crews always keep ≥1 signature role (smoke-stable).
+**Also:** per-posse `aggroRange` / `detectRange`; combat logs include gang blurb; instance flavors **Bay** (readable pistols), **Chop** (tools/shotguns), **Frost** (uzi/hold), **Choir** (pistols/blades, chapel). Smoke asserts Dogs vs Vipers names/gear. Rush/hold/flee crews always keep ≥1 signature role (smoke-stable).
 
 ### Music bed (live)
 
@@ -298,7 +309,7 @@ Shared `gangs.ts` profiles keyed by map spawn id — server applies on spawn/res
 
 ## Next for overseer (priority)
 
-1. Optional content / presentation extras only if a new backlog item is added  
+1. Optional content / presentation extras only if a new backlog item is added (Mode A near-term checklist complete)  
 2. Feel bugs if critical player-facing issues appear  
 3. **Never** Mode B (Postgres/auth/k8s) unless human asks  
 
@@ -308,7 +319,7 @@ Shared `gangs.ts` profiles keyed by map spawn id — server applies on spawn/res
 |------|----------|-------|
 | Smoke needs live server | Ops | `npm run smoke` → `ws://127.0.0.1:3001` |
 | Disconnect = wipe | Low | Mode A design |
-| Three instance templates | Live | warehouse + garage + coldstore; more optional later |
+| Four instance templates | Live | warehouse + garage + coldstore + church; more optional later |
 | Goon sprites single art facing | Low | L/R iso flip + lean/bob; full 8-dir art sheets still optional later |
 | Instance smoke wipe | Ops | Rare death mid-chop/cold if aggro unlucky; smoke heals at Doc first (clears downed); re-run on clean server |
 

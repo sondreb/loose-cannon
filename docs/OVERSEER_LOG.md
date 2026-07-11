@@ -19,6 +19,18 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-11 — cycle 26 (chapel_cleanse fourth instance)
+- Focus: Optional M7+ content — fourth instanced mission (church template / Chapel Cleanse)
+- Done:
+  - Mission `chapel_cleanse` — clear → extract on `church` template; Choir hostiles; $540 + 5 rep; board order appended
+  - Shared `INSTANCE_GANG_FLAVORS.Choir` (hold bias, pistols/blades, psalm/vesper names)
+  - Chapel candle-gold interior lighting; church exterior gold accent; extract log “Room clear…”
+  - Vince/Rita tips + fringe landmark mention Our Lady / chapel
+  - Smoke: full chapel_cleanse clear → extract → pay
+- Verify: `npm run build` OK; `npm run smoke` → SMOKE_OK (clean server; one prior cold wipe flake)
+- Next: Optional content only if backlog re-opens; Mode A near-term checklist still complete
+- Blocked: none
+
 ### 2026-07-11 — cycle 25 (safe-zone throttle + pier_punch + payday)
 - Focus: Known debt safe-zone fire log spam + mission feedback polish + one outdoor kill job
 - Done:

@@ -307,6 +307,22 @@ export const INSTANCE_GANG_FLAVORS: Record<
     statBias: { aim: 1, guts: 1, speed: -1, maxHealth: 6 },
     aggression: 0.9,
   },
+  Choir: {
+    blurb: "after-hours pew squatters — quiet knives, loud hymns",
+    roleBias: "hold",
+    bossTitle: "Choir Lead",
+    goonEpithets: ["Psalm", "Vesper", "Bell", "Candle", "Altar", "Hymn"],
+    firstNamesM: ["Brother", "Father", "Silent", "Monk", "Grace", "Choir"],
+    firstNamesF: ["Sister", "Mercy", "Halo", "Lament", "Vesper", "Choir"],
+    preferredWeapons: {
+      shooter: ["pistol", "uzi"],
+      rusher: ["switchblade", "pipe"],
+      coward: ["pistol"],
+    },
+    preferredArmor: { boss: "none", goon: "none" },
+    statBias: { aim: 1, brains: 1, guts: -1, speed: 1 },
+    aggression: 0.86,
+  },
 };
 
 export function gangProfile(id: string): GangProfile | undefined {

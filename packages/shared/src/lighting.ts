@@ -180,6 +180,21 @@ export function lightingLook(
         entityTint: 0xd8f0ff,
       };
     }
+    const isChapel =
+      id === "church" || /church|chapel|choir|lady|hymn/i.test(id);
+    if (isChapel) {
+      return {
+        ...look,
+        sky: 0x141018,
+        overlay: 0xc9a227,
+        overlayAlpha: 0.07,
+        groundBright: 0.92,
+        neon: 0.4,
+        rain: 0,
+        horizon: 0x1a1410,
+        entityTint: 0xffe8c8,
+      };
+    }
     // Generic interior / mission instance — warm tungsten
     return {
       ...look,
