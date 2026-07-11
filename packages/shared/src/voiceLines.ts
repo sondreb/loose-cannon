@@ -68,7 +68,7 @@ export const VOICE_LINES: VoiceLineDef[] = [
   {
     id: "vince_rumor",
     speak:
-      "Dumpster Dogs west — teeth and pipes. West End Wreckers further west with crowbars. Rail Rats scurry the fringe. Pier Punchers on the docks. Neon Vipers east are loud money. Warehouse, Chop Shop, docks freezer, church chapel, or Iron Temple after hours if you like sealed rooms that smell like chalk and blood.",
+      "Dumpster Dogs west — teeth and pipes. West End Wreckers further west with crowbars. Choir of Pain outside Our Lady if you like quiet knives. Rail Rats scurry the fringe. Pier Punchers on the docks. Neon Vipers east are loud money. Warehouse, Chop Shop, docks freezer, church chapel, or Iron Temple after hours if you like sealed rooms that smell like chalk and blood.",
     voice: "rex",
     role: "bartender_m",
   },
@@ -156,7 +156,7 @@ export const VOICE_LINES: VoiceLineDef[] = [
   {
     id: "rita_tip",
     speak:
-      "Dogs west, Wreckers further west with hardhats, Rats on the tracks, Slicks south with real jackets. Vipers if you want to die expensive. Warehouse, Chop Shop, freezer, chapel, Iron Temple after hours — sealed rooms still smell like free money and broken ribs.",
+      "Dogs west, Wreckers further west with hardhats, Choir outside Our Lady if hymns creep you out, Rats on the tracks, Slicks south with real jackets. Vipers if you want to die expensive. Warehouse, Chop Shop, freezer, chapel, Iron Temple after hours — sealed rooms still smell like free money and broken ribs.",
     voice: "ara",
     role: "fixer",
   },

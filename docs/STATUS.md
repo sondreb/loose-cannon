@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-11 (temple pack)  
+Last updated: 2026-07-11 (last_hymn)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -43,6 +43,7 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | **Street contract pack (M7+)** | **Done** | `toll_booth` / `keep_frozen` / `viper_nest` on orphan props + Vipers |
 | **Rival kill pack (M7+)** | **Done** | `lot_ride` / `silk_hit` / `chrome_out` — Lot / Slicks / Chrome bosses |
 | **Temple pack (M7+)** | **Done** | `temple_sweat` gym dual-use instance + `west_wreck` outdoor kill |
+| **Outdoor Choir kill (M7+)** | **Done** | `last_hymn` — Choirmaster (`ai_church`) south of Our Lady |
 | **Street hustles / POI (M7)** | **Done** | Phone/mail/hydrant/neon/cone hustles; fence NPC; prop `readyIn` |
 | **Rival gang variety (M7)** | **Done** | Per-gang names, gear, role bias, aggro/detect ranges; instance flavors |
 | **Music bed (M7)** | **Done** | Title / explore / action MP3 loops @ ~0.12; Settings mute; gesture unlock |
@@ -78,6 +79,7 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | `chrome_out` | Chrome Out | Outdoor | Kill Chrome Fists boss | $530 + 5 rep |
 | `temple_sweat` | Temple Sweat | Instance (gym) | Clear → extract | $560 + 5 rep |
 | `west_wreck` | West End Wreck | Outdoor | Kill West End Wreckers boss | $510 + 5 rep |
+| `last_hymn` | Last Hymn | Outdoor | Kill Choir of Pain boss | $500 + 5 rep |
 
 ### Tutorial (live)
 
@@ -191,7 +193,7 @@ Server-authoritative; AI ignores ammo (always free fire). Players:
 
 ### M6 extra missions (live)
 
-- Board order: starter 4 + `still_not_guns`, `parking_tax`, `chop_shop_raid`, `rail_rats`, `pier_punch`, `chapel_cleanse`, street pack, rival kill pack, temple pack  
+- Board order: starter 4 + `still_not_guns`, `parking_tax`, `chop_shop_raid`, `rail_rats`, `pier_punch`, `chapel_cleanse`, street pack, rival kill pack, temple pack, `last_hymn`  
 - Map: `cr2`, `p3`, `ai_rats`, garage / coldstore / church instance templates; pier job targets `ai_docks` ~(84, 52)  
 - Smoke: asserts M6 offers (incl. pier_punch); completes still_not_guns + full chop/cold/chapel extracts  
 
@@ -212,7 +214,13 @@ Server-authoritative; AI ignores ammo (always free fire). Players:
   - **`chrome_out`** — drop Chrome Fists Iron Hands (`ai_chrome`) ~(65, 48); $530 + 5 rep  
 - Vince/Rita tip + phone tip line mention lizards / slicks / chrome knuckles  
 - Smoke: asserts three offers on the board  
-- Still ambient only (no outdoor kill contract): `ai_church` (Choir outdoor — chapel instance already covers Choir indoors)
+
+### Outdoor Choir kill (live)
+
+- **`last_hymn`** — drop Choir of Pain Choirmaster (`ai_church`) ~(28, 58) south of Our Lady; $500 + 5 rep  
+- Complements indoor `chapel_cleanse` (instance Choir) with a street beat for the ambient fringe crew  
+- Vince/Rita + phone tip lines mention Choir outside Our Lady  
+- Smoke: asserts `last_hymn` on the board  
 
 ### Temple pack (live)
 
@@ -357,8 +365,8 @@ Shared `gangs.ts` profiles keyed by map spawn id — server applies on spawn/res
 
 ## Next for overseer (priority)
 
-1. Optional: outdoor Choir kill (`ai_church`) if a second Choir beat is wanted, or feel polish  
-2. Feel bugs if critical player-facing issues appear  
+1. Feel polish / player-facing bugs only if they appear  
+2. Optional content only if a human re-opens backlog (all ambient gangs + dual-use shells have board jobs)  
 3. **Never** Mode B (Postgres/auth/k8s) unless human asks  
 
 ## Known bugs / polish debt
@@ -369,7 +377,7 @@ Shared `gangs.ts` profiles keyed by map spawn id — server applies on spawn/res
 | Disconnect = wipe | Low | Mode A design |
 | Five instance templates | Live | warehouse + garage + coldstore + church + gym; more optional later |
 | Goon sprites single art facing | Low | L/R iso flip + lean/bob; full 8-dir art sheets still optional later |
-| Instance smoke wipe | Ops | Rare death mid-chop/cold if aggro unlucky; smoke heals at Doc first (clears downed); re-run on clean server |
+| Instance smoke wipe | Ops | Rare death mid-chop/cold if aggro unlucky; smoke heals + **restocks** bar hires if ambient street fights ate goons; re-run on clean server |
 
 ## Still deferred (Mode B)
 

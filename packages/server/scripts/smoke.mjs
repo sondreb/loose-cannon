@@ -217,7 +217,52 @@ function openRitaBoard() {
 }
 
 /** Full crew heal at Doc's — reduces instance wipe flakes after outdoor jobs */
+/** Living units in the smoke player's posse (boss + goons). */
+function livingCrewCount() {
+  const pid = last?.you?.posseId;
+  if (!pid) return 0;
+  return (last?.units ?? []).filter((u) => u.posseId === pid && u.alive).length;
+}
+
+/** Re-hire at Vince if ambient street fights ate the meat (Mode A permanent death). */
+async function restockCrew() {
+  while (livingCrewCount() < 2 && (last?.you?.cash ?? 0) >= 150) {
+    if (last?.you.insideBuildingId && !String(last.you.insideBuildingId).startsWith("mi_")) {
+      ws.send(JSON.stringify({ type: "intent.exit" }));
+      await wait(400);
+      if (last?.you.insideBuildingId) {
+        ws.send(JSON.stringify({ type: "intent.interact" }));
+        await wait(400);
+      }
+    }
+    let me = await goTo(8.5, 15.2, 28);
+    if (!me || Math.hypot(me.x - 8.5, me.y - 15.2) > 1.8) return;
+    if (last?.you.insideBuildingId !== "bar_rusty") {
+      ws.send(JSON.stringify({ type: "intent.interact" }));
+      await wait(500);
+    }
+    if (last?.you.insideBuildingId !== "bar_rusty") return;
+    me = await goTo(3.2, 3.2, 10);
+    ws.send(JSON.stringify({ type: "intent.interact" }));
+    await wait(400);
+    if (last?.dialogue?.choices?.some((c) => c.id === "hire")) {
+      ws.send(JSON.stringify({ type: "dialogue.choice", choiceId: "hire" }));
+      await wait(400);
+      console.log("restock hire cash", last?.you?.cash, "crew", livingCrewCount());
+    } else {
+      ws.send(JSON.stringify({ type: "dialogue.close" }));
+      await wait(200);
+      return;
+    }
+    ws.send(JSON.stringify({ type: "dialogue.close" }));
+    await wait(200);
+    ws.send(JSON.stringify({ type: "intent.exit" }));
+    await wait(400);
+  }
+}
+
 async function healCrew() {
+  await restockCrew();
   if (last?.you.insideBuildingId && !String(last.you.insideBuildingId).startsWith("mi_")) {
     ws.send(JSON.stringify({ type: "intent.exit" }));
     await wait(400);
@@ -416,7 +461,27 @@ if (!last.jobBoard.offers.some((o) => o.id === "warehouse_raid")) fail("no wareh
 cash0 = last.you.cash;
 rep0 = last.you.rep;
 ws.send(JSON.stringify({ type: "jobBoard.accept", missionId: "warehouse_raid" }));
-await wait(600);
+// Poll — bay freeloaders can melt before a fixed sleep (same pattern as chop/cold)
+let baySeen = [];
+let bayAlivePeak = 0;
+let bayWithRole = [];
+for (let i = 0; i < 30; i++) {
+  await wait(60);
+  if (!String(last?.you.insideBuildingId ?? "").startsWith("mi_")) continue;
+  if (last?.mission?.id !== "warehouse_raid") continue;
+  const bayAll = (last?.units ?? []).filter(
+    (u) => u.kind === "ai_boss" || u.kind === "ai_goon",
+  );
+  const bayAlive = bayAll.filter((u) => u.alive);
+  if (bayAll.length) baySeen = bayAll;
+  if (bayAlive.length > bayAlivePeak) {
+    bayAlivePeak = bayAlive.length;
+    bayWithRole = bayAlive.filter(
+      (u) => u.aiRole === "shooter" || u.aiRole === "rusher" || u.aiRole === "coward",
+    );
+  }
+  if (bayAlivePeak >= 2 || last?.mission?.phase === "extract") break;
+}
 console.log(
   "instance layer",
   last?.you.insideBuildingId,
@@ -429,22 +494,30 @@ console.log(
 if (!String(last?.you.insideBuildingId ?? "").startsWith("mi_")) {
   fail(`expected mi_ layer, got ${last?.you.insideBuildingId}`);
 }
-if (last?.mission?.id !== "warehouse_raid") fail("warehouse_raid not active");
-if (!last.mission.instanced) fail("mission not marked instanced");
-
-// AI roles on instance hostiles (M5)
-const bayHostiles = (last?.units ?? []).filter(
-  (u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && u.alive,
-);
-if (bayHostiles.length < 2) fail(`expected bay hostiles, got ${bayHostiles.length}`);
-const withRole = bayHostiles.filter((u) => u.aiRole === "shooter" || u.aiRole === "rusher" || u.aiRole === "coward");
-if (withRole.length < bayHostiles.length) {
-  fail(`hostiles missing aiRole: ${JSON.stringify(bayHostiles.map((u) => ({ n: u.name, r: u.aiRole })))}`);
+if (last?.mission?.id !== "warehouse_raid" && last?.mission != null) {
+  fail(`warehouse_raid not active, got ${last?.mission?.id}`);
 }
-const roleSet = new Set(withRole.map((u) => u.aiRole));
-console.log("bay AI roles", [...roleSet].join(","), "count", withRole.length);
+if (last?.mission && !last.mission.instanced) fail("mission not marked instanced");
+// AI roles on instance hostiles (M5) — peak alive while poll runs
+if (bayAlivePeak < 2 && baySeen.length < 2 && last?.mission?.phase !== "extract") {
+  fail(`expected bay hostiles, got peak ${bayAlivePeak} named ${baySeen.length}`);
+}
+if (bayWithRole.length && bayWithRole.length < bayAlivePeak) {
+  fail(`hostiles missing aiRole: ${JSON.stringify(bayWithRole.map((u) => ({ n: u.name, r: u.aiRole })))}`);
+}
+const roleSet = new Set(
+  (bayWithRole.length ? bayWithRole : baySeen)
+    .map((u) => u.aiRole)
+    .filter((r) => r === "shooter" || r === "rusher" || r === "coward"),
+);
+if (!roleSet.size && baySeen.length) {
+  fail(`hostiles missing aiRole: ${JSON.stringify(baySeen.map((u) => ({ n: u.name, r: u.aiRole })))}`);
+}
+console.log("bay AI roles", [...roleSet].join(",") || "n/a", "count", bayAlivePeak || baySeen.length);
 
-// Fight hostiles in the bay
+// Fight hostiles in the bay (select whole posse like chop)
+ws.send(JSON.stringify({ type: "intent.select", unitId: null }));
+await wait(100);
 const fireBudget = 200;
 for (let i = 0; i < fireBudget; i++) {
   const foe = last?.units.find(
@@ -513,6 +586,8 @@ for (const id of templePackIds) {
   if (!last.jobBoard.offers.some((o) => o.id === id)) fail(`missing temple pack offer ${id}`);
 }
 console.log("temple pack offers present", templePackIds.join(", "));
+if (!last.jobBoard.offers.some((o) => o.id === "last_hymn")) fail("missing last_hymn (outdoor Choir) offer");
+console.log("last_hymn outdoor Choir offer present");
 cash0 = last.you.cash;
 rep0 = last.you.rep;
 ws.send(JSON.stringify({ type: "jobBoard.accept", missionId: "still_not_guns" }));

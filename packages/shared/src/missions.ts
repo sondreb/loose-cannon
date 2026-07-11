@@ -1,8 +1,8 @@
 /**
  * Starter job catalog (Mode A).
  * Outdoor jobs run on the hub map; instanced jobs use a private layer
- * (warehouse / garage / coldstore / church / gym). Street pack + rival kill pack
- * wire orphan props and ambient gangs to Rita's board.
+ * (warehouse / garage / coldstore / church / gym). Street / rival / temple packs
+ * + last_hymn wire orphan props and ambient gangs (incl. outdoor Choir) to Rita's board.
  * Server is authoritative for progress and rewards.
  */
 
@@ -25,7 +25,8 @@ export type MissionId =
   | "silk_hit"
   | "chrome_out"
   | "temple_sweat"
-  | "west_wreck";
+  | "west_wreck"
+  | "last_hymn";
 
 export type MissionObjectiveKind =
   | "hold"
@@ -485,6 +486,25 @@ export const MISSIONS: Record<MissionId, MissionDef> = {
     hintX: 18,
     hintY: 50,
   },
+  last_hymn: {
+    id: "last_hymn",
+    title: "Last Hymn",
+    blurb:
+      "Choir of Pain loiters south of Our Lady — quiet hymns, quieter knives. Drop the Choirmaster on the fringe. They size you up first. Shoot before the chorus.",
+    difficulty: 2,
+    rewardCash: 500,
+    rewardRep: 5,
+    objectives: [
+      {
+        id: "drop_choir",
+        label: "Drop the Choir of Pain Choirmaster",
+        kind: "kill_unit",
+        targetPosseId: "ai_church",
+      },
+    ],
+    hintX: 28,
+    hintY: 58,
+  },
 };
 
 export const MISSION_ORDER: MissionId[] = [
@@ -507,6 +527,7 @@ export const MISSION_ORDER: MissionId[] = [
   "chrome_out",
   "temple_sweat",
   "west_wreck",
+  "last_hymn",
 ];
 
 export function listMissionOffers(opts?: {

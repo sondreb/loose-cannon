@@ -19,6 +19,16 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-11 — cycle 30 (last_hymn outdoor Choir)
+- Focus: Optional M7+ content — outdoor kill contract for last ambient rival (`ai_church` / Choir of Pain)
+- Done:
+  - Mission `last_hymn` — kill Choirmaster (`ai_church`) ~(28, 58); $500 + 5 rep; board order appended
+  - Vince/Rita + phone tip lines mention Choir south of Our Lady
+  - Smoke: asserts `last_hymn` offer; warehouse bay peak-poll (less flake); `restockCrew` before Doc heal if street deaths thinned posse
+- Verify: `npm run build` OK; `npm run smoke` → SMOKE_OK (clean server)
+- Next: Feel polish / player-facing bugs only; Mode A near-term backlog empty of planned M7+ items
+- Blocked: none
+
 ### 2026-07-11 — cycle 29 (temple pack)
 - Focus: Optional M7+ content — Iron Temple dual-use instance + last ambient rival kill (`ai_west`)
 - Done:
