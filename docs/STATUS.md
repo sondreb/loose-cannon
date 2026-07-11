@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-11 (M3 stash UX polish)  
+Last updated: 2026-07-11 (indoor/combat micro-path)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -29,6 +29,7 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | **Realms** (segregated instances) | **Done** | Multi-`GameWorld`; login + `?realm=`; HUD INVITE |
 | **Goon stats feel** | **Done** | Aim/Guts/Muscle/Speed combat + role UI + hire archetypes |
 | **Path around shells** | **Done** | Shared grid A* + stuck repath; long click-move routes façades |
+| **Indoor / combat micro-path** | **Done** | Walk-line clear check; blocked short hops A*; indoor snap; Doc clears downed |
 | **Enemy AI roles** | **Done** | Shooter / rusher / coward; role gear + engage bands; HUD badges |
 | **Weapon range readability** | **Done** | Selected-unit iso range ring (war / combat) |
 | **Hit / miss feedback** | **Done** | Miss whiz tracers; heavier shotgun/minigun/tommy hit FX |
@@ -124,9 +125,12 @@ Rep still gates **shop stock** and some content; map shows HOT / recommended rep
 ### Pathing (live)
 
 - Shared `pathfind.ts`: octile A* on walkable tiles, no corner-cutting, axis-aligned simplify  
-- Server `setUnitNav` on long click-move / formation hops: intermediate waypoints → slide still for WASD  
-- Stuck recovery: repath every ~8 ticks of no progress; skip jammed waypoint; hard-stop after long jam  
-- Smoke: single-click spawn → bar door (no multi-hop waypoints)
+- Shared `isWalkLineClear`: sample segment so **blocked short hops** (indoor corners, façade graze, combat micro) use A* instead of straight-line + slide  
+- Server `setUnitNav`: clear micro stays slide; blocked / medium+ hops pathfind; combat formation reuses / nudges path when goal only jittered  
+- Indoor click destinations snap to nearest walkable tile; stuck recovery works indoor + outdoor  
+- Combat AI / front-line / escort: pathfind when hop &gt; ~2 or line blocked (not only long outdoor approaches)  
+- Doc Bandage full heal clears **incapacitated** (downed boss no longer limps at 0.35× after stitch)  
+- Smoke: SE bar façade micro-hop + indoor bar corner; chop hostiles count all AI (not only `/chop/` names)
 
 ### Combat AI & feel (live)
 
@@ -280,21 +284,20 @@ Shared `gangs.ts` profiles keyed by map spawn id — server applies on spawn/res
 
 ## Next for overseer (priority)
 
-1. Feel bugs from known debt when critical (indoor micro-path, etc.)  
-2. Optional content / presentation extras only if a new backlog item is added  
+1. Optional content / presentation extras only if a new backlog item is added  
+2. Feel bugs if critical player-facing issues appear  
 3. **Never** Mode B (Postgres/auth/k8s) unless human asks  
 
 ## Known bugs / polish debt
 
 | Item | Severity | Notes |
 |------|----------|-------|
-| Indoor / combat micro-path | Low | Short hops still straight-line + slide |
 | Smoke needs live server | Ops | `npm run smoke` → `ws://127.0.0.1:3001` |
 | Safe-zone fire spam logs | Low | No crash |
 | Disconnect = wipe | Low | Mode A design |
 | Three instance templates | Live | warehouse + garage + coldstore; more optional later |
 | Goon sprites single art facing | Low | L/R iso flip + lean/bob; full 8-dir art sheets still optional later |
-| Instance smoke wipe | Ops | Rare death mid-chop/cold if aggro unlucky; smoke heals at Doc first; re-run on clean server |
+| Instance smoke wipe | Ops | Rare death mid-chop/cold if aggro unlucky; smoke heals at Doc first (clears downed); re-run on clean server |
 
 ## Still deferred (Mode B)
 

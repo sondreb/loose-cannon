@@ -282,6 +282,16 @@ if (last?.dialogue) {
 me = await goTo(8.5, 15.2, 30);
 console.log("at bar door (direct path)", me?.x?.toFixed(2), me?.y?.toFixed(2));
 if (!me || Math.hypot(me.x - 8.5, me.y - 15.2) > 1.5) fail("bar door direct pathing");
+
+// Outdoor micro-path: short hop around SE bar façade (must A*, not wall-slide stick)
+me = await goTo(12.5, 15.2, 10);
+if (!me || Math.hypot(me.x - 12.5, me.y - 15.2) > 1.5) fail("micro-path SE approach");
+me = await goTo(13.4, 13.6, 10);
+if (!me || Math.hypot(me.x - 13.4, me.y - 13.6) > 1.6) fail("micro-path SE corner hop");
+console.log("micro-path SE corner ok", me.x.toFixed(2), me.y.toFixed(2));
+me = await goTo(8.5, 15.2, 12);
+if (!me || Math.hypot(me.x - 8.5, me.y - 15.2) > 1.5) fail("return bar door after micro-path");
+
 ws.send(JSON.stringify({ type: "intent.interact" }));
 await wait(500);
 if (last?.you.insideBuildingId !== "bar_rusty") fail(`bar enter ${last?.you.insideBuildingId}`);
@@ -290,7 +300,11 @@ if (last?.tutorial?.step !== "hire_vince") {
 }
 console.log("tutorial after bar", last.tutorial?.step);
 
+// Indoor micro-path: far corner then Vince (routes if line grazes bar counter tile)
+me = await goTo(8.5, 5.5, 8);
+if (!me || Math.hypot(me.x - 8.5, me.y - 5.5) > 1.6) fail("indoor micro-path corner");
 me = await goTo(3.2, 3.2, 10);
+if (!me || Math.hypot(me.x - 3.2, me.y - 3.2) > 1.6) fail("indoor micro-path to Vince");
 ws.send(JSON.stringify({ type: "intent.interact" }));
 await wait(400);
 if (!last?.dialogue?.npcName) fail("bartender dialogue");
@@ -504,19 +518,24 @@ cash0 = last.you.cash;
 rep0 = last.you.rep;
 ws.send(JSON.stringify({ type: "jobBoard.accept", missionId: "chop_shop_raid" }));
 await wait(600);
-// Poll — leather chop crew can melt before a fixed sleep
+// Poll — leather chop crew can melt before a fixed sleep.
+// Goon epithets are Wrench/Torque/…; only boss title always has "Chop".
 let chopSeen = [];
 let chopAlivePeak = 0;
-for (let i = 0; i < 25; i++) {
-  await wait(80);
+let chopLabelOk = false;
+for (let i = 0; i < 30; i++) {
+  await wait(60);
   if (!String(last?.you.insideBuildingId ?? "").startsWith("mi_")) continue;
   if (last?.mission?.id !== "chop_shop_raid") continue;
   const chopAll = (last?.units ?? []).filter(
-    (u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && /chop/i.test(u.name ?? ""),
+    (u) => u.kind === "ai_boss" || u.kind === "ai_goon",
   );
   const chopAlive = chopAll.filter((u) => u.alive);
   if (chopAll.length) chopSeen = chopAll;
   if (chopAlive.length > chopAlivePeak) chopAlivePeak = chopAlive.length;
+  if (chopAll.some((u) => /chop|wrench|torque|axle|grease|rim|oil|frame|socket|hub|sparks|brake|clutch|vinyl/i.test(u.name ?? ""))) {
+    chopLabelOk = true;
+  }
   if (chopAlivePeak >= 2 || last?.mission?.phase === "extract") break;
 }
 if (!String(last?.you.insideBuildingId ?? "").startsWith("mi_")) {
@@ -529,8 +548,8 @@ if (last?.mission && !last.mission.instanced) fail("chop_shop not marked instanc
 if (chopAlivePeak < 2 && chopSeen.length < 2 && last?.mission?.phase !== "extract") {
   fail(`expected chop hostiles >=2 (alive peak ${chopAlivePeak}, named ${chopSeen.length})`);
 }
-if (chopSeen.length && !chopSeen.some((u) => /chop/i.test(u.name ?? ""))) {
-  fail(`expected Chop-labeled hostiles, got ${chopSeen.map((u) => u.name).join(",")}`);
+if (chopSeen.length && !chopLabelOk) {
+  fail(`expected Chop-family hostiles, got ${chopSeen.map((u) => u.name).join(",")}`);
 }
 // Fire with the whole posse selected (leader + goons) — attack-move helps survive leather hostiles
 ws.send(JSON.stringify({ type: "intent.select", unitId: null }));
@@ -540,6 +559,7 @@ for (let i = 0; i < 260; i++) {
     (u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && u.alive,
   );
   if (!foe) break;
+  // intent.fire also sets attack-move chase on the server
   ws.send(JSON.stringify({ type: "intent.fire", targetId: foe.id }));
   await wait(70);
   if (last?.mission?.phase === "extract") break;
@@ -619,26 +639,26 @@ console.log(
   "phase",
   last?.mission?.phase,
 );
-// Select whole posse — threat-3 freezer crew hits hard
+// Select whole posse — threat-3 freezer crew hits hard (fire also sets attack-move)
 ws.send(JSON.stringify({ type: "intent.select", unitId: null }));
 await wait(100);
-for (let i = 0; i < 280; i++) {
+for (let i = 0; i < 300; i++) {
   const foe = last?.units.find(
     (u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && u.alive,
   );
   if (!foe) break;
   ws.send(JSON.stringify({ type: "intent.fire", targetId: foe.id }));
-  await wait(70);
+  await wait(65);
   if (last?.mission?.phase === "extract") break;
   if (last?.mission == null && last?.you.respawnIn != null) {
     fail("cold job failed (died) before extract");
   }
 }
-for (let i = 0; i < 60; i++) {
+for (let i = 0; i < 80; i++) {
   if (last?.mission?.phase === "extract") break;
   const foe = last?.units.find((u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && u.alive);
   if (foe) ws.send(JSON.stringify({ type: "intent.fire", targetId: foe.id }));
-  await wait(120);
+  await wait(100);
 }
 if (last?.mission?.phase !== "extract") {
   fail(`cold expected extract, got ${last?.mission?.phase}`);

@@ -19,6 +19,18 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-11 — cycle 24 (indoor/combat micro-path)
+- Focus: Feel debt — indoor / combat micro-path (blocked short hops no longer straight-line + slide only)
+- Done:
+  - Shared `isWalkLineClear` + server `setUnitNav` A* when line blocked or hop past indoor/outdoor clear thresholds
+  - Combat AI / front-line / escort: pathfind on blocked micro-hops; path reuse when goal only jitters
+  - Indoor click snap to walkable; stuck recovery + hard escape work with building id
+  - Doc Bandage full heal clears `incapacitated` (downed boss no longer stuck at 0.35× after stitch)
+  - Smoke: SE façade micro-hop + indoor bar corner; chop hostiles count all instance AI names
+- Verify: `npm run build` OK; `npm run smoke` → SMOKE_OK (clean server)
+- Next: Optional content only if backlog re-opens; Mode A near-term checklist complete
+- Blocked: none
+
 ### 2026-07-11 — cycle 23 (M3 stash UX polish)
 - Focus: Optional M3 crash-pad stash UX polish + stash tutorial tip
 - Done:

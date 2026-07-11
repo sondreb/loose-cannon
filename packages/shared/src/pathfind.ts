@@ -2,6 +2,9 @@
  * Lightweight grid A* for outdoor/indoor tile walks.
  * Used by the server so click-move routes around building shells
  * instead of straight-lining into façades.
+ *
+ * Also provides walk-line checks so short indoor/combat micro-hops
+ * pathfind when a wall sits between start and goal.
  */
 
 export type WalkableFn = (tileX: number, tileY: number) => boolean;
@@ -19,6 +22,35 @@ export interface FindPathOpts {
 }
 
 const DEFAULT_MAX_EXPAND = 6000;
+
+/**
+ * True if every sampled tile along the world-space segment is walkable.
+ * Used to decide whether a short hop can stay straight-line + slide
+ * or needs A* (indoor corners, façade graze, combat micro-reposition).
+ */
+export function isWalkLineClear(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  walkable: WalkableFn,
+  step = 0.22,
+): boolean {
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 0.08) return true;
+  const ux = dx / dist;
+  const uy = dy / dist;
+  for (let t = step; t < dist - 0.04; t += step) {
+    const px = x0 + ux * t;
+    const py = y0 + uy * t;
+    if (!walkable(Math.floor(px), Math.floor(py))) return false;
+  }
+  // Goal tile must be walkable (callers may still snap via nearestWalkable)
+  if (!walkable(Math.floor(x1), Math.floor(y1))) return false;
+  return true;
+}
 
 function key(x: number, y: number): number {
   return (y << 16) ^ (x & 0xffff);

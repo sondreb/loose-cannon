@@ -70,6 +70,7 @@ import {
   WEAPONS,
   createSkidrowMap,
   findGridPath,
+  isWalkLineClear,
   isUnlimitedAmmo,
   pickVoiceLineId,
   type ArmorId,
@@ -1077,6 +1078,11 @@ export class GameWorld {
     };
   }
 
+  /** Tile walk predicate for A* / walk-line (centers of tiles). */
+  private walkTileFn(bid: string | null): (tx: number, ty: number) => boolean {
+    return (tx: number, ty: number) => this.canWalk(tx + 0.5, ty + 0.5, bid);
+  }
+
   /** Route around walls (A*); empty path = straight-line + slide. */
   private findPathPoints(
     sx: number,
@@ -1085,14 +1091,29 @@ export class GameWorld {
     gy: number,
     bid: string | null,
   ): PathPoint[] {
-    const walk = (tx: number, ty: number) => this.canWalk(tx + 0.5, ty + 0.5, bid);
-    const path = findGridPath(sx, sy, gx, gy, walk, { maxExpand: 5500 });
+    const path = findGridPath(sx, sy, gx, gy, this.walkTileFn(bid), {
+      // Indoor / combat micro-routes are short — keep budget modest
+      maxExpand: bid ? 2800 : 5500,
+    });
     return path ?? [];
   }
 
+  /** True if continuous walk from A→B does not cross a wall/void. */
+  private walkLineClear(
+    sx: number,
+    sy: number,
+    gx: number,
+    gy: number,
+    bid: string | null,
+  ): boolean {
+    return isWalkLineClear(sx, sy, gx, gy, this.walkTileFn(bid));
+  }
+
   /**
-   * Set click/formation destination. Long outdoor orders get A* waypoints so
-   * units route around building shells instead of sticking on façades.
+   * Set click/formation destination.
+   * Long orders and **blocked short hops** (indoor corners, façade graze,
+   * combat micro-reposition) get A* waypoints; clear micro-hops stay
+   * straight-line + slide for cheap formation jitter.
    */
   private setUnitNav(
     u: Unit,
@@ -1104,7 +1125,7 @@ export class GameWorld {
     const p = this.clampWorld(x, y);
     const doPath = opts?.pathfind !== false;
     const goalShift = Math.hypot(u.tx - p.x, u.ty - p.y);
-    const goalChanged = goalShift > 0.4 || u.moveMode !== "target";
+    const modeChanged = u.moveMode !== "target";
     u.moveMode = "target";
     u.dirX = 0;
     u.dirY = 0;
@@ -1112,24 +1133,43 @@ export class GameWorld {
     u.ty = p.y;
 
     if (!doPath) {
-      if (goalChanged) {
+      if (goalShift > 0.4 || modeChanged) {
         u.path = [];
         u.stuckTicks = 0;
       }
       return;
     }
 
-    // Keep existing route if destination barely moved and we're still on track
-    if (!goalChanged && u.path.length > 0 && u.stuckTicks < 6) {
+    const d = Math.hypot(p.x - u.x, p.y - u.y);
+    // Clear micro: straight + slide. Blocked micro or medium+ hops: A*.
+    // Indoors use a lower clear threshold so furniture/door edges route.
+    const lineClear = d < 0.35 || this.walkLineClear(u.x, u.y, p.x, p.y, bid);
+    const clearStraightMax = bid ? 0.75 : 1.25;
+    const wantAstar = d > 0.45 && (!lineClear || d > clearStraightMax);
+
+    if (!wantAstar) {
+      if (goalShift > 0.4 || modeChanged) {
+        u.path = [];
+        u.stuckTicks = 0;
+      }
       return;
     }
 
-    const d = Math.hypot(p.x - u.x, p.y - u.y);
-    if (d <= 1.35) {
-      u.path = [];
-    } else {
-      u.path = this.findPathPoints(u.x, u.y, p.x, p.y, bid);
+    // Reuse route when combat/formation goal only jittered
+    if (u.path.length > 0 && u.stuckTicks < 6 && !modeChanged) {
+      const last = u.path[u.path.length - 1]!;
+      const endShift = Math.hypot(last.x - p.x, last.y - p.y);
+      if (endShift < 1.25) {
+        last.x = p.x;
+        last.y = p.y;
+        return;
+      }
+      if (goalShift < 0.5) {
+        return;
+      }
     }
+
+    u.path = this.findPathPoints(u.x, u.y, p.x, p.y, bid);
     u.stuckTicks = 0;
   }
 
@@ -1165,9 +1205,12 @@ export class GameWorld {
 
     goons.forEach((u, i) => {
       const slot = this.circleSlot(c.x, c.y, i, goons.length, rad);
-      // Escort slots are short hops — pathfind only on long player orders
+      // Escort slots: pathfind on long hops or when a wall blocks the micro-step
+      const hop = Math.hypot(slot.x - u.x, slot.y - u.y);
+      const autoPf =
+        hop > 2.4 || (hop > 0.55 && !this.walkLineClear(u.x, u.y, slot.x, slot.y, bid));
       this.setUnitNav(u, slot.x, slot.y, bid, {
-        pathfind: pf === true ? true : pf === false ? false : Math.hypot(slot.x - u.x, slot.y - u.y) > 4,
+        pathfind: pf === true ? true : pf === false ? false : autoPf,
       });
     });
   }
@@ -1234,15 +1277,20 @@ export class GameWorld {
       if (shouldMove) {
         const p = this.clampWorld(tx, ty);
         if (this.canWalk(p.x, p.y, bid)) {
-          this.setUnitNav(u, p.x, p.y, bid, {
-            pathfind: Math.hypot(p.x - u.x, p.y - u.y) > 3.5,
-          });
+          const hop = Math.hypot(p.x - u.x, p.y - u.y);
+          // Combat micro-path: A* when blocked or beyond a short clear step
+          const pf =
+            hop > 2.0 || (hop > 0.5 && !this.walkLineClear(u.x, u.y, p.x, p.y, bid));
+          this.setUnitNav(u, p.x, p.y, bid, { pathfind: pf });
         } else {
-          // Fallback: step toward/away along axis
+          // Fallback: step toward/away; pathfind if the step itself is blocked mid-line
           const step = fleeing ? -0.9 : role === "rusher" ? 0.9 : d > prefer ? 0.7 : -0.7;
           const alt = this.clampWorld(u.x + fx * step, u.y + fy * step);
           if (this.canWalk(alt.x, alt.y, bid)) {
-            this.setUnitNav(u, alt.x, alt.y, bid, { pathfind: false });
+            const hop = Math.hypot(alt.x - u.x, alt.y - u.y);
+            this.setUnitNav(u, alt.x, alt.y, bid, {
+              pathfind: hop > 0.5 && !this.walkLineClear(u.x, u.y, alt.x, alt.y, bid),
+            });
           }
         }
       } else if (dist(u.x, u.y, u.tx, u.ty) < 0.4) {
@@ -1266,15 +1314,20 @@ export class GameWorld {
     const d = Math.hypot(dx, dy) || 1;
     const fx = dx / d;
     const fy = dy / d;
-    // Combat slots update often — pathfind only on long approaches
-    const pfLong = d > 5;
+    // Combat slots update often — A* on long approaches or blocked micro-hops
+    const navPf = (fromX: number, fromY: number, toX: number, toY: number): boolean => {
+      const hop = Math.hypot(toX - fromX, toY - fromY);
+      return hop > 2.2 || (hop > 0.5 && !this.walkLineClear(fromX, fromY, toX, toY, bid));
+    };
 
     if (goons.length === 0) {
       // Solo boss — engage at weapon range
       const range = Math.max(1.1, WEAPONS[leader.weapon].range * 0.78);
       if (d > range) {
         const p = this.clampWorld(threatX - fx * range * 0.92, threatY - fy * range * 0.92);
-        this.setUnitNav(leader, p.x, p.y, bid, { pathfind: pfLong });
+        this.setUnitNav(leader, p.x, p.y, bid, {
+          pathfind: navPf(leader.x, leader.y, p.x, p.y),
+        });
       } else {
         this.parkUnit(leader);
       }
@@ -1285,7 +1338,9 @@ export class GameWorld {
     const bossHold = Math.max(2.05, Math.min(WEAPONS[leader.weapon].range * 0.55, 3.2));
     if (d > bossHold + 0.35 || d < bossHold - 0.55) {
       const p = this.clampWorld(threatX - fx * bossHold, threatY - fy * bossHold);
-      this.setUnitNav(leader, p.x, p.y, bid, { pathfind: pfLong });
+      this.setUnitNav(leader, p.x, p.y, bid, {
+        pathfind: navPf(leader.x, leader.y, p.x, p.y),
+      });
     } else {
       this.parkUnit(leader);
     }
@@ -1313,7 +1368,7 @@ export class GameWorld {
         slot = this.frontSlot(bx, by, threatX, threatY, i, goons.length, lineDist, spacing);
       }
       this.setUnitNav(u, slot.x, slot.y, bid, {
-        pathfind: Math.hypot(slot.x - u.x, slot.y - u.y) > 4,
+        pathfind: navPf(u.x, u.y, slot.x, slot.y),
       });
     });
   }
@@ -1364,9 +1419,10 @@ export class GameWorld {
     posse.attackTargetId = null;
     posse.moveLabel = "GOING";
     // Free roam: never clamp outdoor walks by district rep (that felt like a broken map).
-    // Snap click to nearest walkable outdoor tile so building shells don't cancel the order.
+    // Snap click to nearest walkable tile so shells / indoor walls don't cancel the order.
     let c = this.clampWorld(x, y);
-    if (!posse.insideBuildingId) {
+    const inside = posse.insideBuildingId;
+    if (!inside) {
       c = this.nearestWalkableOutdoor(c.x, c.y) ?? c;
       const dest = districtAt(c.x, c.y);
       if (session && !isDistrictUnlocked(dest, posse.rep)) {
@@ -1380,25 +1436,37 @@ export class GameWorld {
           );
         }
       }
+    } else {
+      c = this.nearestWalkableNear(c.x, c.y, inside, 6) ?? c;
     }
-    // Long click orders: A* around shells for boss + goons
+    // Click orders: A* around shells / indoor walls for boss + goons
     this.assignCircleFormation(posse, c.x, c.y, { moveBoss: true, pathfind: true });
   }
 
-  /** Spiral search for a walkable outdoor tile near (x,y). */
-  private nearestWalkableOutdoor(x: number, y: number, maxR = 6): { x: number; y: number } | null {
+  /** Spiral search for a walkable tile near (x,y) — outdoor or indoor by bid. */
+  private nearestWalkableNear(
+    x: number,
+    y: number,
+    bid: string | null,
+    maxR = 6,
+  ): { x: number; y: number } | null {
     const c0 = this.clampWorld(x, y);
-    if (this.canWalk(c0.x, c0.y, null)) return c0;
+    if (this.canWalk(c0.x, c0.y, bid)) return c0;
     for (let r = 1; r <= maxR; r++) {
       for (let dy = -r; dy <= r; dy++) {
         for (let dx = -r; dx <= r; dx++) {
           if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
           const p = this.clampWorld(c0.x + dx, c0.y + dy);
-          if (this.canWalk(p.x, p.y, null)) return p;
+          if (this.canWalk(p.x, p.y, bid)) return p;
         }
       }
     }
     return null;
+  }
+
+  /** Spiral search for a walkable outdoor tile near (x,y). */
+  private nearestWalkableOutdoor(x: number, y: number, maxR = 6): { x: number; y: number } | null {
+    return this.nearestWalkableNear(x, y, null, maxR);
   }
 
   private cmdMapPing(session: CharacterSession, posse: Posse, x: number, y: number): void {
@@ -2800,6 +2868,8 @@ export class GameWorld {
       if (!u.alive) {
         u.alive = true;
       }
+      // Full stitch job gets you back on your feet — not limping at 0.35× forever
+      u.incapacitated = false;
       healed += u.health - before;
     }
     session.conn?.send({ type: "voice.play", lineId: "doc_heal" });
@@ -5588,15 +5658,15 @@ export class GameWorld {
           if (finalD < 0.4) {
             this.parkUnit(u);
           } else {
-            // Nudge final goal out of a shell
-            if (!bid && !this.canWalk(u.tx, u.ty, null)) {
-              const alt = this.nearestWalkableOutdoor(u.tx, u.ty, 8);
+            // Nudge final goal onto walkable ground (shell / indoor edge)
+            if (!this.canWalk(u.tx, u.ty, bid)) {
+              const alt = this.nearestWalkableNear(u.tx, u.ty, bid, 8);
               if (alt) {
                 u.tx = alt.x;
                 u.ty = alt.y;
               }
             }
-            // Stuck recovery: repath around façades (~0.3s of no progress)
+            // Stuck recovery: repath around façades / indoor walls (~0.3s)
             if (u.stuckTicks >= 8 && u.stuckTicks % 8 === 0) {
               const fresh = this.findPathPoints(u.x, u.y, u.tx, u.ty, bid);
               if (fresh.length > 0) {
@@ -5606,12 +5676,17 @@ export class GameWorld {
                 u.path.shift();
               }
             }
-            // Hard stuck against wall with no path escape
+            // Hard stuck against wall — escape step outdoor or indoor, then repath
             if (u.stuckTicks > 45) {
-              const escape =
-                !bid && this.nearestWalkableOutdoor(u.x + dx * 0.5, u.y + dy * 0.5, 5);
+              const escape = this.nearestWalkableNear(
+                u.x + dx * 0.5,
+                u.y + dy * 0.5,
+                bid,
+                5,
+              );
               if (escape && Math.hypot(escape.x - u.x, escape.y - u.y) > 0.3) {
-                u.path = [{ x: escape.x, y: escape.y }, { x: u.tx, y: u.ty }];
+                const rest = this.findPathPoints(escape.x, escape.y, u.tx, u.ty, bid);
+                u.path = [{ x: escape.x, y: escape.y }, ...rest];
                 u.stuckTicks = 0;
               } else if (
                 !this.canWalk(u.x + 0.2, u.y, bid) &&

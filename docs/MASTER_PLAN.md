@@ -1,6 +1,6 @@
 # Loose Cannon — Master Plan (Overseer Roadmap)
 
-Last updated: 2026-07-11 (M3 stash UX polish)
+Last updated: 2026-07-11 (indoor/combat micro-path)
 
 Track completion in `docs/STATUS.md`. This file is the **ordered backlog** for autonomous development. Prefer finishing higher milestones before lower ones unless a dependency forces otherwise.
 
@@ -75,6 +75,7 @@ Full design: [realms.md](./realms.md). Friend groups on one beta/in-memory serve
 - [x] Weapon feel pass (hit feedback, miss whiz; audio already per-weapon)
 - [x] Ammo clarity / balance pass; note numbers in STATUS
 - [x] Simple stuck-path recovery / click path that routes around building shells better
+- [x] Indoor / combat micro-path (blocked short hops A*; walk-line clear; Doc clears downed)
 
 ### M6 — Presentation & feel (Mode A)
 
@@ -120,7 +121,7 @@ Each overseer cycle implements **one** primary milestone item (or a tightly rela
 
 ### Priority order for long unattended loops
 
-1. Feel bugs / polish from STATUS known debt when critical (indoor micro-path, etc.)
+1. Feel bugs / polish from STATUS known debt when critical
 2. Optional content / presentation extras only if backlog re-opens
 3. Never M8 / Mode B unless human asks
 
