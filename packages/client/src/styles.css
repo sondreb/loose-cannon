@@ -1983,6 +1983,26 @@ img.photo {
   color: #8ec8ff;
 }
 
+.notify-toast.mission-complete {
+  border-color: rgba(90, 220, 130, 0.75);
+  background: linear-gradient(145deg, rgba(10, 36, 22, 0.97), rgba(8, 16, 12, 0.97));
+  box-shadow: 0 0 22px rgba(40, 160, 80, 0.22);
+}
+
+.notify-toast.mission-complete .nt-kicker {
+  color: #7dff9a;
+  text-shadow: 0 0 12px rgba(80, 220, 120, 0.45);
+}
+
+.notify-toast.mission-failed {
+  border-color: rgba(255, 110, 90, 0.7);
+  background: linear-gradient(145deg, rgba(40, 14, 12, 0.97), rgba(16, 8, 8, 0.97));
+}
+
+.notify-toast.mission-failed .nt-kicker {
+  color: #ff8a78;
+}
+
 .notify-toast .nt-kicker {
   font-size: 0.68rem;
   letter-spacing: 0.18em;

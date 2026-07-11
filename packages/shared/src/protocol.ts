@@ -473,6 +473,8 @@ export type ServerMessage =
       body: string;
       cash?: number;
       rep?: number;
+      /** complete = payday; failed = wipe/abandon; omit for generic contract pings */
+      outcome?: "complete" | "failed";
     }
   /** Play a prebaked NPC voice line (/voice/{lineId}.mp3) */
   | { type: "voice.play"; lineId: string };

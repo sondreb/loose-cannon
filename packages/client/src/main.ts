@@ -673,7 +673,18 @@ function showNotify(msg: Extract<ServerMessage, { type: "notify" }>): void {
     `;
   } else if (msg.kind === "mission") {
     el.classList.add("mission");
-    sfx.play("cash", { force: true });
+    const outcome = msg.outcome;
+    if (outcome === "complete") {
+      el.classList.add("mission-complete");
+      sfx.play("payday", { force: true });
+    } else if (outcome === "failed") {
+      el.classList.add("mission-failed");
+      sfx.play("jobFail", { force: true });
+    } else {
+      sfx.play("cash", { force: true });
+    }
+    const kicker =
+      outcome === "complete" ? "PAYDAY" : outcome === "failed" ? "JOB FAILED" : "CONTRACT";
     const pay =
       msg.cash != null || msg.rep != null
         ? `<span class="nt-cash">${msg.cash != null ? `$${msg.cash}` : ""}${
@@ -681,7 +692,7 @@ function showNotify(msg: Extract<ServerMessage, { type: "notify" }>): void {
           }${msg.rep != null ? `+${msg.rep} rep` : ""}</span>`
         : "";
     el.innerHTML = `
-      <div class="nt-kicker">CONTRACT</div>
+      <div class="nt-kicker">${kicker}</div>
       <div class="nt-title">${escapeHtml(msg.title)}</div>
       <p class="nt-sub">${escapeHtml(msg.body)}</p>
       ${pay}

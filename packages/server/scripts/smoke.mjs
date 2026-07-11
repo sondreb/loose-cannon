@@ -493,7 +493,7 @@ console.log("warehouse_raid instance ok heat", last.you.heat, "memorials", last.
 
 // --- M6 outdoor: still_not_guns (crate cr2) ---
 await openRitaBoard();
-const m6Ids = ["still_not_guns", "parking_tax", "chop_shop_raid", "rail_rats"];
+const m6Ids = ["still_not_guns", "parking_tax", "chop_shop_raid", "rail_rats", "pier_punch"];
 for (const id of m6Ids) {
   if (!last.jobBoard.offers.some((o) => o.id === id)) fail(`missing M6 offer ${id}`);
 }

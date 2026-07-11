@@ -13,7 +13,8 @@ export type MissionId =
   | "parking_tax"
   | "chop_shop_raid"
   | "rail_rats"
-  | "cold_storage";
+  | "cold_storage"
+  | "pier_punch";
 
 export type MissionObjectiveKind =
   | "hold"
@@ -264,6 +265,25 @@ export const MISSIONS: Record<MissionId, MissionDef> = {
       },
     ],
   },
+  pier_punch: {
+    id: "pier_punch",
+    title: "Pier Punch",
+    blurb:
+      "The Pier Punchers are collecting dues that belong to people who pay Rita. Drop their Wharf Boss. Salt air, steel fists, zero paperwork.",
+    difficulty: 2,
+    rewardCash: 480,
+    rewardRep: 4,
+    objectives: [
+      {
+        id: "drop_docks",
+        label: "Drop the Pier Punchers boss",
+        kind: "kill_unit",
+        targetPosseId: "ai_docks",
+      },
+    ],
+    hintX: 84,
+    hintY: 52,
+  },
 };
 
 export const MISSION_ORDER: MissionId[] = [
@@ -276,6 +296,7 @@ export const MISSION_ORDER: MissionId[] = [
   "chop_shop_raid",
   "rail_rats",
   "cold_storage",
+  "pier_punch",
 ];
 
 export function listMissionOffers(opts?: {

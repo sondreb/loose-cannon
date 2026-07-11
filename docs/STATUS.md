@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-11 (indoor/combat micro-path)  
+Last updated: 2026-07-11 (safe-zone log throttle + pier_punch + payday SFX)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -35,7 +35,9 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | **Hit / miss feedback** | **Done** | Miss whiz tracers; heavier shotgun/minigun/tommy hit FX |
 | **Cover / LoS** | **Done** | Walls/void block shots; soft cover near walls; BLOCKED FX |
 | **Ammo economy** | **Done** | Limited specials; ∞ pistol/melee; HUD counts; pawn refill |
-| **More missions (M6)** | **Done** | +4 jobs: still_not_guns, parking_tax, chop_shop_raid, rail_rats |
+| **More missions (M6)** | **Done** | +5 jobs: still_not_guns, parking_tax, chop_shop_raid, rail_rats, pier_punch |
+| **Mission feedback polish** | **Done** | Payday / fail SFX + toast kickers; notify `outcome` |
+| **Safe-zone fire log spam** | **Done** | Throttled holster / dry-ammo / assassinate combat logs |
 | **Third instance (M7)** | **Done** | Cold Storage template + `cold_storage` Ice Box Eviction |
 | **Street hustles / POI (M7)** | **Done** | Phone/mail/hydrant/neon/cone hustles; fence NPC; prop `readyIn` |
 | **Rival gang variety (M7)** | **Done** | Per-gang names, gear, role bias, aggro/detect ranges; instance flavors |
@@ -62,6 +64,7 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | `chop_shop_raid` | Chop Shop Sweep | Instance (garage) | Clear → extract | $520 + 5 rep |
 | `rail_rats` | Rail Rat Removal | Outdoor | Kill Rail Rats boss | $420 + 4 rep |
 | `cold_storage` | Ice Box Eviction | Instance (coldstore) | Clear → extract | $580 + 6 rep |
+| `pier_punch` | Pier Punch | Outdoor | Kill Pier Punchers boss | $480 + 4 rep |
 
 ### Tutorial (live)
 
@@ -175,9 +178,20 @@ Server-authoritative; AI ignores ammo (always free fire). Players:
 
 ### M6 extra missions (live)
 
-- Board order: starter 4 + `still_not_guns`, `parking_tax`, `chop_shop_raid`, `rail_rats`  
-- Map: `cr2`, `p3`, `ai_rats`, garage interior template for chop instance  
-- Smoke: asserts all 4 offers; completes still_not_guns + full chop_shop extract  
+- Board order: starter 4 + `still_not_guns`, `parking_tax`, `chop_shop_raid`, `rail_rats`, `pier_punch`  
+- Map: `cr2`, `p3`, `ai_rats`, garage interior template for chop instance; pier job targets `ai_docks` ~(84, 52)  
+- Smoke: asserts M6 offers (incl. pier_punch); completes still_not_guns + full chop_shop extract  
+
+### Mission feedback (live)
+
+- Protocol `notify` mission `outcome`: `"complete"` | `"failed"` (optional)  
+- Client: **PAYDAY** toast + procedural `payday` SFX on complete; **JOB FAILED** + `jobFail` SFX on fail  
+- Generic contract pings (accept) keep blue CONTRACT styling + cash click  
+
+### Combat log throttle (live)
+
+- Server `logThrottled`: safe-zone holster (~5s), dry ammo (~6s), assassinate re-click (~3s)  
+- Clears per-posse throttle keys on disconnect  
 
 ### M7 third instance (live)
 
@@ -293,7 +307,6 @@ Shared `gangs.ts` profiles keyed by map spawn id — server applies on spawn/res
 | Item | Severity | Notes |
 |------|----------|-------|
 | Smoke needs live server | Ops | `npm run smoke` → `ws://127.0.0.1:3001` |
-| Safe-zone fire spam logs | Low | No crash |
 | Disconnect = wipe | Low | Mode A design |
 | Three instance templates | Live | warehouse + garage + coldstore; more optional later |
 | Goon sprites single art facing | Low | L/R iso flip + lean/bob; full 8-dir art sheets still optional later |

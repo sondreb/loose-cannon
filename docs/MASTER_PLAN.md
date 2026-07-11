@@ -1,6 +1,6 @@
 # Loose Cannon — Master Plan (Overseer Roadmap)
 
-Last updated: 2026-07-11 (indoor/combat micro-path)
+Last updated: 2026-07-11 (safe-zone throttle + pier_punch + payday)
 
 Track completion in `docs/STATUS.md`. This file is the **ordered backlog** for autonomous development. Prefer finishing higher milestones before lower ones unless a dependency forces otherwise.
 
@@ -89,6 +89,9 @@ Full design: [realms.md](./realms.md). Friend groups on one beta/in-memory serve
 - [x] Directional goon sprites / walk bob polish (iso flip + two-beat bob; single-sheet art)
 - [x] Mobile touch polish (move + fire + interact reliability)
 - [x] HUD / event-log readability pass (mobile + desktop)
+- [x] Mission complete/fail feedback polish (payday SFX + toast outcome)
+- [x] Safe-zone fire combat-log spam throttle
+- [x] Extra outdoor kill job (`pier_punch` / Pier Punchers)
 
 ### M7 — Content density (after M3 memorial)
 

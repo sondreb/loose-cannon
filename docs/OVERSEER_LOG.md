@@ -19,6 +19,18 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-11 — cycle 25 (safe-zone throttle + pier_punch + payday)
+- Focus: Known debt safe-zone fire log spam + mission feedback polish + one outdoor kill job
+- Done:
+  - Server `logThrottled`: holster (~5s), dry ammo (~6s), assassinate re-click (~3s); clear on disconnect
+  - Protocol mission notify `outcome: complete|failed`; complete/fail toasts PAYDAY / JOB FAILED
+  - Client procedural `payday` + `jobFail` SFX; green/red toast styles
+  - New job `pier_punch` — drop Pier Punchers boss at docks (~84, 52); $480 + 4 rep; Vince rumor line
+  - Smoke asserts pier_punch on board with other M6 offers
+- Verify: `npm run build` OK; `npm run smoke` → SMOKE_OK (clean server; prior cold wipe flake once)
+- Next: Optional content only if backlog re-opens; Mode A near-term checklist still complete
+- Blocked: none
+
 ### 2026-07-11 — cycle 24 (indoor/combat micro-path)
 - Focus: Feel debt — indoor / combat micro-path (blocked short hops no longer straight-line + slide only)
 - Done:

@@ -68,7 +68,7 @@ export const VOICE_LINES: VoiceLineDef[] = [
   {
     id: "vince_rumor",
     speak:
-      "Dumpster Dogs west — teeth and pipes. Rail Rats scurry the fringe. Neon Vipers east are loud money. Warehouse, Chop Shop, docks freezer if you like sealed rooms.",
+      "Dumpster Dogs west — teeth and pipes. Rail Rats scurry the fringe. Pier Punchers on the docks. Neon Vipers east are loud money. Warehouse, Chop Shop, docks freezer if you like sealed rooms.",
     voice: "rex",
     role: "bartender_m",
   },

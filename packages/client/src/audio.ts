@@ -36,6 +36,10 @@ export type Sfx =
   | "death"
   | "playerDeath"
   | "lootFanfare"
+  /** Job complete / payday sting (gritty brass-ish arpeggio) */
+  | "payday"
+  /** Job failed / wipe-adjacent dull thud */
+  | "jobFail"
   | "buy"
   | "door"
   | "ui"
@@ -187,6 +191,23 @@ export class SfxBus {
         this.tone(ctx, out, t + 0.15, 659, 0.12, "square", 0.18);
         this.tone(ctx, out, t + 0.24, 784, 0.18, "triangle", 0.14);
         this.noiseBurst(ctx, out, t + 0.1, 0.06, 0.12, 3000);
+        break;
+      case "payday":
+        // Cheap street triumph — cash register + swagger, not victory fanfare
+        this.tone(ctx, out, t, 196, 0.06, "triangle", 0.16);
+        this.tone(ctx, out, t + 0.05, 294, 0.07, "square", 0.14);
+        this.tone(ctx, out, t + 0.12, 392, 0.08, "square", 0.16);
+        this.tone(ctx, out, t + 0.2, 523, 0.1, "triangle", 0.18);
+        this.tone(ctx, out, t + 0.3, 659, 0.16, "square", 0.12);
+        this.noiseBurst(ctx, out, t + 0.08, 0.05, 0.1, 3500);
+        this.tone(ctx, out, t + 0.18, 880, 0.04, "square", 0.08);
+        this.tone(ctx, out, t + 0.24, 1100, 0.05, "square", 0.07);
+        break;
+      case "jobFail":
+        this.noiseBurst(ctx, out, t, 0.12, 0.28, 450);
+        this.tone(ctx, out, t, 140, 0.14, "sawtooth", 0.18);
+        this.tone(ctx, out, t + 0.08, 90, 0.2, "triangle", 0.16);
+        this.tone(ctx, out, t + 0.16, 55, 0.28, "sine", 0.12);
         break;
       case "buy":
         this.tone(ctx, out, t, 520, 0.05, "square", 0.12);

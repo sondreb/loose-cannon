@@ -406,6 +406,8 @@ export class GameWorld {
   private combatFx: CombatFxEvent[] = [];
   /** Throttle district soft-kick messages: posseId -> tick */
   private districtWarnAt = new Map<string, number>();
+  /** Throttle spammy combat-log lines: `${posseId}:${key}` -> tick */
+  private logThrottleAt = new Map<string, number>();
 
   constructor(realmId: string = DEFAULT_REALM_ID) {
     this.realmId = realmId;
@@ -866,6 +868,11 @@ export class GameWorld {
       posse.mission = null;
       for (const id of posse.memberIds) this.units.delete(id);
       this.posses.delete(s.posseId);
+      this.districtWarnAt.delete(s.posseId);
+      const throttlePrefix = `${s.posseId}:`;
+      for (const k of this.logThrottleAt.keys()) {
+        if (k.startsWith(throttlePrefix)) this.logThrottleAt.delete(k);
+      }
     }
     // Drop any invites this player sent (pending on others)
     for (const p of this.posses.values()) {
@@ -1756,7 +1763,12 @@ export class GameWorld {
     if (target.posseId === posse.id) return;
 
     if (this.unitInSafeZone(shooter) || this.unitInSafeZone(target)) {
-      this.log(session, "SAFE ZONE — holster it. Take the fight south of the tracks.");
+      this.logThrottled(
+        session,
+        "safe_zone_fire",
+        "SAFE ZONE — holster it. Take the fight south of the tracks.",
+        5,
+      );
       return;
     }
 
@@ -1767,7 +1779,12 @@ export class GameWorld {
     if (d <= w.range + 0.35) {
       this.resolveShot(shooter, target, session);
     } else {
-      this.log(session, `ASSASSINATE ${target.name} — closing in…`);
+      this.logThrottled(
+        session,
+        `assassinate:${target.id}`,
+        `ASSASSINATE ${target.name} — closing in…`,
+        3,
+      );
     }
   }
 
@@ -1825,9 +1842,11 @@ export class GameWorld {
       if (!ensureFireableWeapon(shooter)) {
         shooter.fireCd = 0.28;
         if (session) {
-          this.log(
+          this.logThrottled(
             session,
+            `dry:${shooter.id}`,
             `${shooter.name}: OUT OF AMMO — all limited guns dry. Refill at Pawn-O-Matic.`,
+            6,
           );
         }
         return;
@@ -4679,6 +4698,7 @@ export class GameWorld {
       body: `Paid $${def.rewardCash} and +${def.rewardRep} street rep. Rita nods once — high praise.`,
       cash: def.rewardCash,
       rep: def.rewardRep,
+      outcome: "complete",
     });
     this.advanceTutorial(session, posse, "finish_job");
   }
@@ -4696,6 +4716,7 @@ export class GameWorld {
       kind: "mission",
       title: `Failed: ${title}`,
       body: reason,
+      outcome: "failed",
     });
   }
 
@@ -5545,6 +5566,24 @@ export class GameWorld {
     session.combatLog.push(text);
     if (session.combatLog.length > 40) session.combatLog.shift();
     session.conn?.send({ type: "event", text });
+  }
+
+  /**
+   * Combat-log helper that drops repeats within `cooldownSec` (default 5s).
+   * Used for safe-zone holster spam, dry-ammo nag, assassinate re-clicks, etc.
+   */
+  private logThrottled(
+    session: CharacterSession,
+    key: string,
+    text: string,
+    cooldownSec = 5,
+  ): boolean {
+    const id = `${session.posseId}:${key}`;
+    const last = this.logThrottleAt.get(id) ?? 0;
+    if (this.tick - last < TICK_HZ * cooldownSec) return false;
+    this.logThrottleAt.set(id, this.tick);
+    this.log(session, text);
+    return true;
   }
 
   private addHeat(posse: Posse, amount: number, session?: CharacterSession, reason?: string): void {
