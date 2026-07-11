@@ -237,8 +237,7 @@ const mobileControls = document.getElementById("mobileControls") as HTMLElement 
 const mobInteract = document.getElementById("mobInteract") as HTMLButtonElement | null;
 const mobAttack = document.getElementById("mobAttack") as HTMLButtonElement | null;
 const mobStop = document.getElementById("mobStop") as HTMLButtonElement | null;
-const mobZoomIn = document.getElementById("mobZoomIn") as HTMLButtonElement | null;
-const mobZoomOut = document.getElementById("mobZoomOut") as HTMLButtonElement | null;
+
 const possePanel = document.getElementById("possePanel") as HTMLElement | null;
 const possePanelToggle = document.getElementById("possePanelToggle") as HTMLButtonElement | null;
 const chatBox = document.getElementById("chatBox") as HTMLElement | null;
@@ -2957,14 +2956,6 @@ function bindInput(): void {
   mobSettings?.addEventListener("click", (e) => {
     e.preventDefault();
     openSettings();
-  });
-  mobZoomIn?.addEventListener("click", (e) => {
-    e.preventDefault();
-    view?.adjustZoom(0.12);
-  });
-  mobZoomOut?.addEventListener("click", (e) => {
-    e.preventDefault();
-    view?.adjustZoom(-0.12);
   });
   possePanelToggle?.addEventListener("click", (e) => {
     e.preventDefault();

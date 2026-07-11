@@ -4023,27 +4023,40 @@ export class GameWorld {
         ],
       };
     }
-    // Street thug (default + outdoor meat)
+    // Street thug (default + outdoor meat) — hire only in safe downtown.
+    // War-zone talkers are mission contacts / hostiles, not day-labor meat.
+    const safeHire = this.unitInSafeZone(npc);
     return {
       npcId: npc.id,
       npcName: npc.name,
-      text: `${npc.name} spits on the sidewalk. "You hiring, buying gossip, or looking for a broken nose?"`,
+      text: safeHire
+        ? `${npc.name} spits on the sidewalk. "You hiring, buying gossip, or looking for a broken nose?"`
+        : `${npc.name} keeps one eye on the war line. "This ain't a recruiting fair. Contracts only past the red paint."`,
       voiceLineId,
-      choices: [
-        { id: "hire_street", label: "Join the crew. ($100)", tone: "business" },
-        {
-          id: "street_tip",
-          label: "Buy a tip. ($25, rep +1)",
-          tone: "smooth",
-        },
-        {
-          id: "shake_down",
-          label: "Shake them down. (risk)",
-          tone: "threaten",
-        },
-        { id: "insult", label: "You're the waste.", tone: "insult" },
-        { id: "bye", label: "Forget it.", tone: "smooth" },
-      ],
+      choices: safeHire
+        ? [
+            { id: "hire_street", label: "Join the crew. ($100)", tone: "business" },
+            {
+              id: "street_tip",
+              label: "Buy a tip. ($25, rep +1)",
+              tone: "smooth",
+            },
+            {
+              id: "shake_down",
+              label: "Shake them down. (risk)",
+              tone: "threaten",
+            },
+            { id: "insult", label: "You're the waste.", tone: "insult" },
+            { id: "bye", label: "Forget it.", tone: "smooth" },
+          ]
+        : [
+            {
+              id: "street_tip",
+              label: "Buy a tip. ($25, rep +1)",
+              tone: "smooth",
+            },
+            { id: "bye", label: "Back to safe turf.", tone: "smooth" },
+          ],
     };
   }
 
@@ -4201,6 +4214,18 @@ export class GameWorld {
       const cost = choiceId === "hire" ? 150 : 100;
       const femaleBar = this.isFemaleBartender(npc);
       const femaleNpc = npc?.gender === "female";
+      // Street meat only hires on safe downtown — war zone is mission territory
+      if (
+        choiceId === "hire_street" &&
+        npc &&
+        !this.unitInSafeZone(npc)
+      ) {
+        d.text =
+          "\"I don't sign on past the red line. Hit a safe block or the bar.\"";
+        this.setDialogueVoice(d, femaleNpc ? "thug_greet_f" : "thug_greet_m");
+        d.choices = [{ id: "bye", label: "Fair enough.", tone: "smooth" }];
+        return;
+      }
       if (posse.memberIds.length >= MAX_ACTIVE_GOONS + 1) {
         d.text = "\"Crew's full, boss. Fire someone first.\"";
         this.setDialogueVoice(d, femaleBar ? "venus_hire_broke" : "vince_hire_full");

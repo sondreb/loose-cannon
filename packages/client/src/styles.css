@@ -3487,12 +3487,13 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
     display: none !important;
   }
 
+  /* Cash chip sits left of the compact MAP button (top-right stack) */
   #possePanel.collapsed #cashRep {
     position: fixed;
     top: max(0.4rem, env(safe-area-inset-top, 0px));
-    right: max(0.4rem, env(safe-area-inset-right, 0px));
+    right: calc(2.85rem + max(0.55rem, env(safe-area-inset-right, 0px)));
     left: auto;
-    max-width: min(52vw, 11rem);
+    max-width: min(48vw, 10.5rem);
     margin: 0;
     padding: 0.28rem 0.5rem;
     border-radius: 999px;
@@ -3678,28 +3679,43 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
     font-size: 0.7rem;
   }
 
+  /*
+   * MAP: compact top-right corner button (not a mid-HUD bar).
+   * Pinch-to-zoom handles zoom; no +/- chrome.
+   */
   .minimap-btn {
-    /* under status stack, left side — not on top of posse strip */
-    top: calc(var(--mobile-hud-top, 3.4rem) + 4.1rem);
-    right: auto;
-    left: 8px;
-    font-size: 0.65rem;
-    padding: 0.35rem 0.55rem;
+    top: max(0.4rem, env(safe-area-inset-top, 0px));
+    right: max(0.4rem, env(safe-area-inset-right, 0px));
+    left: auto;
+    min-width: 2.65rem;
+    min-height: 2.65rem;
+    padding: 0.3rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    z-index: 12;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
   }
 
+  /* Realm: tuck under MAP as a thin chip — invite still in settings */
   .realm-hud {
-    /* sit under status bar, right-aligned; never over crew strip */
-    top: calc(var(--mobile-hud-top, 3.4rem) + 4.1rem);
-    right: 8px;
+    top: calc(max(0.4rem, env(safe-area-inset-top, 0px)) + 3rem);
+    right: max(0.4rem, env(safe-area-inset-right, 0px));
     left: auto;
-    font-size: 0.58rem;
-    max-width: min(52vw, 200px);
-    padding: 0.22rem 0.35rem 0.22rem 0.5rem;
-    z-index: 8;
+    font-size: 0.55rem;
+    max-width: min(42vw, 9.5rem);
+    padding: 0.18rem 0.35rem;
+    z-index: 11;
+    gap: 0.2rem;
   }
 
   .realm-hud #realmHudLabel {
-    max-width: 7.5rem;
+    max-width: 5.5rem;
+  }
+
+  .realm-hud #realmInviteBtn {
+    display: none; /* use Settings → Copy invite on phone */
   }
 
   /* Party lives inside #chatBox compose row on mobile too */

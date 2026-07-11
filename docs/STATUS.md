@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-11 (mobile CREW button + street hire loiter)  
+Last updated: 2026-07-11 (compact MAP + pinch zoom + safe hire only)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -22,7 +22,9 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | **Playtest skill** | **Done** | `.grok/skills/playtest-visuals` + `npm run playtest:shot` / `test:ui` |
 | **Mobile touch** | **Done** | Tap move; hold-drag stick; long-press fire; pinch zoom; declutter HUD |
 | **Mobile CREW control** | **Done** | Collapsed = floating 👤 button + cash chip (not full-width top bar) |
-| **Street hire loiter** | **Done** | Thugs stay safe downtown, slow/idle; not rival-AI marched into war |
+| **Mobile MAP control** | **Done** | Compact top-right MAP pill; realm chip under it; no mid-HUD map bar |
+| **Mobile zoom** | **Done** | Pinch only — +/- buttons removed from touch bar |
+| **Street hire loiter** | **Done** | Thugs stay safe downtown, slow/idle; hire blocked in war zone |
 | **Voice banks** | **Done** | 16 crew acks + 12 rival taunts as `/voice/*.mp3` (Grok TTS); select + engage play them |
 | **AI roam** | **Done** | Deep war spawns (y≥50, snapped walkable); roam via war walk points; pathfind; no safe-zone freeze |
 | **AI posse aggro** | **Done** | Hit/miss wakes whole posse; living commander if boss down; all members fire |

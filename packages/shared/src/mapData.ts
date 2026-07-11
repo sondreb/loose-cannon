@@ -707,8 +707,9 @@ export function createSkidrowMap(): WorldMapDef {
         dancerKey: "c",
       },
       // Recruitable street meat — SAFE DOWNTOWN only (y well below SAFE_Y_MAX≈38).
-      // Walkable road/sidewalk/grass only; stay clear of phone1(28,22) / fence(36,20) / mail1(46,18).
-      // Server keeps them loitering near these anchors; some barely move.
+      // Never place hireables in the war zone; deep-war specials are mission NPCs / AI gangs.
+      // Walkable road/sidewalk/grass; clear of phone1(28,22) / fence(36,20) / mail1(46,18).
+      // Server loiters them near anchors (some barely move).
       { id: "npc_street", name: "Corner Carl", x: 22.5, y: 28.5, role: "thug" },
       { id: "npc_street2", name: "Alley Ace", x: 16.5, y: 24.5, role: "thug" },
       { id: "npc_street3", name: "Meter Maid Mayhem", x: 42.5, y: 24.5, role: "thug" },
@@ -719,6 +720,7 @@ export function createSkidrowMap(): WorldMapDef {
       { id: "npc_street8", name: "Dutch Dumpster", x: 70.5, y: 24.5, role: "thug" },
     ],
     // Rival gangs only in WAR ZONE (y >= SAFE_Y_MAX ≈ 38) — keep clear of the line.
+    // High-reward mission targets live here via job board / instance layers, not street hire.
     // Names/aggression/threat mirror packages/shared/src/gangs.ts profiles (gear + role bias live there).
     // Deep war only (y ≥ 50; safe line is y=38). Server also snaps to walkable +6 south of line.
     aiPosseSpawns: [
