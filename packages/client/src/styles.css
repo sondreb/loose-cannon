@@ -3074,12 +3074,20 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
 }
 
 @media (max-width: 900px) {
+  /*
+   * Mobile control bar: joystick ~7.25rem + label + padding ≈ 9.5rem.
+   * Session/tutorial card must sit fully above that strip.
+   */
   .tutorial-hud {
     top: auto;
-    left: 8px;
-    right: 8px;
-    width: auto;
-    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    width: min(92vw, 22rem);
+    max-width: min(92vw, 22rem);
+    /* Joystick base 7.25rem + "MOVE" + bar padding + gap */
+    bottom: calc(9.75rem + env(safe-area-inset-bottom, 0px));
+    z-index: 11;
   }
 
   .mission-hud {
@@ -4261,6 +4269,8 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
   body.mobile-layout #tutorialHud {
     max-width: min(92vw, 22rem);
     font-size: 0.78rem;
+    /* Reinforce clear of joystick (class + id for specificity) */
+    bottom: calc(9.75rem + env(safe-area-inset-bottom, 0px));
   }
   body.mobile-layout #cashRep {
     font-size: 0.75rem;
@@ -4480,6 +4490,19 @@ body:has(.tutorial-hud:not(.hidden)) .mission-hud:not(.hidden) {
     width: 2.1rem;
     height: 2.1rem;
     margin: -1.05rem 0 0 -1.05rem;
+  }
+
+  .tutorial-hud,
+  body.mobile-layout #tutorialHud {
+    /* Smaller stick still needs clearance; card more compact on short screens */
+    bottom: calc(7.5rem + env(safe-area-inset-bottom, 0px));
+    width: min(48vw, 18rem);
+    max-width: min(48vw, 18rem);
+    left: auto;
+    right: 8px;
+    transform: none;
+    max-height: 38vh;
+    overflow: auto;
   }
 
   #possePanel:not(.collapsed) {
