@@ -61,7 +61,7 @@ export const DISTRICTS: DistrictDef[] = [
     /** Open from the start so The Titty Twister / neon strip is reachable (gear still rep-gated). */
     minRep: 0,
     danger: "risky",
-    landmark: "The Titty Twister / gun row",
+    landmark: "Iron Temple / Titty Twister",
   },
   {
     id: "war_deep",
@@ -88,7 +88,7 @@ export const DISTRICTS: DistrictDef[] = [
     y1: 54,
     minRep: 0,
     danger: "risky",
-    landmark: "Our Lady / tracks south",
+    landmark: "Our Lady / Wreckers west",
   },
   {
     id: "downtown",

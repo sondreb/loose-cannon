@@ -508,6 +508,11 @@ for (const id of rivalKillIds) {
   if (!last.jobBoard.offers.some((o) => o.id === id)) fail(`missing rival kill offer ${id}`);
 }
 console.log("rival kill pack offers present", rivalKillIds.join(", "));
+const templePackIds = ["temple_sweat", "west_wreck"];
+for (const id of templePackIds) {
+  if (!last.jobBoard.offers.some((o) => o.id === id)) fail(`missing temple pack offer ${id}`);
+}
+console.log("temple pack offers present", templePackIds.join(", "));
 cash0 = last.you.cash;
 rep0 = last.you.rep;
 ws.send(JSON.stringify({ type: "jobBoard.accept", missionId: "still_not_guns" }));
@@ -783,6 +788,92 @@ if (last.you.cash < cash0 + 540) fail(`chapel pay expected +540 (cash ${last.you
 if (last.you.rep < rep0 + 5) fail("chapel rep");
 if (last?.you.insideBuildingId) fail("should be outdoors after chapel extract");
 console.log("chapel_cleanse instance ok cash", last.you.cash);
+
+// --- M7+ instance: temple_sweat (gym / Iron Temple dual-use) ---
+await healCrew();
+await openRitaBoard();
+if (!last.jobBoard.offers.some((o) => o.id === "temple_sweat")) fail("no temple_sweat offer");
+cash0 = last.you.cash;
+rep0 = last.you.rep;
+ws.send(JSON.stringify({ type: "jobBoard.accept", missionId: "temple_sweat" }));
+// Iron epithets: Plate/Sweat/Spotter/Rep/Barbell/Chalk; boss "Iron Lead"
+let ironSeen = [];
+let ironAlivePeak = 0;
+let ironLabelOk = false;
+for (let i = 0; i < 30; i++) {
+  await wait(60);
+  if (!String(last?.you.insideBuildingId ?? "").startsWith("mi_")) continue;
+  if (last?.mission?.id !== "temple_sweat") continue;
+  const hostiles = (last?.units ?? []).filter(
+    (u) => u.kind === "ai_boss" || u.kind === "ai_goon",
+  );
+  const alive = hostiles.filter((u) => u.alive);
+  if (hostiles.length) ironSeen = hostiles;
+  if (alive.length > ironAlivePeak) ironAlivePeak = alive.length;
+  if (
+    hostiles.some((u) =>
+      /iron|plate|sweat|spotter|rep|barbell|chalk|bench|bulk|max|spot|pump|flex|steel|lift|grit|power/i.test(
+        u.name ?? "",
+      ),
+    )
+  ) {
+    ironLabelOk = true;
+  }
+  if (ironAlivePeak >= 2 || last?.mission?.phase === "extract") break;
+}
+if (!String(last?.you.insideBuildingId ?? "").startsWith("mi_")) {
+  fail(`temple expected mi_ layer, got ${last?.you.insideBuildingId}`);
+}
+if (last?.mission?.id !== "temple_sweat" && last?.mission != null) {
+  fail(`temple_sweat not active, got ${last?.mission?.id}`);
+}
+if (last?.mission && !last.mission.instanced) fail("temple_sweat not marked instanced");
+if (ironAlivePeak < 2 && ironSeen.length < 2 && last?.mission?.phase !== "extract") {
+  fail(`expected iron hostiles >=2 (alive peak ${ironAlivePeak}, seen ${ironSeen.length})`);
+}
+if (ironSeen.length && !ironLabelOk) {
+  fail(`expected Iron-family hostiles, got ${ironSeen.map((u) => u.name).join(",")}`);
+}
+console.log(
+  "temple iron peek alivePeak",
+  ironAlivePeak,
+  "names",
+  ironSeen.map((u) => u.name).join(",") || "(cleared before name snap)",
+  "phase",
+  last?.mission?.phase,
+);
+ws.send(JSON.stringify({ type: "intent.select", unitId: null }));
+await wait(100);
+for (let i = 0; i < 280; i++) {
+  const foe = last?.units.find(
+    (u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && u.alive,
+  );
+  if (!foe) break;
+  ws.send(JSON.stringify({ type: "intent.fire", targetId: foe.id }));
+  await wait(65);
+  if (last?.mission?.phase === "extract") break;
+  if (last?.mission == null && last?.you.respawnIn != null) {
+    fail("temple job failed (died) before extract");
+  }
+}
+for (let i = 0; i < 70; i++) {
+  if (last?.mission?.phase === "extract") break;
+  const foe = last?.units.find((u) => (u.kind === "ai_boss" || u.kind === "ai_goon") && u.alive);
+  if (foe) ws.send(JSON.stringify({ type: "intent.fire", targetId: foe.id }));
+  await wait(100);
+}
+if (last?.mission?.phase !== "extract") {
+  fail(`temple expected extract, got ${last?.mission?.phase}`);
+}
+// Gym template exit ~ (103, 82)
+me = await goTo(103.5, 82.5, 16);
+ws.send(JSON.stringify({ type: "intent.interact" }));
+await wait(600);
+if (last?.mission) fail("temple_sweat should clear after extract");
+if (last.you.cash < cash0 + 560) fail(`temple pay expected +560 (cash ${last.you.cash} vs ${cash0})`);
+if (last.you.rep < rep0 + 5) fail("temple rep");
+if (last?.you.insideBuildingId) fail("should be outdoors after temple extract");
+console.log("temple_sweat instance ok cash", last.you.cash);
 
 // --- Shop quick check ---
 me = await goTo(51.5, 15.2, 20);

@@ -241,7 +241,7 @@ export const GANG_PROFILES: Record<string, GangProfile> = {
   },
 };
 
-/** Instance freeloader flavors (warehouse / garage / coldstore) */
+/** Instance freeloader flavors (warehouse / garage / coldstore / church / gym) */
 export const INSTANCE_GANG_FLAVORS: Record<
   string,
   Pick<
@@ -322,6 +322,22 @@ export const INSTANCE_GANG_FLAVORS: Record<
     preferredArmor: { boss: "none", goon: "none" },
     statBias: { aim: 1, brains: 1, guts: -1, speed: 1 },
     aggression: 0.86,
+  },
+  Iron: {
+    blurb: "after-hours gym squatters — free weights, freeloaders",
+    roleBias: "rush",
+    bossTitle: "Iron Lead",
+    goonEpithets: ["Plate", "Sweat", "Spotter", "Rep", "Barbell", "Chalk"],
+    firstNamesM: ["Iron", "Bench", "Bulk", "Max", "Spot", "Pump"],
+    firstNamesF: ["Sweat", "Flex", "Steel", "Lift", "Grit", "Power"],
+    preferredWeapons: {
+      shooter: ["shotgun", "pistol"],
+      rusher: ["pipe", "switchblade", "shotgun"],
+      coward: ["pistol", "pipe"],
+    },
+    preferredArmor: { boss: "leather", goon: "none" },
+    statBias: { muscle: 3, guts: 2, aim: -1, maxHealth: 10 },
+    aggression: 0.9,
   },
 };
 

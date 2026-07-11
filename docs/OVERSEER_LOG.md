@@ -19,6 +19,19 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-07-11 — cycle 29 (temple pack)
+- Focus: Optional M7+ content — Iron Temple dual-use instance + last ambient rival kill (`ai_west`)
+- Done:
+  - Mission `temple_sweat` — clear → extract on `gym` template; Iron hostiles (rush/pipe/shotgun); $560 + 5 rep; board order appended
+  - Shared `INSTANCE_GANG_FLAVORS.Iron` (muscle bias, plate/sweat/spotter epithets)
+  - Mission `west_wreck` — kill West End Wreckers Foreman (`ai_west`) ~(18, 50); $510 + 5 rep
+  - Gym amber/sweat indoor lighting; neon_edge landmark “Iron Temple / Titty Twister”; fringe “Our Lady / Wreckers west”
+  - Vince/Rita + phone tip lines mention Wreckers + after-hours Iron Temple
+  - Smoke: asserts temple pack offers; full temple_sweat clear → extract → pay
+- Verify: `npm run build` OK; `npm run smoke` → SMOKE_OK (clean server; prior cold wipe flake once)
+- Next: Optional outdoor Choir kill (`ai_church`) or feel polish; Mode A checklist complete
+- Blocked: none
+
 ### 2026-07-11 — cycle 28 (rival kill pack)
 - Focus: Optional M7+ content — outdoor kill contracts for underused rival gangs
 - Done:

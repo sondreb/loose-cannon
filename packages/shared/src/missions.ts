@@ -1,7 +1,7 @@
 /**
  * Starter job catalog (Mode A).
  * Outdoor jobs run on the hub map; instanced jobs use a private layer
- * (warehouse / garage / coldstore / church). Street pack + rival kill pack
+ * (warehouse / garage / coldstore / church / gym). Street pack + rival kill pack
  * wire orphan props and ambient gangs to Rita's board.
  * Server is authoritative for progress and rewards.
  */
@@ -23,7 +23,9 @@ export type MissionId =
   | "viper_nest"
   | "lot_ride"
   | "silk_hit"
-  | "chrome_out";
+  | "chrome_out"
+  | "temple_sweat"
+  | "west_wreck";
 
 export type MissionObjectiveKind =
   | "hold"
@@ -437,6 +439,52 @@ export const MISSIONS: Record<MissionId, MissionDef> = {
     hintX: 65,
     hintY: 48,
   },
+  temple_sweat: {
+    id: "temple_sweat",
+    title: "Temple Sweat",
+    blurb:
+      "Private job. After-hours freeloaders locked Coach Brick out of the Iron Temple. Clear the mats, then extract before the free weights start shooting back. Casualties: jacked. Heart rate: mandatory.",
+    difficulty: 2,
+    rewardCash: 560,
+    rewardRep: 5,
+    instance: {
+      templateBuildingId: "gym",
+      enemyCount: 2,
+      enemyThreat: 2,
+      enemyLabel: "Iron",
+    },
+    objectives: [
+      {
+        id: "clear_mats",
+        label: "Neutralize hostiles in the gym",
+        kind: "clear_hostiles",
+      },
+      {
+        id: "extract",
+        label: "Extract at the exit door",
+        kind: "extract",
+      },
+    ],
+  },
+  west_wreck: {
+    id: "west_wreck",
+    title: "West End Wreck",
+    blurb:
+      "West End Wreckers are demoing street corners that still owe Rita. Drop their Foreman near the west fringe. Hardhats optional. Crowbars not.",
+    difficulty: 2,
+    rewardCash: 510,
+    rewardRep: 5,
+    objectives: [
+      {
+        id: "drop_west",
+        label: "Drop the West End Wreckers Foreman",
+        kind: "kill_unit",
+        targetPosseId: "ai_west",
+      },
+    ],
+    hintX: 18,
+    hintY: 50,
+  },
 };
 
 export const MISSION_ORDER: MissionId[] = [
@@ -457,6 +505,8 @@ export const MISSION_ORDER: MissionId[] = [
   "lot_ride",
   "silk_hit",
   "chrome_out",
+  "temple_sweat",
+  "west_wreck",
 ];
 
 export function listMissionOffers(opts?: {

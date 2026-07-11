@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-11 (rival kill pack)  
+Last updated: 2026-07-11 (temple pack)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -42,6 +42,7 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | **Fourth instance (M7+)** | **Done** | Church template + `chapel_cleanse` Chapel Cleanse |
 | **Street contract pack (M7+)** | **Done** | `toll_booth` / `keep_frozen` / `viper_nest` on orphan props + Vipers |
 | **Rival kill pack (M7+)** | **Done** | `lot_ride` / `silk_hit` / `chrome_out` — Lot / Slicks / Chrome bosses |
+| **Temple pack (M7+)** | **Done** | `temple_sweat` gym dual-use instance + `west_wreck` outdoor kill |
 | **Street hustles / POI (M7)** | **Done** | Phone/mail/hydrant/neon/cone hustles; fence NPC; prop `readyIn` |
 | **Rival gang variety (M7)** | **Done** | Per-gang names, gear, role bias, aggro/detect ranges; instance flavors |
 | **Music bed (M7)** | **Done** | Title / explore / action MP3 loops @ ~0.12; Settings mute; gesture unlock |
@@ -75,6 +76,8 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | `lot_ride` | Lot Ride | Outdoor | Kill Lot Lizards boss | $540 + 5 rep |
 | `silk_hit` | Silk Hit | Outdoor | Kill Southside Slicks boss | $560 + 6 rep |
 | `chrome_out` | Chrome Out | Outdoor | Kill Chrome Fists boss | $530 + 5 rep |
+| `temple_sweat` | Temple Sweat | Instance (gym) | Clear → extract | $560 + 5 rep |
+| `west_wreck` | West End Wreck | Outdoor | Kill West End Wreckers boss | $510 + 5 rep |
 
 ### Tutorial (live)
 
@@ -95,8 +98,8 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | Id | Name | minRep | Outdoor walk |
 |----|------|--------|--------------|
 | downtown | Safe Downtown | 0 | Always |
-| war_fringe | War Fringe | 0 | Always — landmark Our Lady / tracks south |
-| neon_edge | Neon Edge / Titty Twister | 0 | Always |
+| war_fringe | War Fringe | 0 | Always — Our Lady / Wreckers west |
+| neon_edge | Neon Edge / Titty Twister | 0 | Always — Iron Temple / Twister landmark |
 | war_deep | Deep War Zone | 3* | Always (*advisory) |
 | docks | Pier District | 5* | Always (*advisory) — Cold Storage landmark |
 
@@ -188,7 +191,7 @@ Server-authoritative; AI ignores ammo (always free fire). Players:
 
 ### M6 extra missions (live)
 
-- Board order: starter 4 + `still_not_guns`, `parking_tax`, `chop_shop_raid`, `rail_rats`, `pier_punch`, `chapel_cleanse`, street pack, rival kill pack  
+- Board order: starter 4 + `still_not_guns`, `parking_tax`, `chop_shop_raid`, `rail_rats`, `pier_punch`, `chapel_cleanse`, street pack, rival kill pack, temple pack  
 - Map: `cr2`, `p3`, `ai_rats`, garage / coldstore / church instance templates; pier job targets `ai_docks` ~(84, 52)  
 - Smoke: asserts M6 offers (incl. pier_punch); completes still_not_guns + full chop/cold/chapel extracts  
 
@@ -209,7 +212,16 @@ Server-authoritative; AI ignores ammo (always free fire). Players:
   - **`chrome_out`** — drop Chrome Fists Iron Hands (`ai_chrome`) ~(65, 48); $530 + 5 rep  
 - Vince/Rita tip + phone tip line mention lizards / slicks / chrome knuckles  
 - Smoke: asserts three offers on the board  
-- Still ambient only (no contract yet): `ai_west` (West End Wreckers), `ai_church` (Choir outdoor — chapel instance already covers Choir indoors)
+- Still ambient only (no outdoor kill contract): `ai_church` (Choir outdoor — chapel instance already covers Choir indoors)
+
+### Temple pack (live)
+
+- **`temple_sweat`** — Iron Temple gym dual-use: private clear → extract on existing `gym` template; Iron-labeled hostiles (threat 2, rush bias, pipes/shotguns); $560 + 5 rep  
+- Coach Brick + gym training stay on hub `gym`; instance clones interior only (same dual-use pattern as church memorial + chapel_cleanse)  
+- Client: gym amber/sweat indoor lighting (`lightingLook` gym/temple); exterior gym gold accent already live  
+- **`west_wreck`** — drop West End Wreckers Foreman (`ai_west`) ~(18, 50); $510 + 5 rep  
+- Vince/Rita + phone tip lines mention Wreckers + Iron Temple after hours  
+- Smoke: asserts both offers; full temple_sweat clear → extract → pay  
 
 ### Mission feedback (live)
 
@@ -236,8 +248,17 @@ Server-authoritative; AI ignores ammo (always free fire). Players:
 - Job: `chapel_cleanse` / **Chapel Cleanse** — private clear → extract; Choir-labeled hostiles (threat 2); $540 + 5 rep  
 - Instance flavor **Choir**: hold bias, pistols/blades, psalm/vesper epithets  
 - Client: chapel candle-gold indoor lighting; church exterior accent gold  
-- Vince/Rita tips mention chapel among sealed rooms; fringe map landmark “Our Lady / tracks south”  
+- Vince/Rita tips mention chapel among sealed rooms; fringe map landmark “Our Lady / Wreckers west”  
 - Smoke: full chapel_cleanse clear → extract → pay  
+
+### M7+ fifth instance (live)
+
+- Template: **Iron Temple** (`gym`) — existing shell ~(90–102, 8–16); interior pocket 99–107×83–87 (hub still has Coach Brick + train)  
+- Job: `temple_sweat` / **Temple Sweat** — private clear → extract; Iron-labeled hostiles (threat 2); $560 + 5 rep  
+- Instance flavor **Iron**: rush bias, pipes/shotguns, plate/sweat/spotter epithets  
+- Client: gym amber/sweat indoor lighting; gym exterior gold accent  
+- Neon-edge landmark “Iron Temple / Titty Twister”; Vince/Rita tips mention after-hours temple  
+- Smoke: full temple_sweat clear → extract → pay  
 
 ### Day/night + district lighting (live)
 
@@ -320,7 +341,7 @@ Shared `gangs.ts` profiles keyed by map spawn id — server applies on spawn/res
 | `ai_neon` | Neon Vipers | hold / elite | high, long | Queen Fang; minigun/tommy + plate |
 | `ai_chrome` | Chrome Fists | rush / knuckles | high, short | Iron Hands; melee muscle |
 
-**Also:** per-posse `aggroRange` / `detectRange`; combat logs include gang blurb; instance flavors **Bay** (readable pistols), **Chop** (tools/shotguns), **Frost** (uzi/hold), **Choir** (pistols/blades, chapel). Smoke asserts Dogs vs Vipers names/gear. Rush/hold/flee crews always keep ≥1 signature role (smoke-stable).
+**Also:** per-posse `aggroRange` / `detectRange`; combat logs include gang blurb; instance flavors **Bay** (readable pistols), **Chop** (tools/shotguns), **Frost** (uzi/hold), **Choir** (pistols/blades, chapel), **Iron** (pipes/shotguns, gym). Smoke asserts Dogs vs Vipers names/gear. Rush/hold/flee crews always keep ≥1 signature role (smoke-stable).
 
 ### Music bed (live)
 
@@ -336,7 +357,7 @@ Shared `gangs.ts` profiles keyed by map spawn id — server applies on spawn/res
 
 ## Next for overseer (priority)
 
-1. Optional: remaining ambient kills (`ai_west` Wreckers) or Iron Temple / gym dual-use instance  
+1. Optional: outdoor Choir kill (`ai_church`) if a second Choir beat is wanted, or feel polish  
 2. Feel bugs if critical player-facing issues appear  
 3. **Never** Mode B (Postgres/auth/k8s) unless human asks  
 
@@ -346,7 +367,7 @@ Shared `gangs.ts` profiles keyed by map spawn id — server applies on spawn/res
 |------|----------|-------|
 | Smoke needs live server | Ops | `npm run smoke` → `ws://127.0.0.1:3001` |
 | Disconnect = wipe | Low | Mode A design |
-| Four instance templates | Live | warehouse + garage + coldstore + church; more optional later |
+| Five instance templates | Live | warehouse + garage + coldstore + church + gym; more optional later |
 | Goon sprites single art facing | Low | L/R iso flip + lean/bob; full 8-dir art sheets still optional later |
 | Instance smoke wipe | Ops | Rare death mid-chop/cold if aggro unlucky; smoke heals at Doc first (clears downed); re-run on clean server |
 

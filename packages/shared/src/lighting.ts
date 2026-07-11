@@ -195,6 +195,21 @@ export function lightingLook(
         entityTint: 0xffe8c8,
       };
     }
+    const isGym =
+      id === "gym" || /gym|temple|iron|sweat|coach|mat/i.test(id);
+    if (isGym) {
+      return {
+        ...look,
+        sky: 0x14120c,
+        overlay: 0xffb040,
+        overlayAlpha: 0.08,
+        groundBright: 0.98,
+        neon: 0.42,
+        rain: 0,
+        horizon: 0x1c160c,
+        entityTint: 0xffe8c0,
+      };
+    }
     // Generic interior / mission instance — warm tungsten
     return {
       ...look,
