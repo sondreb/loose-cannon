@@ -19,6 +19,20 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-08-23 — hub buildings (empty rooms → real loops)
+- Focus: Human request — finish stubbed / empty / half-implemented buildings first
+- Done:
+  - Verified inventory: 12 enterable shells; warehouse + coldstore were decor-only hubs; garage was tip-only; pawn/gun/liquor shared one catalog; bar tiles unused
+  - **Chop Shop / Grease Tony:** chop jacked cars (hot wheels), tune-up +1 Speed, patch leather, parts shop
+  - **Old Warehouse / Pallet Pete:** leftover pallets, night shift, fence crate marks from street crates
+  - **Cold Storage / Frost Ida:** ice pack heal, freezer hide (−heat), leftover lockers
+  - Per-shop catalogs + real shop titles; liquor sells drinks (beer / rotgut / whiskey / ice pack)
+  - Bar/club **buy a round** combat juice; jack→Tony and crate→Pete loops; HUD 🛞 / 📦 / juice
+  - Interior art: garage lift, freezer hooks, warehouse pallets, liquor bottles
+- Verify: build + smoke (in progress this cycle)
+- Next: Human playtest; no new Mode A milestone invented
+- Blocked: none
+
 ### 2026-07-11 — playtest skill, dual rain, mobile, voice, hydrants
 - Focus: Automated visual QA skill; rain depth; hydrant placement/shoot; mobile touch; Kingpin taunts + crew acks
 - Done:

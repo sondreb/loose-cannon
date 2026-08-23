@@ -2017,7 +2017,8 @@ export class WorldView {
     else if (kind === "bar" || /nail|bar/i.test(b.name)) this.drawBarInteriorDecor(bounds);
     else if (kind === "gym" || /temple|gym/i.test(b.name)) this.drawGymInteriorDecor(bounds);
     else if (kind === "hospital" || /doc|stitch/i.test(b.name)) this.drawHospitalInteriorDecor(bounds);
-    else if (kind === "shop" || /pawn|ammo|liquor/i.test(b.name)) this.drawShopInteriorDecor(bounds);
+    else if (kind === "shop" || /pawn|ammo|liquor/i.test(b.name))
+      this.drawShopInteriorDecor(bounds, b.id === "shop_liquor" || /liquor/i.test(b.name));
     else if (kind === "safehouse" || /crash|pad/i.test(b.name)) this.drawSafehouseInteriorDecor(bounds);
     else if (kind === "warehouse" || kind === "garage" || kind === "coldstore")
       this.drawWarehouseInteriorDecor(bounds, kind);
@@ -2348,32 +2349,52 @@ export class WorldView {
     g.fill({ color: 0xff4040, alpha: 0.7 });
   }
 
-  private drawShopInteriorDecor(bounds: {
-    x0: number;
-    y0: number;
-    x1: number;
-    y1: number;
-  }): void {
+  private drawShopInteriorDecor(
+    bounds: {
+      x0: number;
+      y0: number;
+      x1: number;
+      y1: number;
+    },
+    liquor = false,
+  ): void {
     const g = this.buildingGfx;
-    this.drawIsoFloorWash(g, bounds, 0x282430, 0x221e2a, 0.5);
+    this.drawIsoFloorWash(
+      g,
+      bounds,
+      liquor ? 0x2a1824 : 0x282430,
+      liquor ? 0x221018 : 0x221e2a,
+      0.5,
+    );
     // Shelves back wall
     for (let x = bounds.x0 + 1; x <= bounds.x1 - 1; x++) {
       const p = worldToScreen(x + 0.5, bounds.y0 + 0.9);
       g.rect(p.sx - 10, p.sy - 22, 20, 16);
-      g.fill({ color: 0x3a3430, alpha: 0.85 });
+      g.fill({ color: liquor ? 0x3a2830 : 0x3a3430, alpha: 0.85 });
       for (let r = 0; r < 3; r++) {
         g.rect(p.sx - 8, p.sy - 20 + r * 5, 16, 1);
         g.fill({ color: 0x1a1814, alpha: 0.5 });
-        g.rect(p.sx - 7 + (r % 2) * 4, p.sy - 18 + r * 5, 4, 3);
-        g.fill({ color: [0x40e0ff, 0xffc040, 0x60ff90][r]!, alpha: 0.35 });
+        if (liquor) {
+          g.rect(p.sx - 7 + (r % 3) * 5, p.sy - 19 + r * 5, 3, 5);
+          g.fill({ color: [0xc060a0, 0xe0c060, 0x60c080][r]!, alpha: 0.55 });
+          g.rect(p.sx - 6 + (r % 3) * 5, p.sy - 21 + r * 5, 1.5, 2);
+          g.fill({ color: 0xd8d0c0, alpha: 0.45 });
+        } else {
+          g.rect(p.sx - 7 + (r % 2) * 4, p.sy - 18 + r * 5, 4, 3);
+          g.fill({ color: [0x40e0ff, 0xffc040, 0x60ff90][r]!, alpha: 0.35 });
+        }
       }
     }
     // Counter
     const c = worldToScreen((bounds.x0 + bounds.x1) / 2, bounds.y0 + 2.5);
     g.roundRect(c.sx - 22, c.sy - 6, 44, 14, 2);
-    g.fill({ color: 0x4a3a28, alpha: 0.9 });
+    g.fill({ color: liquor ? 0x4a2838 : 0x4a3a28, alpha: 0.9 });
     g.ellipse(c.sx, c.sy - 8, 6, 3);
-    g.fill({ color: 0x2a2018 });
+    g.fill({ color: liquor ? 0x3a1824 : 0x2a2018 });
+    if (liquor) {
+      g.rect(c.sx + 10, c.sy - 16, 4, 10);
+      g.fill({ color: 0xc9a227, alpha: 0.55 });
+    }
   }
 
   /** Crash Pad — lived-in one-room apartment, not a void box. */
@@ -2489,29 +2510,96 @@ export class WorldView {
   ): void {
     const g = this.buildingGfx;
     const cold = kind === "coldstore";
+    const garage = kind === "garage";
     this.drawIsoFloorWash(
       g,
       bounds,
-      cold ? 0x1a2830 : 0x2a2a24,
-      cold ? 0x162028 : 0x24241e,
+      cold ? 0x1a2830 : garage ? 0x2a2a28 : 0x2a2a24,
+      cold ? 0x162028 : garage ? 0x221e1a : 0x24241e,
       0.5,
     );
-    // Pillars
+    if (garage) {
+      // Oil stains
+      for (const spot of [
+        { x: bounds.x0 + 2.2, y: bounds.y0 + 2.4 },
+        { x: bounds.x1 - 2.4, y: bounds.y1 - 1.6 },
+      ]) {
+        const p = worldToScreen(spot.x, spot.y);
+        g.ellipse(p.sx, p.sy + 4, 16, 7);
+        g.fill({ color: 0x0a0a08, alpha: 0.45 });
+      }
+      // Car lift + chassis
+      const lift = worldToScreen((bounds.x0 + bounds.x1) / 2, bounds.y0 + 2.2);
+      g.rect(lift.sx - 18, lift.sy - 6, 36, 8);
+      g.fill({ color: 0x3a3a40, alpha: 0.9 });
+      g.roundRect(lift.sx - 16, lift.sy - 18, 32, 12, 2);
+      g.fill({ color: 0x4a2020, alpha: 0.85 });
+      g.rect(lift.sx - 20, lift.sy - 4, 6, 14);
+      g.rect(lift.sx + 14, lift.sy - 4, 6, 14);
+      g.fill({ color: 0x2a2a30, alpha: 0.9 });
+      // Tire stacks
+      for (const tx of [bounds.x0 + 1.4, bounds.x1 - 1.4]) {
+        const p = worldToScreen(tx, bounds.y0 + 1.2);
+        for (let i = 0; i < 3; i++) {
+          g.ellipse(p.sx, p.sy - 4 - i * 6, 8, 3.5);
+          g.fill({ color: 0x1a1a1c, alpha: 0.9 });
+          g.ellipse(p.sx, p.sy - 4 - i * 6, 3, 1.4);
+          g.fill({ color: 0x6a6a70, alpha: 0.5 });
+        }
+      }
+      // Tool chest
+      const chest = worldToScreen(bounds.x1 - 2, bounds.y1 - 1.2);
+      g.roundRect(chest.sx - 10, chest.sy - 14, 20, 16, 1);
+      g.fill({ color: 0xc04020, alpha: 0.8 });
+      g.rect(chest.sx - 8, chest.sy - 8, 16, 1);
+      g.fill({ color: 0x1a1010, alpha: 0.4 });
+      return;
+    }
+    if (cold) {
+      // Frost haze along the back wall
+      for (let x = bounds.x0; x <= bounds.x1; x++) {
+        const p = worldToScreen(x + 0.5, bounds.y0);
+        g.rect(p.sx - 10, p.sy - 36, 20, 10);
+        g.fill({ color: 0xa0e8ff, alpha: 0.08 });
+      }
+      // Meat hooks
+      for (let i = 0; i < 3; i++) {
+        const p = worldToScreen(bounds.x0 + 2 + i * 2.2, bounds.y0 + 1.1);
+        g.rect(p.sx - 1, p.sy - 34, 2, 16);
+        g.fill({ color: 0x6a8090, alpha: 0.85 });
+        g.ellipse(p.sx, p.sy - 16, 5, 8);
+        g.fill({ color: 0x8a3040, alpha: 0.7 });
+      }
+      // Ice lockers
+      for (let i = 0; i < 3; i++) {
+        const p = worldToScreen(bounds.x0 + 1.6 + i * 2.4, bounds.y1 - 1.3);
+        g.roundRect(p.sx - 9, p.sy - 16, 18, 18, 1);
+        g.fill({ color: 0x3a6070, alpha: 0.88 });
+        g.rect(p.sx - 6, p.sy - 8, 12, 6);
+        g.fill({ color: 0x80d8ff, alpha: 0.18 });
+      }
+      return;
+    }
+    // Warehouse — pallets, forklift silhouette, shipping stencil
     for (const px of [bounds.x0 + 2, bounds.x1 - 2]) {
       for (const py of [bounds.y0 + 1, bounds.y1 - 1]) {
         const p = worldToScreen(px, py);
         g.rect(p.sx - 4, p.sy - 28, 8, 28);
-        g.fill({ color: cold ? 0x3a5060 : 0x4a4838, alpha: 0.85 });
+        g.fill({ color: 0x4a4838, alpha: 0.85 });
       }
     }
-    // Crates
-    for (let i = 0; i < 4; i++) {
-      const p = worldToScreen(bounds.x0 + 1.5 + (i % 2) * 2, bounds.y0 + 1.5 + Math.floor(i / 2) * 1.5);
-      g.roundRect(p.sx - 8, p.sy - 8, 16, 12, 1);
-      g.fill({ color: cold ? 0x3a6070 : 0x6a5030, alpha: 0.85 });
-      g.rect(p.sx - 6, p.sy - 4, 12, 2);
+    for (let i = 0; i < 6; i++) {
+      const p = worldToScreen(bounds.x0 + 1.4 + (i % 3) * 2.1, bounds.y0 + 1.4 + Math.floor(i / 3) * 1.6);
+      g.roundRect(p.sx - 9, p.sy - 8, 18, 12, 1);
+      g.fill({ color: i % 2 ? 0x6a5030 : 0x8a6a30, alpha: 0.85 });
+      g.rect(p.sx - 7, p.sy - 4, 14, 2);
       g.fill({ color: 0x000000, alpha: 0.25 });
     }
+    const fork = worldToScreen(bounds.x1 - 1.6, bounds.y1 - 1.4);
+    g.roundRect(fork.sx - 8, fork.sy - 14, 14, 12, 1);
+    g.fill({ color: 0xc9a227, alpha: 0.55 });
+    g.rect(fork.sx + 4, fork.sy - 6, 12, 2);
+    g.fill({ color: 0x8a8a80, alpha: 0.7 });
   }
 
   private drawChurchInteriorDecor(bounds: {

@@ -344,6 +344,12 @@ export interface WorldSnapshot {
     districtUnlocked: boolean;
     /** Cash locked in Crash Pad stash (safe from wipe) */
     stashCash: number;
+    /** Hot cars/bikes queued for Grease Tony's chop bay */
+    hotWheels?: number;
+    /** Outdoor crate marks Pallet Pete will fence */
+    crateMarks?: number;
+    /** Active bottle buff (label + seconds left) */
+    drinkBuff?: { label: string; remainSec: number } | null;
     /** Segregated world id (default `public`) */
     realmId: string;
     /** Display label for HUD (usually same as realmId) */

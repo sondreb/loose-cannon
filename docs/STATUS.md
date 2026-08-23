@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-11 (compact MAP + pinch zoom + safe hire only)  
+Last updated: 2026-08-23 (hub buildings: garage / warehouse / coldstore / shops / drinks)  
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
 
 ## What’s live (Mode A — local Node + in-memory)
@@ -28,7 +28,7 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | **Voice banks** | **Done** | 16 crew acks + 12 rival taunts as `/voice/*.mp3` (Grok TTS); select + engage play them |
 | **AI roam** | **Done** | Deep war spawns (y≥50, snapped walkable); roam via war walk points; pathfind; no safe-zone freeze |
 | **AI posse aggro** | **Done** | Hit/miss wakes whole posse; living commander if boss down; all members fire |
-| **Interior decor** | **Done** | Bar / gym / hospital / shop / warehouse / church; **Twister VIP lounge**; **Crash Pad apartment** |
+| **Interior decor** | **Done** | Bar / gym / hospital / shop / liquor bottles / warehouse pallets / garage lift / coldstore hooks; **Twister VIP lounge**; **Crash Pad apartment** |
 | **Iron Temple gym** | **Done** | Coach Brick dialogue: train selected / whole posse / muscle day |
 | Painted goon/prop sprites | Done | Imagine PNGs + procedural fallback |
 | **The Titty Twister** | **Done** | Club; 3 dancers; tip→reveal; VO; realistic profiles |
@@ -36,7 +36,7 @@ Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) 
 | Full-screen mobile dialogue/modals | Done | Portraits readable on phones |
 | **Longer kill/loot toasts** | **Done** | Wipe ~11s; downed ~8s; loot/mission ~7–9s |
 | Dialogue, hire, recruit | Done | |
-| Posse UI, crew editor, shops | Done | |
+| Posse UI, crew editor, shops | Done | **Per-shop catalogs** (pawn / guns / liquor / chop parts) |
 | Attack-move, combat, wipe loot | Done | |
 | Job board / missions / tutorial | Done | |
 | Heat + rep shop gates | Done | |
@@ -326,6 +326,25 @@ Server-authoritative; AI ignores ammo (always free fire). Players:
 - Disconnect / leave dissolves party of &lt;2; shared hostiles only despawn when last party mate leaves the job  
 - Smoke: presence; invite/accept/**kick**/leave in realm `smoke-party`  
 
+### Hub buildings (live — no empty rooms)
+
+Every enterable shell has a real counter, NPC, or service (not decor-only).
+
+| Building | Loop |
+|----------|------|
+| The Rusty Nail / Titty Twister | Hire, **buy a round** (combat juice + heal), lay low, rumors |
+| Pawn-O-Matic | Used iron (blade / pistol / uzi), leather/kevlar, medkit, ammo refill |
+| Ammo & Alibis | Full gun wall + kevlar/plate + ammo |
+| Southside Liquor | **Drinks only** — beer / rotgut / whiskey / ice pack / guts training |
+| Doc's / Iron Temple / Crash Pad / Church | Heal / train / stash / memorial (unchanged) |
+| **Chop Shop** | Grease Tony: **chop jacked cars**, tune-up (+Speed), patch leather, parts bin |
+| **Old Warehouse** | Pallet Pete: leftover pallets, night shift, **fence crate marks** from street crates |
+| **Cold Storage** | Frost Ida: ice pack heal, freezer hide (−heat), leftover lockers |
+
+Jacking a car/bike queues **hot wheels** (HUD 🛞). Smashing outdoor crates leaves **crate marks** (HUD 📦) Pete will buy. Last bottle shows as juice (BEER / ROTGUT / WHISKEY / NAIL / TWIST) until it expires.
+
+Shop titles use the real counter name (no more hardcoded Pawn-O-Matic on Kate/Bob).
+
 ### Street hustles / POI (live)
 
 All outdoor props are interactable (E / click). Realm-wide cooldowns; snapshot `prop.readyIn` seconds; hover shows verb or **Wait ~Ns**.
@@ -384,8 +403,10 @@ Shared `gangs.ts` profiles keyed by map spawn id — server applies on spawn/res
 
 **Mode A near-term checklist is complete** (M0–M7 + optional packs). No incomplete MASTER_PLAN item remains short of deferred M8.
 
+Human-named gap fill (empty hubs) shipped 2026-08-23. Mode A near-term checklist remains complete.
+
 1. **Stop greenfield** until a human re-opens backlog or reports a player-facing bug  
-2. Feel polish / critical bugs only if they appear (none open; headless loop stops on empty backlog)  
+2. Feel polish / critical bugs only if they appear  
 3. Optional content only if a human names it (e.g. more shells, club music bed, 8-dir art, balance pass)  
 4. **Never** Mode B (Postgres/auth/k8s) unless human asks  
 

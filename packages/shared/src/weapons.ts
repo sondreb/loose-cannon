@@ -15,7 +15,20 @@ export type UpgradeId =
   | "guts_training"
   | "speed_shoes"
   | "muscle_powder"
-  | "medkit";
+  | "medkit"
+  | "cheap_beer"
+  | "rotgut"
+  | "whiskey"
+  | "ice_pack";
+
+/** Short combat juice from a bottle (server tick-stamped). */
+export interface DrinkBuffDef {
+  guts?: number;
+  muscle?: number;
+  aim?: number;
+  durationSec: number;
+  label: string;
+}
 
 export interface WeaponDef {
   id: WeaponId;
@@ -59,6 +72,10 @@ export interface UpgradeDef {
   /** Permanent stat boosts when bought for a unit */
   stats?: Partial<{ aim: number; guts: number; speed: number; muscle: number; maxHealth: number }>;
   heal?: number;
+  /** Drop street heat when consumed (drinks / ice). */
+  heatReduce?: number;
+  /** Temporary combat juice (last bottle overwrites). */
+  drinkBuff?: DrinkBuffDef;
   minRep?: number;
 }
 
@@ -262,6 +279,38 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     price: 80,
     description: "Restore 40 HP to selected unit.",
     heal: 40,
+  },
+  cheap_beer: {
+    id: "cheap_beer",
+    name: "Warm Beer",
+    price: 15,
+    description: "Heals 12. +1 Guts ~40s. Tastes like a broken promise and tap water.",
+    heal: 12,
+    drinkBuff: { guts: 1, durationSec: 40, label: "BEER" },
+  },
+  rotgut: {
+    id: "rotgut",
+    name: "Rotgut",
+    price: 25,
+    description: "Heals 8. +2 Muscle, −1 Aim ~40s. Paint thinner that filed for a liquor license.",
+    heal: 8,
+    drinkBuff: { muscle: 2, aim: -1, durationSec: 40, label: "ROTGUT" },
+  },
+  whiskey: {
+    id: "whiskey",
+    name: "Funeral Whiskey",
+    price: 40,
+    description: "Heals 10. +2 Guts ~45s. Named after the last guy who finished the bottle.",
+    heal: 10,
+    drinkBuff: { guts: 2, durationSec: 45, label: "WHISKEY" },
+  },
+  ice_pack: {
+    id: "ice_pack",
+    name: "Stolen Ice Pack",
+    price: 35,
+    description: "Heals 28 and shaves 4 heat. Cold enough to hide a body. Or a feeling.",
+    heal: 28,
+    heatReduce: 4,
   },
 };
 

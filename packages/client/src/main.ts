@@ -11,9 +11,7 @@ import {
   INTERACT_RANGE,
   isUnlimitedAmmo,
   realmLabel,
-  SHOP_ARMOR_ORDER,
-  SHOP_UPGRADE_ORDER,
-  SHOP_WEAPON_ORDER,
+  shopCatalog,
   shopPrice,
   statEffectLines,
   streetRole,
@@ -183,6 +181,12 @@ const DANCER_STAGE_LABELS = [
 ] as const;
 const shopModal = $("shopModal");
 const shopTitle = $("shopTitle");
+const shopLogo = $("shopLogo");
+const shopTagline = $("shopTagline");
+const shopCols = $("shopCols");
+const shopWeaponsCol = $("shopWeaponsCol");
+const shopArmorCol = $("shopArmorCol");
+const shopUpgradesCol = $("shopUpgradesCol");
 const shopUnitName = $("shopUnitName");
 const shopCash = $("shopCash");
 const shopWeapons = $("shopWeapons");
@@ -1088,11 +1092,26 @@ function renderPosse(): void {
       : weather === "storm"
         ? "Storm — heavy rain for a short window"
         : "Rain — episodic wet weather";
+  const wheels = snap.you.hotWheels ?? 0;
+  const marks = snap.you.crateMarks ?? 0;
+  const drink = snap.you.drinkBuff;
   cashRep.innerHTML = `<span class="cash" title="Pocket cash — lost on wipe">$${snap.you.cash}</span>${
     stash > 0
       ? ` <span class="stash-cash" title="Crash Pad stash — safe on wipe">⌂$${stash}</span>`
       : ""
-  } <span class="rep">Rep ${snap.you.rep}</span> <span class="heat heat-${band}" title="Street heat — cool off at the bar">Heat ${h}</span> <span class="day-phase day-${phase}" title="City day/night cycle (~6 min) — neon brighter at night">${phaseLabel}</span> <span class="day-phase weather-${weather}" title="${weatherTitle}">${weatherLabel}</span>`;
+  }${
+    wheels > 0
+      ? ` <span class="hot-wheels" title="Hot rides for Grease Tony">🛞${wheels}</span>`
+      : ""
+  }${
+    marks > 0
+      ? ` <span class="crate-marks" title="Crate marks Pallet Pete will fence">📦${marks}</span>`
+      : ""
+  }${
+    drink
+      ? ` <span class="drink-buff" title="Bottle juice — combat stats until it wears off">${escapeHtml(drink.label)} ${drink.remainSec}s</span>`
+      : ""
+  } <span class="rep">Rep ${snap.you.rep}</span> <span class="heat heat-${band}" title="Street heat — cool off at the bar or Ida's freezer">Heat ${h}</span> <span class="day-phase day-${phase}" title="City day/night cycle (~6 min) — neon brighter at night">${phaseLabel}</span> <span class="day-phase weather-${weather}" title="${weatherTitle}">${weatherLabel}</span>`;
   updateRealmHud(snap.you.realmId ?? myRealmId);
   const units = myUnits();
   const key = units
@@ -2091,7 +2110,10 @@ function renderShop(): void {
     return;
   }
   shopModal.classList.remove("hidden");
-  shopTitle.textContent = "PAWN-O-MATIC";
+  const cat = shopCatalog(snap.shop.buildingId);
+  shopTitle.textContent = (snap.shop.shopName || "Shop").toUpperCase();
+  if (shopLogo) shopLogo.textContent = cat.logo;
+  if (shopTagline) shopTagline.textContent = cat.tagline;
   shopCash.textContent = `$${snap.you.cash}`;
   const u = selectedUnit();
   shopUnitName.textContent = u?.name ?? "—";
@@ -2115,7 +2137,7 @@ function renderShop(): void {
     .join(",");
   const heat = snap.you.heat ?? 0;
   const rep = snap.you.rep ?? 0;
-  const key = `${snap.shop.shopName}|${u?.id ?? ""}|${ownedW}|${ownedA}|${ammoKey}|${snap.you.cash}|${heat}|${rep}|${rosterKey}|${u?.stats.aim},${u?.stats.guts}`;
+  const key = `${snap.shop.buildingId}|${snap.shop.shopName}|${u?.id ?? ""}|${ownedW}|${ownedA}|${ammoKey}|${snap.you.cash}|${heat}|${rep}|${rosterKey}|${u?.stats.aim},${u?.stats.guts}`;
   if (key === lastShopKey) return;
   lastShopKey = key;
 
@@ -2142,7 +2164,16 @@ function renderShop(): void {
   }
 
   shopWeapons.innerHTML = "";
-  for (const id of SHOP_WEAPON_ORDER) {
+  if (shopWeaponsCol) shopWeaponsCol.classList.toggle("is-empty", cat.weapons.length === 0);
+  if (shopArmorCol) shopArmorCol.classList.toggle("is-empty", cat.armors.length === 0);
+  if (shopUpgradesCol) shopUpgradesCol.classList.toggle("is-empty", cat.upgrades.length === 0);
+  const colCount =
+    (cat.weapons.length ? 1 : 0) + (cat.armors.length ? 1 : 0) + (cat.upgrades.length ? 1 : 0);
+  if (shopCols) {
+    shopCols.classList.toggle("cols-1", colCount === 1);
+    shopCols.classList.toggle("cols-2", colCount === 2);
+  }
+  for (const id of cat.weapons) {
     const w = WEAPONS[id];
     const owned = u?.ownedWeapons?.includes(id);
     const needRep = w.minRep ?? 0;
@@ -2198,7 +2229,7 @@ function renderShop(): void {
         <div class="shop-item-body">
           <div class="shop-item-name">Ammo · ${escapeHtml(w.name)}</div>
           <div class="shop-item-meta">${cur}/${w.maxAmmo} rounds${full ? " · topped off" : " · full top-up"}</div>
-          <div class="shop-item-desc">Pawn-O-Matic belt feed. Heat tax applies when the street is hot.</div>
+          <div class="shop-item-desc">${escapeHtml(snap.shop.shopName)} belt feed. Heat tax applies when the street is hot.</div>
         </div>
         <div class="shop-item-price">${full ? "FULL" : refillList !== w.refillPrice ? `$${refillList}*` : `$${refillList}`}</div>
       `;
@@ -2207,7 +2238,7 @@ function renderShop(): void {
   }
 
   shopArmor.innerHTML = "";
-  for (const id of SHOP_ARMOR_ORDER) {
+  for (const id of cat.armors) {
     const a = ARMORS[id];
     const owned = u?.ownedArmors?.includes(id);
     const needRep = a.minRep ?? 0;
@@ -2246,7 +2277,7 @@ function renderShop(): void {
   }
 
   shopUpgrades.innerHTML = "";
-  for (const id of SHOP_UPGRADE_ORDER) {
+  for (const id of cat.upgrades) {
     const up = UPGRADES[id];
     const needRep = up.minRep ?? 0;
     const locked = rep < needRep;
@@ -2260,7 +2291,7 @@ function renderShop(): void {
     b.dataset.itemId = id;
     if (locked) b.disabled = true;
     b.innerHTML = `
-      <div class="shop-upgrade-glyph">${id === "medkit" ? "+" : "▲"}</div>
+      <div class="shop-upgrade-glyph">${id === "medkit" || id === "ice_pack" ? "+" : id === "cheap_beer" || id === "rotgut" || id === "whiskey" ? "🥃" : "▲"}</div>
       <div class="shop-item-body">
         <div class="shop-item-name">${escapeHtml(up.name)}</div>
         <div class="shop-item-desc">${escapeHtml(up.description)}${needRep > 0 ? ` · Rep ${needRep}` : ""}</div>

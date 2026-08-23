@@ -1,6 +1,6 @@
 # Loose Cannon — Master Plan (Overseer Roadmap)
 
-Last updated: 2026-07-11 (Mode A complete; overseer idle-stop exits empty loops)
+Last updated: 2026-08-23 (hub buildings completed; Mode A near-term still complete)
 
 Track completion in `docs/STATUS.md`. This file is the **ordered backlog** for autonomous development. Prefer finishing higher milestones before lower ones unless a dependency forces otherwise.
 
@@ -105,6 +105,7 @@ Full design: [realms.md](./realms.md). Friend groups on one beta/in-memory serve
 - [x] Rival kill pack (lot_ride / silk_hit / chrome_out — Lot Lizards, Southside Slicks, Chrome Fists)
 - [x] Temple pack (temple_sweat gym dual-use + west_wreck outdoor kill)
 - [x] Outdoor Choir kill (`last_hymn` / `ai_church` — street beat next to chapel instance)
+- [x] Hub building completion (human request 2026-08-23): Chop Shop / Warehouse / Cold Storage services; per-shop catalogs; bar/liquor drinks; jack→Tony + crate→Pete loops
 
 ### M8 — Explicitly deferred (do not start unless user asks)
 
