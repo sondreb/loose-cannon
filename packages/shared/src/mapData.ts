@@ -675,7 +675,7 @@ export function createSkidrowMap(): WorldMapDef {
       { id: "npc_doc", name: "Doc Bandage", x: 3.5, y: 85, role: "doc", buildingId: "hospital" },
       { id: "npc_coach", name: "Coach Brick", x: 105, y: 85, role: "coach", buildingId: "gym" },
       { id: "npc_priest", name: "Father Trouble", x: 63, y: 3, role: "priest", buildingId: "church" },
-      { id: "npc_mech", name: "Grease Tony", x: 51, y: 85, role: "mechanic", buildingId: "garage" },
+      { id: "npc_mech", name: "Grease Tony", x: 48.5, y: 86, role: "mechanic", buildingId: "garage" },
       { id: "npc_dock", name: "Pallet Pete", x: 25, y: 85, role: "smuggler", buildingId: "warehouse" },
       { id: "npc_frost", name: "Frost Ida", x: 85, y: 85, role: "icehand", buildingId: "coldstore" },
       { id: "npc_gun", name: "Caliber Kate", x: 74, y: 85, role: "dealer", buildingId: "shop_gun" },

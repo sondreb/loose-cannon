@@ -3121,7 +3121,13 @@ export class GameWorld {
         return !!b && exitDist(b.exitX, b.exitY) <= EXIT_USE_RANGE;
       })();
     const npcPick = pickNpcInRange();
-    if (npcPick && !(onExitMat && !targetUnitId)) {
+    const nearProp = !posse.insideBuildingId ? this.nearestOutdoorProp(leader, posse) : null;
+    const preferCloserProp =
+      !targetUnitId &&
+      !!nearProp &&
+      !!npcPick &&
+      nearProp.rawD + 0.35 < npcPick.d;
+    if (npcPick && !(onExitMat && !targetUnitId) && !preferCloserProp) {
       const u = npcPick.unit;
       const spawn = this.map.npcSpawns.find((n) => n.id === u.id);
       if (spawn?.role === "dealer") {
@@ -3196,14 +3202,11 @@ export class GameWorld {
       }
     }
 
-    // 5) Outdoor props / street hustles
-    if (!posse.insideBuildingId) {
-      for (const p of this.map.props) {
-        if (dist(leader.x, leader.y, p.x, p.y) <= INTERACT_RANGE + 0.3) {
-          this.interactProp(session, posse, p.id);
-          return;
-        }
-      }
+    // 5) Outdoor props / street hustles — nearest in range (not first in the catalog).
+    // Prefer the active job's smash/hold target when two POIs overlap.
+    if (nearProp) {
+      this.interactProp(session, posse, nearProp.id);
+      return;
     }
 
     this.log(
@@ -3575,6 +3578,26 @@ export class GameWorld {
     d.choices = [{ id: "bye", label: "Noted. And numb.", tone: "smooth" }];
   }
 
+  /** Closest outdoor POI in interact range. Mission smash/hold targets win ties. */
+  private nearestOutdoorProp(
+    leader: Unit,
+    posse: Posse,
+  ): { id: string; rawD: number } | null {
+    const missionPropIds = new Set(
+      (posse.mission ? MISSIONS[posse.mission.defId]?.objectives ?? [] : [])
+        .map((o) => o.propId)
+        .filter((id): id is string => !!id),
+    );
+    let best: { id: string; rawD: number; score: number } | null = null;
+    for (const p of this.map.props) {
+      const rawD = dist(leader.x, leader.y, p.x, p.y);
+      if (rawD > INTERACT_RANGE + 0.3) continue;
+      const score = missionPropIds.has(p.id) ? rawD - 0.85 : rawD;
+      if (!best || score < best.score) best = { id: p.id, rawD, score };
+    }
+    return best ? { id: best.id, rawD: best.rawD } : null;
+  }
+
   private setPropCooldown(propId: string, kind: string): void {
     const sec = hustleCooldownSec(kind);
     this.propReadyAt.set(propId, this.tick + TICK_HZ * sec);
@@ -3593,7 +3616,13 @@ export class GameWorld {
       // Still give a small flavor payout so the smash feels real
       const cash = 15 + Math.floor(Math.random() * 25);
       posse.cash += cash;
-      this.log(session, `Loose cash in the crate: $${cash}.`);
+      if (prop.kind === "crate") posse.crateMarks += 1;
+      this.log(
+        session,
+        `Loose cash in the crate: $${cash}.${
+          prop.kind === "crate" ? ` Pete will fence the mark. (${posse.crateMarks})` : ""
+        }`,
+      );
       this.setPropCooldown(propId, prop.kind);
       return;
     }
