@@ -551,6 +551,22 @@ console.log("tutorial after hire", last.tutorial?.step);
 ws.send(JSON.stringify({ type: "dialogue.close" }));
 await wait(200);
 
+// Bar drink — Vince pours combat juice (hub loop, not a stub tile)
+me = await goTo(3.2, 3.2, 8);
+ws.send(JSON.stringify({ type: "intent.interact" }));
+await wait(400);
+if (!last?.dialogue?.choices?.some((c) => c.id === "buy_round")) {
+  fail("expected bartender buy_round drink choice");
+}
+ws.send(JSON.stringify({ type: "dialogue.choice", choiceId: "buy_round" }));
+await wait(400);
+if (!last?.you?.drinkBuff?.label) fail("bar drink should apply juice buff");
+console.log("bar drink ok", last.you.drinkBuff.label, last.you.drinkBuff.remainSec);
+if (last?.dialogue) {
+  ws.send(JSON.stringify({ type: "dialogue.close" }));
+  await wait(200);
+}
+
 // --- Outdoor job: smash_stash ---
 me = await goTo(7.0, 4.0, 10);
 ws.send(JSON.stringify({ type: "intent.interact" }));
@@ -571,6 +587,7 @@ if (last?.mission) fail("smash should complete");
 // Job pay only — tutorial bonus waits for Crash Pad stash step
 if (last.you.cash < cash0 + 280) fail("smash pay");
 if (last.you.rep < rep0 + 2) fail("smash rep");
+if (!(last.you.crateMarks >= 1)) fail("smash crate should leave a mark for Pallet Pete");
 if (last.tutorial?.step !== "stash_pad") {
   fail(`expected tutorial stash_pad after first job, got ${last?.tutorial?.step}`);
 }
@@ -1023,7 +1040,58 @@ me = await goTo(100.5, 3.4, 12);
 ws.send(JSON.stringify({ type: "intent.interact" }));
 await wait(400);
 if (!last?.shop) fail("shop ui");
+if (last.shop.shopName !== "Pawn-O-Matic") fail(`expected Pawn-O-Matic title, got ${last.shop.shopName}`);
+if (last.shop.buildingId !== "shop_pawn") fail("pawn shop id");
 ws.send(JSON.stringify({ type: "shop.close" }));
+await wait(200);
+ws.send(JSON.stringify({ type: "intent.exit" }));
+await wait(400);
+
+// --- Hub buildings: jack → Tony chop, warehouse Pete ---
+me = await goTo(38, 20, 22);
+if (!me || Math.hypot(me.x - 38, me.y - 20) > 1.8) fail("taxi jack path");
+const wheels0 = last?.you?.hotWheels ?? 0;
+ws.send(JSON.stringify({ type: "intent.interact" }));
+await wait(500);
+if ((last?.you?.hotWheels ?? 0) < wheels0 + 1) fail("jacked taxi should queue hot wheels for Tony");
+console.log("hot wheels after jack", last.you.hotWheels);
+
+me = await goTo(70.2, 32.2, 24);
+if (!me || Math.hypot(me.x - 70.2, me.y - 32.2) > 1.8) fail("garage door path");
+ws.send(JSON.stringify({ type: "intent.interact" }));
+await wait(500);
+if (last?.you.insideBuildingId !== "garage") fail(`garage enter ${last?.you.insideBuildingId}`);
+me = await goTo(51, 85, 12);
+ws.send(JSON.stringify({ type: "intent.interact" }));
+await wait(400);
+if (!last?.dialogue?.choices?.some((c) => c.id === "chop_car")) fail("Tony should offer chop");
+const cashTony = last.you.cash;
+ws.send(JSON.stringify({ type: "dialogue.choice", choiceId: "chop_car" }));
+await wait(400);
+if (last.you.cash <= cashTony) fail("Tony chop should pay");
+if ((last.you.hotWheels ?? 0) !== wheels0) fail("chop should spend a hot title");
+console.log("tony chop ok cash", last.you.cash, "wheels", last.you.hotWheels);
+ws.send(JSON.stringify({ type: "dialogue.close" }));
+await wait(200);
+ws.send(JSON.stringify({ type: "intent.exit" }));
+await wait(400);
+
+me = await goTo(53.2, 26.2, 22);
+if (!me || Math.hypot(me.x - 53.2, me.y - 26.2) > 1.8) fail("warehouse door path");
+ws.send(JSON.stringify({ type: "intent.interact" }));
+await wait(500);
+if (last?.you.insideBuildingId !== "warehouse") fail(`warehouse enter ${last?.you.insideBuildingId}`);
+me = await goTo(25, 85, 12);
+ws.send(JSON.stringify({ type: "intent.interact" }));
+await wait(400);
+if (!last?.dialogue?.choices?.some((c) => c.id === "search_pallet")) {
+  fail("Pallet Pete should offer leftover search");
+}
+ws.send(JSON.stringify({ type: "dialogue.choice", choiceId: "search_pallet" }));
+await wait(400);
+if (!last?.dialogue?.text) fail("Pete pallet result");
+console.log("pete pallet ok");
+ws.send(JSON.stringify({ type: "dialogue.close" }));
 await wait(200);
 ws.send(JSON.stringify({ type: "intent.exit" }));
 await wait(400);

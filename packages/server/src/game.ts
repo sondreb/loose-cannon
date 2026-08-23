@@ -62,10 +62,11 @@ import {
   randomEpitaph,
   RESPAWN_DELAY_SEC,
   SAFE_Y_MAX,
-  SHOP_ARMOR_ORDER,
-  SHOP_UPGRADE_ORDER,
-  SHOP_WEAPON_ORDER,
   shopPrice,
+  shopRefillsAmmo,
+  shopSellsArmor,
+  shopSellsUpgrade,
+  shopSellsWeapon,
   TICK_HZ,
   TUTORIAL_ORDER,
   TUTORIAL_STEPS,
@@ -303,6 +304,20 @@ interface Posse {
   partyId: string | null;
   /** Pending invite to join another player's party */
   pendingInvite: PartyInvitePublic | null;
+  /** Jacked cars/bikes waiting for Tony's chop bay */
+  hotWheels: number;
+  /** Outdoor crate "definitely not guns" marks Pete will fence */
+  crateMarks: number;
+  /** Last bottle — combat juice until tick */
+  drinkBuff: {
+    label: string;
+    guts: number;
+    muscle: number;
+    aim: number;
+    untilTick: number;
+  } | null;
+  /** Per-hub interact cooldowns (warehouse pallet, freezer locker, …) */
+  hubReadyAt: Map<string, number>;
 }
 
 /** Ephemeral multiplayer party within one realm */
@@ -322,6 +337,18 @@ function emptyStashFields(): Pick<Posse, "stashOpen" | "stashCash" | "stashWeapo
     stashCash: 0,
     stashWeapons: new Map(),
     stashArmors: new Map(),
+  };
+}
+
+function emptyStreetFields(): Pick<
+  Posse,
+  "hotWheels" | "crateMarks" | "drinkBuff" | "hubReadyAt"
+> {
+  return {
+    hotWheels: 0,
+    crateMarks: 0,
+    drinkBuff: null,
+    hubReadyAt: new Map(),
   };
 }
 
@@ -468,13 +495,14 @@ export class GameWorld {
         fallenArmors: new Set(),
         lootedThisWipe: false,
         ...emptyStashFields(),
+        ...emptyStreetFields(),
         attackTargetId: null,
         moveLabel: null,
         dancerStages: {},
         ...emptyPartyFields(),
       });
       // Named NPC genders (bartenders, coaches, street meat, dancers)
-      const femaleNpc = /rita|kate|may|sally|jazz|rosa|pepper|cookie|venus|lola|sable|cherry|roxy|nova|storm|ivy|jade|foxy|candy|maid|bomb|sin/i.test(
+      const femaleNpc = /rita|kate|may|sally|jazz|rosa|pepper|cookie|venus|lola|sable|cherry|roxy|nova|storm|ivy|jade|foxy|candy|maid|bomb|sin|ida|frost/i.test(
         n.name,
       );
       const street = n.role === "thug";
@@ -600,6 +628,7 @@ export class GameWorld {
       fallenArmors: new Set(),
       lootedThisWipe: false,
       ...emptyStashFields(),
+      ...emptyStreetFields(),
       attackTargetId: null,
       moveLabel: null,
       dancerStages: {},
@@ -773,6 +802,7 @@ export class GameWorld {
       fallenArmors: new Set(),
       lootedThisWipe: false,
       ...emptyStashFields(),
+      ...emptyStreetFields(),
       attackTargetId: null,
       moveLabel: null,
       dancerStages: {},
@@ -2219,11 +2249,14 @@ export class GameWorld {
       weapon,
     });
 
-    const aim = shooter.stats.aim;
-    const muscle = shooter.stats.muscle;
+    const atkBuff = this.liveDrink(this.posses.get(shooter.posseId));
+    const defBuff = this.liveDrink(this.posses.get(target.posseId));
+    const aim = shooter.stats.aim + atkBuff.aim;
+    const muscle = shooter.stats.muscle + atkBuff.muscle;
+    const targetGuts = target.stats.guts + defBuff.guts;
 
     // Hit chance: Aim hits, target Guts dodges, range hurts (shared formula)
-    let hitChance = hitChanceClamped(aim, target.stats.guts, d, { isAi });
+    let hitChance = hitChanceClamped(aim, targetGuts, d, { isAi });
     // Soft cover: hug a wall → harder to tag
     if (
       hasAdjacentCover(target.x, target.y, (tx, ty) => this.isLosBlockingTile(tx, ty))
@@ -2269,7 +2302,7 @@ export class GameWorld {
     const armor = ARMORS[target.armor];
     const pierce = armorPierce(muscle);
     const armorFactor = 1 - armor.damageReduce * (1 - pierce);
-    const tough = gutsDamageTakenFactor(target.stats.guts);
+    const tough = gutsDamageTakenFactor(targetGuts);
 
     let dmg = w.damage * power * variance * armorFactor * tough;
     if (crit) dmg *= COMBAT.critMultiplier;
@@ -3157,6 +3190,10 @@ export class GameWorld {
         this.serviceGym(session, posse);
         return;
       }
+      if (t === "bar") {
+        this.serviceBarDrink(session, posse);
+        return;
+      }
     }
 
     // 5) Outdoor props / street hustles
@@ -3272,6 +3309,272 @@ export class GameWorld {
     );
   }
 
+  private liveDrink(posse: Posse | undefined): { guts: number; muscle: number; aim: number } {
+    const b = posse?.drinkBuff;
+    if (!b || this.tick >= b.untilTick) {
+      if (posse && b && this.tick >= b.untilTick) posse.drinkBuff = null;
+      return { guts: 0, muscle: 0, aim: 0 };
+    }
+    return { guts: b.guts, muscle: b.muscle, aim: b.aim };
+  }
+
+  private applyDrinkBuff(
+    posse: Posse,
+    buff: { guts?: number; muscle?: number; aim?: number; durationSec: number; label: string },
+  ): void {
+    posse.drinkBuff = {
+      label: buff.label,
+      guts: buff.guts ?? 0,
+      muscle: buff.muscle ?? 0,
+      aim: buff.aim ?? 0,
+      untilTick: this.tick + TICK_HZ * Math.max(8, buff.durationSec),
+    };
+  }
+
+  private hubReady(posse: Posse, key: string): number {
+    const ready = posse.hubReadyAt.get(key) ?? 0;
+    if (this.tick >= ready) return 0;
+    return Math.ceil((ready - this.tick) / TICK_HZ);
+  }
+
+  private setHubCooldown(posse: Posse, key: string, sec: number): void {
+    posse.hubReadyAt.set(key, this.tick + TICK_HZ * sec);
+  }
+
+  /** Vince / Venus pour — also fires when you stand on a bar tile. */
+  private serviceBarDrink(session: CharacterSession, posse: Posse): void {
+    const club = posse.insideBuildingId === "club_neon";
+    const cost = club ? 35 : 20;
+    const name = club ? "Venus Static" : "Vince the Barman";
+    if (posse.cash < cost) {
+      this.log(session, `${name}: "Drinks aren't complimentary. Your wallet just volunteered to be dry."`);
+      return;
+    }
+    posse.cash -= cost;
+    const unit =
+      this.units.get(posse.selectedUnitId) &&
+      this.units.get(posse.selectedUnitId)!.posseId === posse.id &&
+      this.units.get(posse.selectedUnitId)!.alive
+        ? this.units.get(posse.selectedUnitId)!
+        : this.leader(posse);
+    if (unit) {
+      unit.health = Math.min(unit.stats.maxHealth, unit.health + (club ? 12 : 10));
+    }
+    this.applyDrinkBuff(
+      posse,
+      club
+        ? { guts: 2, durationSec: 40, label: "TWIST" }
+        : { guts: 1, durationSec: 35, label: "NAIL" },
+    );
+    this.log(
+      session,
+      club
+        ? `${name} slides a glass that winks back. (−$${cost}) ${unit?.name ?? "You"} steadies. The room likes you more. Juice: TWIST.`
+        : `${name} pours something brown and legally distinct from whiskey. (−$${cost}) ${unit?.name ?? "You"} feels braver and worse. Juice: NAIL.`,
+    );
+  }
+
+  private serviceChopCar(session: CharacterSession, posse: Posse, d: DialogueState): void {
+    if (posse.hotWheels <= 0) {
+      d.text =
+        "Tony pats an empty bay. \"Bring me a car you didn't pay for. Street jack, then we talk VIN poetry.\"";
+      d.choices = [{ id: "bye", label: "I'll steal you a present.", tone: "smooth" }];
+      return;
+    }
+    posse.hotWheels -= 1;
+    const pay = 95 + Math.floor(Math.random() * 85);
+    posse.cash += pay;
+    posse.rep += 1;
+    d.text = `"She's parts now. Beautiful parts." He counts $${pay} with fingers that have never seen soap. ${posse.hotWheels} still on the lot.`;
+    this.setDialogueVoice(d, "tony_greet");
+    d.choices = [{ id: "bye", label: "Pleasure doing felonies.", tone: "business" }];
+    this.log(session, `Tony chopped a hot ride. +$${pay}, rep +1. (${posse.hotWheels} left)`);
+  }
+
+  private serviceTuneUp(session: CharacterSession, posse: Posse, d: DialogueState): void {
+    const living = this.members(posse).filter((u) => u.alive);
+    if (living.length === 0) return;
+    const unit =
+      this.units.get(posse.selectedUnitId) &&
+      this.units.get(posse.selectedUnitId)!.posseId === posse.id &&
+      this.units.get(posse.selectedUnitId)!.alive
+        ? this.units.get(posse.selectedUnitId)!
+        : living[0]!;
+    const cost = 140;
+    if (posse.cash < cost) {
+      d.text = "\"Tune-up is one-forty. Your wallet's still in first gear.\"";
+      d.choices = [{ id: "bye", label: "I'll idle here.", tone: "smooth" }];
+      return;
+    }
+    posse.cash -= cost;
+    unit.stats.speed += 1;
+    d.text = `"${unit.name}" gets a torque-converter blessing and a kick in the timing belt. +1 SPEED. Don't thank me — thank physics.`;
+    this.setDialogueVoice(d, "tony_greet");
+    d.choices = [{ id: "bye", label: "We're faster. Barely.", tone: "business" }];
+    this.log(session, `Tony tuned ${unit.name} (−$${cost}). Speed ${unit.stats.speed}.`);
+  }
+
+  private servicePatchArmor(session: CharacterSession, posse: Posse, d: DialogueState): void {
+    const unit =
+      this.units.get(posse.selectedUnitId) &&
+      this.units.get(posse.selectedUnitId)!.posseId === posse.id &&
+      this.units.get(posse.selectedUnitId)!.alive
+        ? this.units.get(posse.selectedUnitId)!
+        : this.leader(posse);
+    if (!unit) return;
+    const cost = 65;
+    if (posse.cash < cost) {
+      d.text = "\"Sixty-five for a jacket that already died once. Come back solvent.\"";
+      d.choices = [{ id: "bye", label: "Later.", tone: "smooth" }];
+      return;
+    }
+    posse.cash -= cost;
+    if (!unit.ownedArmors.has("leather")) {
+      unit.ownedArmors.add("leather");
+      unit.armor = "leather";
+      d.text = `"${unit.name}" gets a leather that smells like someone else's divorce. It's armor. Technically.`;
+      this.log(session, `Tony patched leather onto ${unit.name} (−$${cost}).`);
+    } else {
+      unit.health = Math.min(unit.stats.maxHealth, unit.health + 25);
+      d.text = `"Held together with zip ties and spite. +25 HP. If it squeaks, that's character."`;
+      this.log(session, `Tony stitched ${unit.name} (−$${cost}). HP ${Math.round(unit.health)}.`);
+    }
+    this.setDialogueVoice(d, "tony_greet");
+    d.choices = [{ id: "bye", label: "Looks illegal. Perfect.", tone: "business" }];
+  }
+
+  private servicePalletSearch(session: CharacterSession, posse: Posse, d: DialogueState): void {
+    const wait = this.hubReady(posse, "pallet");
+    if (wait > 0) {
+      d.text = `"Those pallets already confessed. Come back in ~${wait}s before I start charging rent."`;
+      d.choices = [{ id: "bye", label: "Fair.", tone: "smooth" }];
+      return;
+    }
+    this.setHubCooldown(posse, "pallet", 50);
+    const roll = Math.random();
+    const unit = this.leader(posse);
+    if (roll < 0.38) {
+      const cash = 35 + Math.floor(Math.random() * 70);
+      posse.cash += cash;
+      d.text = `"Mis-shipped. For you." He kicks a crate. +$${cash}. The invoice says 'assorted regrets.'`;
+      this.log(session, `Pallet Pete: leftover cash $${cash}.`);
+    } else if (roll < 0.58 && unit && !unit.ownedWeapons.has("switchblade")) {
+      unit.ownedWeapons.add("switchblade");
+      d.text = "\"Box cutter with ambition. Keep it. OSHA can bill the corpse.\"";
+      this.log(session, "Pallet Pete: sticky switchblade from a leftover crate.");
+    } else if (roll < 0.78) {
+      this.addHeat(posse, HEAT.hustleSoft, session, "hot pallet");
+      d.text = "\"That one was spoken for. Heat's on you now. I didn't see a thing. Twice.\"";
+      this.log(session, "Pallet search was hot. Heat up.");
+    } else {
+      d.text = "\"Air and packing peanuts. Very modern cargo. Zero dollars of modern cargo.\"";
+      this.log(session, "Pallet Pete: empty crate. Educational.");
+    }
+    d.choices = [{ id: "bye", label: "Thanks, I hate it.", tone: "smooth" }];
+  }
+
+  private serviceNightShift(session: CharacterSession, posse: Posse, d: DialogueState): void {
+    const wait = this.hubReady(posse, "shift");
+    if (wait > 0) {
+      d.text = `"Union says one shift per hour. Come back in ~${wait}s. The clipboard has feelings."`;
+      d.choices = [{ id: "bye", label: "I'll loiter legally.", tone: "smooth" }];
+      return;
+    }
+    this.setHubCooldown(posse, "shift", 80);
+    const cash = 45 + Math.floor(Math.random() * 55);
+    posse.cash += cash;
+    this.addHeat(posse, HEAT.hustleSoft, session, "night shift");
+    d.text = `"You moved boxes that don't exist on paper. +$${cash}. If anyone asks, you were a ghost with a bad back."`;
+    this.log(session, `Worked Pete's night shift. +$${cash}. Heat up.`);
+    d.choices = [{ id: "bye", label: "Honest work. Ish.", tone: "business" }];
+  }
+
+  private serviceFenceMarks(session: CharacterSession, posse: Posse, d: DialogueState): void {
+    if (posse.crateMarks <= 0) {
+      d.text =
+        "\"No marks, no fence. Smash a street crate, bring me the paperwork that isn't paperwork.\"";
+      d.choices = [{ id: "bye", label: "I'll go shopping in alleys.", tone: "smooth" }];
+      return;
+    }
+    posse.crateMarks -= 1;
+    const pay = 55 + Math.floor(Math.random() * 50);
+    posse.cash += pay;
+    d.text = `"Farm equipment, my ass." He slides $${pay}. ${posse.crateMarks} marks still in your jacket.`;
+    this.log(session, `Pete fenced a crate mark. +$${pay}. (${posse.crateMarks} left)`);
+    d.choices = [{ id: "bye", label: "Don't spend it on pallets.", tone: "business" }];
+  }
+
+  private serviceIcePack(session: CharacterSession, posse: Posse, d: DialogueState): void {
+    const cost = 40;
+    if (posse.cash < cost) {
+      d.text = "\"Ice isn't free. Neither is sympathy. Forty or shiver.\"";
+      d.choices = [{ id: "bye", label: "I'll thaw elsewhere.", tone: "smooth" }];
+      return;
+    }
+    const unit =
+      this.units.get(posse.selectedUnitId) &&
+      this.units.get(posse.selectedUnitId)!.posseId === posse.id &&
+      this.units.get(posse.selectedUnitId)!.alive
+        ? this.units.get(posse.selectedUnitId)!
+        : this.leader(posse);
+    if (!unit) return;
+    posse.cash -= cost;
+    unit.health = Math.min(unit.stats.maxHealth, unit.health + 30);
+    d.text = `"Hold this against the leaking bit." ${unit.name} +30 HP. The bag says 'steaks' and that's a lie.`;
+    this.log(session, `Frost Ida iced ${unit.name} (−$${cost}). HP ${Math.round(unit.health)}.`);
+    d.choices = [{ id: "bye", label: "Colder. Better.", tone: "business" }];
+  }
+
+  private serviceChillOut(session: CharacterSession, posse: Posse, d: DialogueState): void {
+    if (posse.heat < 4) {
+      d.text = "\"You're already room temperature. The freezer's for people the city still remembers.\"";
+      d.choices = [{ id: "bye", label: "I'll stay lukewarm.", tone: "smooth" }];
+      return;
+    }
+    const cost = 35;
+    if (posse.cash < cost) {
+      d.text = `"Hiding costs $${cost}. Your wallet is the loudest thing in here."`;
+      d.choices = [{ id: "bye", label: "I'll sweat it out.", tone: "smooth" }];
+      return;
+    }
+    posse.cash -= cost;
+    const before = Math.round(posse.heat);
+    posse.heat = Math.max(0, posse.heat - 8);
+    d.text = `"Breathe. Count beef. Forget your name." Heat ${before} → ${Math.round(posse.heat)}. Don't lick the walls.`;
+    this.log(session, `Hid in Ida's freezer (−$${cost}). Heat ${before} → ${Math.round(posse.heat)}.`);
+    d.choices = [{ id: "bye", label: "I'm a popsicle with a gun.", tone: "smooth" }];
+  }
+
+  private serviceFreezerSearch(session: CharacterSession, posse: Posse, d: DialogueState): void {
+    const wait = this.hubReady(posse, "locker");
+    if (wait > 0) {
+      d.text = `"Those lockers already gave. ~${wait}s. Frostbite is not a refund policy."`;
+      d.choices = [{ id: "bye", label: "I'll keep my fingers.", tone: "smooth" }];
+      return;
+    }
+    this.setHubCooldown(posse, "locker", 55);
+    const roll = Math.random();
+    const unit = this.leader(posse);
+    if (roll < 0.4) {
+      const cash = 30 + Math.floor(Math.random() * 60);
+      posse.cash += cash;
+      d.text = `"Somebody stored rent in a brisket box. +$${cash}. Finders, freezers."`;
+      this.log(session, `Freezer locker: $${cash}.`);
+    } else if (roll < 0.62) {
+      posse.heat = Math.max(0, posse.heat - 5);
+      d.text = "\"Cold air washes the stink off. Heat down. You smell like a crime scene that took a spa day.\"";
+      this.log(session, `Freezer locker: heat ${Math.round(posse.heat)}.`);
+    } else if (roll < 0.82 && unit) {
+      unit.health = Math.max(1, unit.health - 8);
+      d.text = "\"That was frozen shut with a reason. −8 HP. The reason had teeth.\"";
+      this.log(session, "Freezer locker bit back. (−8 HP)");
+    } else {
+      d.text = "\"Ice crystals and a postcard from 1987. The handwriting is a threat.\"";
+      this.log(session, "Freezer locker: frost and disappointment.");
+    }
+    d.choices = [{ id: "bye", label: "Noted. And numb.", tone: "smooth" }];
+  }
+
   private setPropCooldown(propId: string, kind: string): void {
     const sec = hustleCooldownSec(kind);
     this.propReadyAt.set(propId, this.tick + TICK_HZ * sec);
@@ -3347,13 +3650,14 @@ export class GameWorld {
       this.setPropCooldown(propId, prop.kind);
       const cash = 30 + Math.floor(Math.random() * 100);
       posse.cash += cash;
+      posse.hotWheels += 1;
       this.addHeat(posse, HUSTLE_HEAT.carJack, session, "vehicle jack");
       const loud = Math.random() < 0.22;
       this.log(
         session,
         prop.kind === "motorcycle"
-          ? `Yanked $${cash} from ${prop.label ?? "a bike"}. The tank still smells like regret.${loud ? " Alarm: yes." : ""}`
-          : `Liberated $${cash} from ${prop.label ?? "a car"}. The radio only plays static now.${loud ? " Alarm's screaming." : ""}`,
+          ? `Yanked $${cash} from ${prop.label ?? "a bike"}. Title's in your pocket — take it to Tony. (${posse.hotWheels} hot)`
+          : `Liberated $${cash} from ${prop.label ?? "a car"}. Chop Shop pays better than the ashtray. (${posse.hotWheels} hot)`,
       );
       if (loud) {
         this.addHeat(posse, HEAT.hustleSoft, session, "car alarm");
@@ -3367,11 +3671,19 @@ export class GameWorld {
       if (unit && Math.random() < 0.4 && !unit.ownedWeapons.has("uzi")) {
         unit.ownedWeapons.add("uzi");
         grantWeaponAmmo(unit, "uzi");
-        this.log(session, "Crate says 'farm equipment'. Contains an Uzi. Farming is evolving.");
+        posse.crateMarks += 1;
+        this.log(
+          session,
+          `Crate says 'farm equipment'. Contains an Uzi. Pete at the warehouse fences leftovers. (${posse.crateMarks} marks)`,
+        );
       } else {
         const cash = 25 + Math.floor(Math.random() * 50);
         posse.cash += cash;
-        this.log(session, `Crate cash: $${cash}. Definitely not guns. (It was guns-adjacent.)`);
+        posse.crateMarks += 1;
+        this.log(
+          session,
+          `Crate cash: $${cash}. Definitely not guns. Pallet Pete still wants the paperwork. (${posse.crateMarks} marks)`,
+        );
       }
       return;
     }
@@ -3814,6 +4126,8 @@ export class GameWorld {
     if (role === "coach") return ["coach_greet"];
     if (role === "priest") return ["priest_greet"];
     if (role === "mechanic") return ["tony_greet"];
+    if (role === "smuggler") return ["phil_greet"];
+    if (role === "icehand") return ["kate_greet"];
     if (role === "thug") return female ? ["thug_greet_f"] : ["thug_greet_m"];
     if (role === "dancer") return ["dancer_greet_1", "dancer_greet_2", "dancer_greet_3"];
     return ["generic_bye"];
@@ -3848,6 +4162,11 @@ export class GameWorld {
         voiceLineId,
         choices: [
           { id: "hire", label: "I need a warm body for the crew. ($150)", tone: "business" },
+          {
+            id: "buy_round",
+            label: female ? "Buy a round. ($35 · juice + heal)" : "Buy a drink. ($20 · juice + heal)",
+            tone: "business",
+          },
           {
             id: "lay_low",
             label:
@@ -3942,15 +4261,61 @@ export class GameWorld {
       };
     }
     if (role === "mechanic") {
+      const wheels = playerPosse?.hotWheels ?? 0;
       return {
         npcId: npc.id,
         npcName: npc.name,
-        text: "Grease Tony wipes his hands on something that used to be a shirt. \"You need wheels or just moral support?\"",
+        text: `Grease Tony wipes his hands on something that used to be a shirt. "Jack a ride, I turn it into money. Tune the crew, patch the leather. ${wheels ? `${wheels} hot title${wheels === 1 ? "" : "s"} in your pocket."` : "Lot's empty until you steal me a present."}"`,
         voiceLineId,
         choices: [
+          {
+            id: "chop_car",
+            label: wheels > 0 ? `Chop a hot ride. (${wheels} waiting)` : "Chop a hot ride. (need a jacked car)",
+            tone: "business",
+          },
+          { id: "tune_up", label: "Tune selected. ($140 · +1 Speed)", tone: "business" },
+          { id: "patch_armor", label: "Patch jacket / stitch. ($65)", tone: "smooth" },
+          { id: "open_shop", label: "Show me the parts bin.", tone: "business" },
           { id: "tip", label: "What's hot on the lot?", tone: "smooth" },
           { id: "insult", label: "Your cars look terminal.", tone: "insult" },
           { id: "bye", label: "Later, greaseball.", tone: "smooth" },
+        ],
+      };
+    }
+    if (role === "smuggler") {
+      const marks = playerPosse?.crateMarks ?? 0;
+      return {
+        npcId: npc.id,
+        npcName: npc.name,
+        text: `Pallet Pete leans on a crate stamped FRAGILE like that's a personality. "This bay's mine when Rita isn't staging a massacre. Search leftovers, work a shift, or fence crate marks. ${marks ? `${marks} mark${marks === 1 ? "" : "s"} on you."` : "Street crates leave marks. Bring them."}"`,
+        voiceLineId,
+        choices: [
+          { id: "search_pallet", label: "Search leftover pallets.", tone: "business" },
+          { id: "night_shift", label: "Work a night shift. (cash + heat)", tone: "smooth" },
+          {
+            id: "fence_marks",
+            label: marks > 0 ? `Fence a crate mark. (${marks})` : "Fence a crate mark. (need street crates)",
+            tone: "business",
+          },
+          { id: "tip", label: "What walks through here after hours?", tone: "smooth" },
+          { id: "insult", label: "This place is a tomb with inventory.", tone: "insult" },
+          { id: "bye", label: "Don't stack me.", tone: "smooth" },
+        ],
+      };
+    }
+    if (role === "icehand") {
+      return {
+        npcId: npc.id,
+        npcName: npc.name,
+        text: "Frost Ida breathes fog like a threat. \"Freezer's honest. It keeps meat, money, and people who asked too many questions. You here to chill, bleed less, or raid a locker?\"",
+        voiceLineId,
+        choices: [
+          { id: "ice_pack", label: "Ice pack. ($40 · +30 HP selected)", tone: "business" },
+          { id: "chill_out", label: "Hide in the freezer. ($35 · −8 heat)", tone: "smooth" },
+          { id: "search_locker", label: "Raid a leftover locker.", tone: "business" },
+          { id: "tip", label: "What's on ice?", tone: "smooth" },
+          { id: "insult", label: "Nice meat locker. Yours?", tone: "insult" },
+          { id: "bye", label: "I'm out before I freeze to the floor.", tone: "smooth" },
         ],
       };
     }
@@ -4139,6 +4504,49 @@ export class GameWorld {
       return;
     }
 
+    if (choiceId === "buy_round") {
+      this.serviceBarDrink(session, posse);
+      posse.dialogue = null;
+      return;
+    }
+
+    if (choiceId === "chop_car") {
+      this.serviceChopCar(session, posse, d);
+      return;
+    }
+    if (choiceId === "tune_up") {
+      this.serviceTuneUp(session, posse, d);
+      return;
+    }
+    if (choiceId === "patch_armor") {
+      this.servicePatchArmor(session, posse, d);
+      return;
+    }
+    if (choiceId === "search_pallet") {
+      this.servicePalletSearch(session, posse, d);
+      return;
+    }
+    if (choiceId === "night_shift") {
+      this.serviceNightShift(session, posse, d);
+      return;
+    }
+    if (choiceId === "fence_marks") {
+      this.serviceFenceMarks(session, posse, d);
+      return;
+    }
+    if (choiceId === "ice_pack") {
+      this.serviceIcePack(session, posse, d);
+      return;
+    }
+    if (choiceId === "chill_out") {
+      this.serviceChillOut(session, posse, d);
+      return;
+    }
+    if (choiceId === "search_locker") {
+      this.serviceFreezerSearch(session, posse, d);
+      return;
+    }
+
     if (choiceId === "open_shop") {
       posse.dialogue = null;
       const b = this.map.buildings.find((bb) => bb.id === (npc?.buildingId ?? posse.insideBuildingId));
@@ -4146,6 +4554,7 @@ export class GameWorld {
       let openLine = "phil_open";
       if (name.includes("kate") || name.includes("caliber")) openLine = "kate_open";
       else if (name.includes("bob") || name.includes("bottle")) openLine = "bob_open";
+      else if (name.includes("tony") || name.includes("grease")) openLine = "tony_greet";
       posse.shop = {
         buildingId: b?.id ?? "shop_pawn",
         shopName: b?.name ?? "Shop",
@@ -4279,8 +4688,20 @@ export class GameWorld {
         }
         posse.cash -= cost;
       }
+      const tipName = (npc?.name ?? d.npcName).toLowerCase();
+      if (/tony|grease/i.test(tipName)) {
+        d.text =
+          "\"Lot cars south, bikes on the fringe. Jack 'em, bring the title here. Rita still books the after-hours massacre if you want a gunfight in my bay. Don't park legally. That's how they get you.\"";
+      } else if (/pete|pallet/i.test(tipName)) {
+        d.text =
+          "\"Rita rents this bay for Warehouse Wipe when she's bored. Off-hours it's mine. Street crates leave marks — I fence 'em. Night shift pays if you can lift and lie. Don't ask what's in bay three.\"";
+      } else if (/ida|frost/i.test(tipName)) {
+        d.text =
+          "\"Keep Frozen crate sits west of my door. Ice Box Eviction is Rita's idea of a dinner reservation. Hide in here when the street's loud. The beef doesn't snitch.\"";
+      } else {
       d.text =
-        "\"Dumpster Dogs west, West End Wreckers further west with crowbars, Choir of Pain south of Our Lady (Last Hymn if Rita's paying), Rail Rats on the fringe, Parking Racket south. Lot Lizards far lot, Southside Slicks east of the tracks, Chrome Fists mid-fringe if you like polished knuckles. Unofficial Toll on the war strip, freeze crate on the docks, Neon Vipers south of the Twister if you hate living. Phone booths and mailboxes pay if you're shameless. Warehouse, Chop Shop, Cold Storage, Chapel Cleanse, Temple Sweat (Iron Temple after hours) for sealed rooms. And for fuck's sake — stash cash at the Crash Pad before you die broke.\"";
+        "\"Dumpster Dogs west, West End Wreckers further west with crowbars, Choir of Pain south of Our Lady (Last Hymn if Rita's paying), Rail Rats on the fringe, Parking Racket south. Lot Lizards far lot, Southside Slicks east of the tracks, Chrome Fists mid-fringe if you like polished knuckles. Unofficial Toll on the war strip, freeze crate on the docks, Neon Vipers south of the Twister if you hate living. Jack cars for Tony — he chops titles at the garage. Smash crates, fence the marks with Pallet Pete. Frost Ida ices heat in the docks freezer. Phone booths and mailboxes pay if you're shameless. Warehouse, Chop Shop, Cold Storage, Chapel Cleanse, Temple Sweat (Iron Temple after hours) for sealed rooms. And for fuck's sake — stash cash at the Crash Pad before you die broke.\"";
+      }
       this.setDialogueVoice(
         d,
         isRita ? "rita_tip" : femaleBar ? "venus_rumor" : "vince_rumor",
@@ -4437,6 +4858,13 @@ export class GameWorld {
       if (choiceId === "haggle") {
         d.text = "\"Prices are criminal? Buddy, look around. You're shopping in a crime scene.\"";
         this.setDialogueVoice(d, "phil_haggle");
+      } else if (/tony|grease/i.test(name)) {
+        d.text = "\"Terminal? Pal, I keep cars alive that God already billed. Watch your mouth or I'll rotate your skull.\"";
+        this.setDialogueVoice(d, "tony_greet");
+      } else if (/pete|pallet/i.test(name)) {
+        d.text = "\"A tomb with inventory is still a job. Stack yourself on the way out.\"";
+      } else if (/ida|frost/i.test(name)) {
+        d.text = "\"Mine? Some of it used to have names. Keep talking and you'll get a hook.\"";
       } else if (isRita) {
         d.text = "\"I will fucking bury you.\" She means it as a greeting and a promise.";
         this.setDialogueVoice(d, "rita_threat");
@@ -4731,6 +5159,7 @@ export class GameWorld {
       fallenArmors: new Set(),
       lootedThisWipe: false,
       ...emptyStashFields(),
+      ...emptyStreetFields(),
       attackTargetId: null,
       moveLabel: null,
       dancerStages: {},
@@ -5437,7 +5866,10 @@ export class GameWorld {
     }
     const def = WEAPONS[weaponId];
     if (!def) return;
-    if (!SHOP_WEAPON_ORDER.includes(weaponId)) return;
+    if (!shopSellsWeapon(posse.shop.buildingId, weaponId)) {
+      this.log(session, `${posse.shop.shopName} doesn't stock that iron.`);
+      return;
+    }
     if (unit.ownedWeapons.has(weaponId)) {
       unit.weapon = weaponId;
       this.log(session, `Equipped ${def.name} on ${unit.name}.`);
@@ -5484,6 +5916,10 @@ export class GameWorld {
       this.log(session, `${def?.name ?? "That iron"} never needs a refill.`);
       return;
     }
+    if (!shopRefillsAmmo(posse.shop.buildingId)) {
+      this.log(session, `${posse.shop.shopName} doesn't do belt feeds. Try Pawn or Ammo & Alibis.`);
+      return;
+    }
     if (!unit.ownedWeapons.has(weaponId)) {
       this.log(session, `${unit.name} doesn't own a ${def.name}.`);
       return;
@@ -5518,7 +5954,10 @@ export class GameWorld {
     }
     const def = ARMORS[armorId];
     if (!def) return;
-    if (!SHOP_ARMOR_ORDER.includes(armorId)) return;
+    if (!shopSellsArmor(posse.shop.buildingId, armorId)) {
+      this.log(session, `${posse.shop.shopName} doesn't hang that jacket.`);
+      return;
+    }
     if (unit.ownedArmors.has(armorId)) {
       unit.armor = armorId;
       this.log(session, `Equipped ${def.name} on ${unit.name}.`);
@@ -5556,7 +5995,7 @@ export class GameWorld {
       return;
     }
     const def = UPGRADES[upgradeId];
-    if (!def || !SHOP_UPGRADE_ORDER.includes(upgradeId)) return;
+    if (!def || !shopSellsUpgrade(posse.shop.buildingId, upgradeId)) return;
     const needRep = def.minRep ?? 0;
     if (posse.rep < needRep) {
       this.log(session, `Need rep ${needRep} for ${def.name} (you have ${posse.rep}).`);
@@ -5583,12 +6022,27 @@ export class GameWorld {
         session,
         `${unit.name}: ${def.name} (−$${price}) → ${role.label} · A${unit.stats.aim} G${unit.stats.guts} M${unit.stats.muscle} S${unit.stats.speed}`,
       );
-    } else if (def.heal) {
-      unit.health = Math.min(unit.stats.maxHealth, unit.health + def.heal);
-      if (!unit.alive && unit.health > 0) unit.alive = true;
-      this.log(session, `${def.name} on ${unit.name} (−$${price}). HP ${Math.round(unit.health)}.`);
     } else {
-      this.log(session, `Bought ${def.name} for ${unit.name} (−$${price}).`);
+      if (def.heal) {
+        unit.health = Math.min(unit.stats.maxHealth, unit.health + def.heal);
+        if (!unit.alive && unit.health > 0) unit.alive = true;
+      }
+      if (def.heatReduce) {
+        posse.heat = Math.max(0, posse.heat - def.heatReduce);
+      }
+      if (def.drinkBuff) {
+        this.applyDrinkBuff(posse, def.drinkBuff);
+      }
+      const extras: string[] = [];
+      if (def.heal) extras.push(`HP ${Math.round(unit.health)}`);
+      if (def.heatReduce) extras.push(`heat ${Math.round(posse.heat)}`);
+      if (def.drinkBuff) extras.push(`juice ${def.drinkBuff.label}`);
+      this.log(
+        session,
+        extras.length
+          ? `${def.name} on ${unit.name} (−$${price}). ${extras.join(" · ")}.`
+          : `Bought ${def.name} for ${unit.name} (−$${price}).`,
+      );
     }
   }
 
@@ -6517,6 +6971,16 @@ export class GameWorld {
         selectedUnitId: posse.selectedUnitId,
         insideBuildingId: posse.insideBuildingId,
         stashCash: posse.stashCash,
+        hotWheels: posse.hotWheels,
+        crateMarks: posse.crateMarks,
+        drinkBuff: (() => {
+          const b = posse.drinkBuff;
+          if (!b || this.tick >= b.untilTick) return null;
+          return {
+            label: b.label,
+            remainSec: Math.max(1, Math.ceil((b.untilTick - this.tick) / TICK_HZ)),
+          };
+        })(),
         realmId: this.realmId,
         realmLabel: realmLabel(this.realmId),
         partyId: posse.partyId,

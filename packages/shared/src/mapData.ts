@@ -81,7 +81,9 @@ export interface WorldMapDef {
       | "coach"
       | "priest"
       | "mechanic"
-      | "dancer";
+      | "dancer"
+      | "smuggler"
+      | "icehand";
     buildingId?: string;
     /** Gentleman's club dancer art variant */
     dancerKey?: "a" | "b" | "c";
@@ -193,7 +195,7 @@ export function createSkidrowMap(): WorldMapDef {
   shell(tiles, 4, 26, 12, 34, 8, 26); // Crash pad
   shell(tiles, 46, 26, 60, 38, 53, 26); // Warehouse
   shell(tiles, 70, 28, 80, 36, 70, 32); // Chop Shop garage
-  shell(tiles, 90, 28, 102, 36, 96, 28); // Neon Confessional (club)
+  shell(tiles, 90, 28, 102, 36, 96, 28); // The Titty Twister (club)
 
   shell(tiles, 88, 48, 102, 58, 88, 53); // Cold Storage (docks freezer bay)
   shell(tiles, 22, 48, 32, 58, 27, 48); // Our Lady of Bad Decisions
@@ -436,6 +438,7 @@ export function createSkidrowMap(): WorldMapDef {
       exitY: 82,
       exteriorSpawnX: 53,
       exteriorSpawnY: 25,
+      blurb: "Pallets, secrets, and whatever fell off a truck",
       wallColor: 0x3a3a30,
       roofColor: 0x1a1a14,
       accentColor: 0x888860,
@@ -673,6 +676,8 @@ export function createSkidrowMap(): WorldMapDef {
       { id: "npc_coach", name: "Coach Brick", x: 105, y: 85, role: "coach", buildingId: "gym" },
       { id: "npc_priest", name: "Father Trouble", x: 63, y: 3, role: "priest", buildingId: "church" },
       { id: "npc_mech", name: "Grease Tony", x: 51, y: 85, role: "mechanic", buildingId: "garage" },
+      { id: "npc_dock", name: "Pallet Pete", x: 25, y: 85, role: "smuggler", buildingId: "warehouse" },
+      { id: "npc_frost", name: "Frost Ida", x: 85, y: 85, role: "icehand", buildingId: "coldstore" },
       { id: "npc_gun", name: "Caliber Kate", x: 74, y: 85, role: "dealer", buildingId: "shop_gun" },
       { id: "npc_booze", name: "Bottle Bob", x: 86, y: 3, role: "dealer", buildingId: "shop_liquor" },
       { id: "npc_club", name: "Venus Static", x: 36.5, y: 3.2, role: "bartender", buildingId: "club_neon" },

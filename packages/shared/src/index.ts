@@ -15,3 +15,4 @@ export * from "./lighting.js";
 export * from "./voiceLines.js";
 export * from "./hustles.js";
 export * from "./gangs.js";
+export * from "./shops.js";

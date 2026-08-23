@@ -2196,6 +2196,21 @@ img.photo {
   font-weight: 700;
 }
 
+.hot-wheels {
+  color: #e0a050;
+  font-weight: 700;
+}
+
+.crate-marks {
+  color: #c9a06a;
+  font-weight: 700;
+}
+
+.drink-buff {
+  color: #e070c0;
+  font-weight: 700;
+}
+
 .stash-cash-row {
   display: flex;
   gap: 0.5rem;
@@ -2654,6 +2669,18 @@ img.photo {
   background: #0a0a0ecc;
   border: 1px solid #333;
   padding: 0.45rem;
+}
+
+.shop-col.is-empty {
+  display: none;
+}
+
+.shop-cols.cols-1 {
+  grid-template-columns: 1fr;
+}
+
+.shop-cols.cols-2 {
+  grid-template-columns: 1fr 1fr;
 }
 
 .shop-col h3 {
