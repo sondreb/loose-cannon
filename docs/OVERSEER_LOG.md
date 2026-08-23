@@ -29,7 +29,7 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
   - Per-shop catalogs + real shop titles; liquor sells drinks (beer / rotgut / whiskey / ice pack)
   - Bar/club **buy a round** combat juice; jack→Tony and crate→Pete loops; HUD 🛞 / 📦 / juice
   - Interior art: garage lift, freezer hooks, warehouse pallets, liquor bottles
-- Verify: build + smoke (in progress this cycle)
+- Verify: `npm run build` OK; `npm run smoke` → SMOKE_OK (bar drink, jack→Tony chop, Pete fence, pawn title, all instance jobs)
 - Next: Human playtest; no new Mode A milestone invented
 - Blocked: none
 
