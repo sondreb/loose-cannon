@@ -22,6 +22,7 @@ import {
   pickRivalTauntId,
   DEFAULT_REALM_ID,
   listMissionOffers,
+  contractTerms,
   layLowCost,
   MAX_ACTIVE_GOONS,
   MAX_CHAT_LEN,
@@ -87,6 +88,8 @@ import {
   type MemorialEntry,
   type MissionId,
   type MissionRuntime,
+  type MissionDebrief,
+  type ContractRank,
   type PartyInvitePublic,
   type PartyState,
   type PresenceEntry,
@@ -107,11 +110,15 @@ import type { ClientConn } from "./net.js";
 /** Server-only mission progress (mirrored into MissionRuntime for clients). */
 interface PosseMission {
   defId: MissionId;
+  startedTick: number;
+  startingCrewIds: string[];
+  cleanCrew: boolean;
+  replay: boolean;
   holdAccum: number;
   rewardGranted: boolean;
   /** For kill missions: unit id of the target boss when known */
   targetUnitId: string | null;
-  /** Private layer id (`mi_<posseId>`) when instanced */
+  /** Unique private layer id per run, shared by party participants */
   instanceLayerId: string | null;
   /** Building template used for interior geometry (e.g. warehouse) */
   templateBuildingId: string | null;
@@ -269,8 +276,10 @@ interface Posse {
   stashOpen: boolean;
   jobBoard: JobBoardState | null;
   mission: PosseMission | null;
-  /** Mission ids finished this session — dropped from Rita's board (Mode A memory) */
+  /** Finished this session: outdoor jobs retire; private raids reopen for cash-only reruns. */
   completedMissions: MissionId[];
+  bestMissionRanks?: Partial<Record<MissionId, ContractRank>>;
+  missionDebrief?: MissionDebrief;
   /** First-session tutorial; null when finished or skipped */
   tutorialStep: TutorialStepId | null;
   /** Fallen named goons */
@@ -1934,8 +1943,8 @@ export class GameWorld {
   /** Living commander for AI (boss, or first living goon if boss is down). */
   private aiCommander(posse: Posse): Unit | null {
     const lead = this.units.get(posse.leaderId);
-    if (lead?.alive) return lead;
-    return this.members(posse).find((u) => u.alive) ?? null;
+    if (lead?.alive && !lead.incapacitated) return lead;
+    return this.members(posse).find((u) => !u.incapacitated) ?? null;
   }
 
   /** Full posse goes hostile when shot at / engaged. */
@@ -2121,7 +2130,7 @@ export class GameWorld {
     let bestAnyD = Infinity;
     for (const id of candidateIds) {
       const m = this.units.get(id);
-      if (!m || !m.alive) continue;
+      if (!m || !m.alive || m.incapacitated) continue;
       const dd = dist(shooter.x, shooter.y, m.x, m.y);
       if (dd < bestAnyD) {
         bestAnyD = dd;
@@ -2144,8 +2153,9 @@ export class GameWorld {
 
   private resolveShot(shooter: Unit, target: Unit, session?: CharacterSession): void {
     if (shooter.fireCd > 0 || !shooter.alive || !target.alive) return;
-    // Downed boss cannot fight
-    if (shooter.incapacitated) return;
+    // Bodyguards protect a downed boss until the last one falls. The final death
+    // is handled by finishIncapacitatedBossIfAlone, never by a second bullet.
+    if (shooter.incapacitated || target.incapacitated) return;
     // No lethal combat in safe downtown
     if (this.unitInSafeZone(shooter) || this.unitInSafeZone(target)) return;
 
@@ -2368,6 +2378,7 @@ export class GameWorld {
     target.health = Math.max(1, Math.round(target.stats.maxHealth * 0.08));
     target.alive = true;
     target.incapacitated = true;
+    this.breakCleanContract(target);
     target.moveMode = "idle";
     target.dirX = 0;
     target.dirY = 0;
@@ -2410,6 +2421,7 @@ export class GameWorld {
   }
 
   private killUnit(target: Unit, killerPosseId: string | null, session?: CharacterSession): void {
+    this.breakCleanContract(target);
     target.health = 0;
     target.alive = false;
     target.incapacitated = false;
@@ -2440,7 +2452,13 @@ export class GameWorld {
   private updateAttackOrders(): void {
     for (const posse of this.posses.values()) {
       if (!posse.attackTargetId) continue;
-      const target = this.units.get(posse.attackTargetId);
+      let target = this.units.get(posse.attackTargetId);
+      if (target?.incapacitated) {
+        const shooter = this.members(posse).find((u) => !u.incapacitated);
+        const enemy = this.posses.get(target.posseId);
+        target = shooter && enemy ? this.pickBestFireTarget(shooter, enemy.memberIds) ?? undefined : undefined;
+        posse.attackTargetId = target?.id ?? null;
+      }
       if (!target || !target.alive) {
         posse.attackTargetId = null;
         // Reform protective circle on boss
@@ -3036,6 +3054,8 @@ export class GameWorld {
       }
       return best;
     };
+    const npcPick = pickNpcInRange();
+    const explicitNpc = !!targetUnitId && npcPick?.unit.id === targetUnitId;
 
     // 1) Mission instance exit / seal (private warehouse etc.)
     if (posse.mission?.instanceLayerId && posse.insideBuildingId === posse.mission.instanceLayerId) {
@@ -3083,11 +3103,13 @@ export class GameWorld {
       return;
     }
 
-    // 2b) Leave building FIRST when near exit (before stash / NPCs).
-    // Click-to-exit walk-then-E used to open Crash Pad stash when still ~2 tiles from the door.
+    // 2b) E chooses the closer door or NPC; clicking an NPC always addresses them.
+    // Explicit exit clicks use intent.exit, so a nearby shopkeeper cannot steal that click.
     if (posse.insideBuildingId) {
       const bLeave = this.resolveBuildingDef(posse.insideBuildingId);
-      if (bLeave && exitDist(bLeave.exitX, bLeave.exitY) <= EXIT_USE_RANGE) {
+      const doorDistance = bLeave ? exitDist(bLeave.exitX, bLeave.exitY) : Infinity;
+      const preferNpc = npcPick && (explicitNpc || npcPick.d < doorDistance);
+      if (bLeave && doorDistance <= EXIT_USE_RANGE && !preferNpc) {
         this.enterBuilding(posse, null);
         this.log(session, `Left ${bLeave.name}.`);
         return;
@@ -3113,15 +3135,20 @@ export class GameWorld {
       }
     }
 
-    // 3) NPCs — skip when on exit mat without a click-target (leave already handled)
-    const onExitMat =
-      !!posse.insideBuildingId &&
-      (() => {
-        const b = this.resolveBuildingDef(posse.insideBuildingId);
-        return !!b && exitDist(b.exitX, b.exitY) <= EXIT_USE_RANGE;
-      })();
-    const npcPick = pickNpcInRange();
-    if (npcPick && !(onExitMat && !targetUnitId)) {
+    const nearestProp = !posse.insideBuildingId
+      ? this.map.props
+          .map((prop) => ({ prop, distance: dist(leader.x, leader.y, prop.x, prop.y) }))
+          .filter((candidate) => candidate.distance <= INTERACT_RANGE + 0.3)
+          .sort((a, b) => a.distance - b.distance)[0]
+      : undefined;
+
+    // 3) NPCs (closer exits were already handled).
+    // E means the nearest street interaction. An explicit NPC click still wins.
+    if (nearestProp && !explicitNpc && (!npcPick || nearestProp.distance < npcPick.d)) {
+      this.interactProp(session, posse, nearestProp.prop.id);
+      return;
+    }
+    if (npcPick) {
       const u = npcPick.unit;
       const spawn = this.map.npcSpawns.find((n) => n.id === u.id);
       if (spawn?.role === "dealer") {
@@ -3197,13 +3224,9 @@ export class GameWorld {
     }
 
     // 5) Outdoor props / street hustles
-    if (!posse.insideBuildingId) {
-      for (const p of this.map.props) {
-        if (dist(leader.x, leader.y, p.x, p.y) <= INTERACT_RANGE + 0.3) {
-          this.interactProp(session, posse, p.id);
-          return;
-        }
-      }
+    if (nearestProp) {
+      this.interactProp(session, posse, nearestProp.prop.id);
+      return;
     }
 
     this.log(
@@ -3593,7 +3616,8 @@ export class GameWorld {
       // Still give a small flavor payout so the smash feels real
       const cash = 15 + Math.floor(Math.random() * 25);
       posse.cash += cash;
-      this.log(session, `Loose cash in the crate: $${cash}.`);
+      if (prop.kind === "crate") posse.crateMarks += 1;
+      this.log(session, `Loose cash in the crate: $${cash}. Pallet Pete fences the paperwork. (${posse.crateMarks} marks)`);
       this.setPropCooldown(propId, prop.kind);
       return;
     }
@@ -4836,7 +4860,7 @@ export class GameWorld {
         npcId: d.npcId,
         npcName: d.npcName,
         title: "Rita's Job Book",
-        offers: listMissionOffers({ completedIds: posse.completedMissions }),
+        offers: listMissionOffers({ completedIds: posse.completedMissions, bestRanks: posse.bestMissionRanks }),
       };
       session.conn?.send({ type: "voice.play", lineId: "rita_job_open" });
       this.log(session, `${d.npcName} flips open a greasy notepad of contracts.`);
@@ -4945,6 +4969,10 @@ export class GameWorld {
   ): void {
     posse.mission = {
       defId: def.id,
+      startedTick: this.tick,
+      startingCrewIds: this.members(posse).map((u) => u.id),
+      cleanCrew: this.members(posse).every((u) => !u.incapacitated),
+      replay: posse.completedMissions.includes(def.id),
       holdAccum: 0,
       rewardGranted: false,
       targetUnitId: opts.targetUnitId,
@@ -4957,14 +4985,16 @@ export class GameWorld {
   }
 
   private notifyMissionStart(session: CharacterSession, def: (typeof MISSIONS)[MissionId], coOpNote?: string): void {
-    const body = coOpNote ? `${def.blurb} ${coOpNote}` : def.blurb;
+    const posse = this.posses.get(session.posseId)!;
+    const terms = contractTerms(def, posse.mission?.replay);
+    const body = `${def.blurb}${coOpNote ? ` ${coOpNote}` : ""} Optional: finish under ${terms.parSeconds}s (+$${terms.bonusCash}); no crew killed or downed (+$${terms.bonusCash}).${posse.mission?.replay ? " Repeat contract: cash only, no extra rep." : ""}`;
     session.conn?.send({
       type: "notify",
       kind: "mission",
       title: def.title,
       body,
-      cash: def.rewardCash,
-      rep: def.rewardRep,
+      cash: terms.rewardCash,
+      rep: terms.rewardRep,
     });
   }
 
@@ -4977,25 +5007,27 @@ export class GameWorld {
       this.log(session, "Already on a job. Finish or abandon first.");
       return;
     }
-    const def = MISSIONS[missionId as MissionId];
+    const def = Object.hasOwn(MISSIONS, missionId) ? MISSIONS[missionId as MissionId] : undefined;
     if (!def) {
       this.log(session, "That contract fell off the book. Pick another.");
       return;
     }
-    if (posse.completedMissions.includes(def.id)) {
+    if (posse.completedMissions.includes(def.id) && !def.instance) {
       this.log(session, "You already pulled that job. Rita scratched it off the pad.");
       return;
     }
 
     const targetUnitId = this.resolveKillTargetUnitId(def);
+    const pay = contractTerms(def, posse.completedMissions.includes(def.id));
 
     posse.jobBoard = null;
     posse.dialogue = null;
     posse.shop = null;
 
-    const mates = this.freePartyMates(posse);
+    const mates = this.freePartyMates(posse).filter((p) => !!def.instance || !p.completedMissions.includes(def.id));
     const partyKey = posse.partyId ?? posse.id;
-    const layerId = def.instance ? `mi_${partyKey}` : null;
+    // A partner may still be extracting from the previous run when the host rebooks.
+    const layerId = def.instance ? `mi_${partyKey}_${this.nextId("run")}` : null;
     const templateId = def.instance?.templateBuildingId ?? null;
 
     this.assignMissionToPosse(posse, def, {
@@ -5027,8 +5059,8 @@ export class GameWorld {
       this.log(
         session,
         coOp
-          ? `JOB ACCEPTED: ${def.title} (PARTY INSTANCE). Crew pulled in. Clear hostiles, then extract. Pay $${def.rewardCash} + ${def.rewardRep} rep.`
-          : `JOB ACCEPTED: ${def.title} (INSTANCE). Clear hostiles, then extract. Pay $${def.rewardCash} + ${def.rewardRep} rep.`,
+          ? `JOB ACCEPTED: ${def.title} (PARTY INSTANCE). Crew pulled in. Clear hostiles, then extract. Base $${pay.rewardCash} + ${pay.rewardRep} rep.`
+          : `JOB ACCEPTED: ${def.title} (INSTANCE). Clear hostiles, then extract. Base $${pay.rewardCash} + ${pay.rewardRep} rep.`,
       );
       this.notifyMissionStart(
         session,
@@ -5055,9 +5087,10 @@ export class GameWorld {
         mate.dialogue = null;
         mate.shop = null;
         if (mateSess) {
+          const matePay = contractTerms(def, mate.mission!.replay);
           this.log(
             mateSess,
-            `PARTY JOB: ${def.title} (INSTANCE) — ${session.name} pulled you in. Clear & extract. Pay $${def.rewardCash} + ${def.rewardRep} rep.`,
+            `PARTY JOB: ${def.title} (INSTANCE) — ${session.name} pulled you in. Clear & extract. Base $${matePay.rewardCash} + ${matePay.rewardRep} rep.`,
           );
           this.notifyMissionStart(mateSess, def, `Co-op with ${session.name}.`);
         }
@@ -5374,6 +5407,13 @@ export class GameWorld {
   private cmdMissionExtract(session: CharacterSession, posse: Posse): void {
     const m = posse.mission;
     if (!m) return;
+    const leader = this.leader(posse);
+    const template = m.instanceLayerId ? this.resolveBuildingDef(m.instanceLayerId) : null;
+    if (!leader?.alive || !template || posse.insideBuildingId !== m.instanceLayerId) return;
+    if (dist(leader.x, leader.y, template.exitX + 0.5, template.exitY + 0.5) > 2.6) {
+      this.log(session, "Get your boss to the EXIT door before collecting the payday.");
+      return;
+    }
     // If hostiles are gone, allow extract even if phase lagged a tick
     if (m.phase !== "extract") {
       if (m.phase === "active" && this.hostilesCleared(m)) {
@@ -5398,6 +5438,27 @@ export class GameWorld {
     const ep = this.posses.get(m.enemyPosseId);
     if (!ep) return true;
     return ep.memberIds.every((id) => !this.units.get(id)?.alive);
+  }
+
+  /** Latch the loss before healing, extraction, or corpse cleanup can hide it. */
+  private breakCleanContract(unit: Unit): void {
+    const m = this.posses.get(unit.posseId)?.mission;
+    if (m) m.cleanCrew = false;
+  }
+
+  private contractBonuses(posse: Posse): MissionRuntime["bonuses"] {
+    const m = posse.mission!;
+    const terms = contractTerms(MISSIONS[m.defId], m.replay);
+    const elapsedSeconds = (this.tick - m.startedTick) / TICK_HZ;
+    // Dismissing a starting goon cannot rescue the no-casualty challenge.
+    if (m.startingCrewIds.some((id) => {
+      const u = this.units.get(id);
+      return !u || !u.alive || u.incapacitated || u.posseId !== posse.id;
+    })) m.cleanCrew = false;
+    return [
+      { id: "quick", label: "Fast money", cash: terms.bonusCash, eligible: elapsedSeconds <= terms.parSeconds, timeLeft: Math.max(0, Math.ceil(terms.parSeconds - elapsedSeconds)) },
+      { id: "clean", label: "Everyone walks out", cash: terms.bonusCash, eligible: m.cleanCrew },
+    ];
   }
 
   private missionRuntime(posse: Posse): MissionRuntime | null {
@@ -5497,8 +5558,11 @@ export class GameWorld {
       timeLeft,
       holdersOnPoint,
       holdersTotal,
-      rewardCash: def.rewardCash,
-      rewardRep: def.rewardRep,
+      rewardCash: contractTerms(def, m.replay).rewardCash,
+      rewardRep: contractTerms(def, m.replay).rewardRep,
+      bonuses: this.contractBonuses(posse),
+      elapsedSeconds: Math.floor((this.tick - m.startedTick) / TICK_HZ),
+      replay: m.replay,
       hintX: def.hintX ?? (tmpl ? tmpl.exitX : undefined),
       hintY: def.hintY ?? (tmpl ? tmpl.exitY : undefined),
       instanced: !!m.instanceLayerId,
@@ -5519,8 +5583,30 @@ export class GameWorld {
     }
 
     m.rewardGranted = true;
-    posse.cash += def.rewardCash;
-    posse.rep += def.rewardRep;
+    const terms = contractTerms(def, m.replay);
+    const bonuses = this.contractBonuses(posse);
+    const bonusCash = bonuses.reduce((cash, b) => cash + (b.eligible ? b.cash : 0), 0);
+    const totalCash = terms.rewardCash + bonusCash;
+    const count = bonuses.filter((b) => b.eligible).length;
+    const rank: ContractRank = count === 2 ? "S" : count === 1 ? "A" : "B";
+    posse.missionDebrief = {
+      id: `${posse.id}:${def.id}:${m.startedTick}:${this.tick}`,
+      missionId: def.id,
+      title: def.title,
+      rank,
+      elapsedSeconds: Math.floor((this.tick - m.startedTick) / TICK_HZ),
+      baseCash: terms.rewardCash,
+      bonusCash,
+      totalCash,
+      rewardRep: terms.rewardRep,
+      replay: m.replay,
+      bonuses,
+    };
+    const best = posse.bestMissionRanks ??= {};
+    const ranks: ContractRank[] = ["S", "A", "B"];
+    if (!best[def.id] || ranks.indexOf(rank) < ranks.indexOf(best[def.id]!)) best[def.id] = rank;
+    posse.cash += totalCash;
+    posse.rep += terms.rewardRep;
     if (!posse.completedMissions.includes(def.id)) {
       posse.completedMissions.push(def.id);
     }
@@ -5531,15 +5617,15 @@ export class GameWorld {
     this.cleanupMissionInstance(posse);
     posse.mission = null;
 
-    const line = `JOB COMPLETE: ${def.title}. +$${def.rewardCash}, +${def.rewardRep} rep. "Lovely work. Almost nobody died permanently."`;
+    const line = `JOB COMPLETE: ${def.title}. RANK ${rank} · ${posse.missionDebrief.elapsedSeconds}s · +$${totalCash} ($${bonusCash} bonus), +${terms.rewardRep} rep. "Lovely work. Almost nobody died permanently."`;
     this.log(session, line);
     session.conn?.send({
       type: "notify",
       kind: "mission",
       title: `Complete: ${def.title}`,
-      body: `Paid $${def.rewardCash} and +${def.rewardRep} street rep. Rita nods once — high praise.`,
-      cash: def.rewardCash,
-      rep: def.rewardRep,
+      body: `RANK ${rank} · ${posse.missionDebrief.elapsedSeconds}s. Base $${terms.rewardCash} + bonus $${bonusCash}. ${bonuses.map((b) => `${b.label}: ${b.eligible ? "earned" : "missed"}`).join(". ")}. ${def.instance ? "This raid is back on Rita's board for a cash-only rerun." : "Rita nods once — high praise."}`,
+      cash: totalCash,
+      rep: terms.rewardRep,
       outcome: "complete",
     });
     this.advanceTutorial(session, posse, "finish_job");
@@ -5690,9 +5776,9 @@ export class GameWorld {
         if (def) {
           const killObj = def.objectives.find((o) => o.kind === "kill_unit");
           if (killObj) {
-            const isTarget =
-              (m.targetUnitId && dead.id === m.targetUnitId) ||
-              (killObj.targetPosseId && dead.posseId === killObj.targetPosseId);
+            const isTarget = m.targetUnitId
+              ? dead.id === m.targetUnitId
+              : killObj.targetPosseId && dead.posseId === killObj.targetPosseId && dead.kind === "ai_boss";
             if (isTarget) {
               m.targetUnitId = dead.id;
               const session = [...this.sessions.values()].find((s) => s.posseId === posse.id);
@@ -6711,7 +6797,7 @@ export class GameWorld {
         if (p.insideBuildingId && !p.insideBuildingId.startsWith("mi_")) continue;
         for (const mid of p.memberIds) {
           const mu = this.units.get(mid);
-          if (!mu?.alive) continue;
+          if (!mu?.alive || mu.incapacitated) continue;
           if (this.unitInSafeZone(mu)) continue;
           // Distance to nearest AI member of this posse
           for (const au of this.members(posse)) {
@@ -7076,6 +7162,7 @@ export class GameWorld {
       stash: posse.stashOpen ? this.buildStashState(posse) : null,
       jobBoard: posse.jobBoard,
       mission: this.missionRuntime(posse),
+      missionDebrief: posse.missionDebrief ?? null,
       tutorial: this.tutorialPublic(posse),
       memorials: posse.memorials.slice(0, MAX_MEMORIALS),
       memorialOpen: posse.memorialOpen,

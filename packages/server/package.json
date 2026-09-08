@@ -6,7 +6,9 @@
     "start": "tsx src/index.ts",
     "start:prod": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json",
+    "test:contracts": "tsx --test scripts/contracts.test.mjs",
+    "test:scheduler": "tsx --test scripts/scheduler.test.mjs"
   },
   "dependencies": {
     "@loose-cannon/shared": "*",

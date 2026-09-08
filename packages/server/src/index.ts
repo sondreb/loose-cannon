@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { performance } from "node:perf_hooks";
 import {
   DEFAULT_REALM_ID,
   normalizeRealmId,
@@ -9,13 +10,12 @@ import {
 import { WebSocketServer } from "ws";
 import { GameWorld } from "./game.js";
 import { createConn } from "./net.js";
+import { FixedStepClock } from "./fixedStepClock.js";
 
 const PORT = Number(process.env.PORT ?? 3001);
 
 /** One GameWorld per realm id (docs/realms.md). */
 const realms = new Map<string, GameWorld>();
-/** characterId → realmId for routing after auth */
-const charRealm = new Map<string, string>();
 
 function getOrCreateRealm(realmId: string): GameWorld {
   let world = realms.get(realmId);
@@ -25,11 +25,6 @@ function getOrCreateRealm(realmId: string): GameWorld {
     console.log(`[realm] created "${realmId}"`);
   }
   return world;
-}
-
-function worldForChar(characterId: string): GameWorld | undefined {
-  const rid = charRealm.get(characterId);
-  return rid ? realms.get(rid) : undefined;
 }
 
 /** Drop empty named realms to free memory; always keep `public` seeded. */
@@ -80,6 +75,9 @@ const wss = new WebSocketServer({ server: httpServer });
 
 wss.on("connection", (ws) => {
   const conn = createConn(ws);
+  // Character IDs are only unique within one GameWorld. Bind the authenticated
+  // world to this socket rather than indexing a global map by character ID.
+  let sessionWorld: GameWorld | undefined;
   console.log("[ws] connection open");
 
   ws.on("message", (raw) => {
@@ -92,6 +90,10 @@ wss.on("connection", (ws) => {
     }
 
     if (msg.type === "auth") {
+      if (sessionWorld || conn.characterId) {
+        conn.send({ type: "auth.fail", reason: "Already authenticated" });
+        return;
+      }
       if (msg.protocolVersion !== PROTOCOL_VERSION) {
         conn.send({
           type: "auth.fail",
@@ -110,7 +112,7 @@ wss.on("connection", (ws) => {
         conn.send({ type: "auth.fail", reason: result.reason });
         return;
       }
-      charRealm.set(result.characterId, result.realmId);
+      sessionWorld = world;
       conn.send({
         type: "auth.ok",
         characterId: result.characterId,
@@ -134,38 +136,37 @@ wss.on("connection", (ws) => {
       return;
     }
 
-    const world = worldForChar(conn.characterId);
-    if (!world) {
+    if (!sessionWorld || sessionWorld.sessions.get(conn.characterId)?.conn !== conn) {
       conn.send({ type: "reject", reason: "Unknown session realm" });
       return;
     }
-    world.handle(conn.characterId, msg);
+    sessionWorld.handle(conn.characterId, msg);
   });
 
   ws.on("close", () => {
     if (conn.characterId) {
       console.log(`[ws] ${conn.characterId} disconnected`);
-      const rid = charRealm.get(conn.characterId);
-      const world = worldForChar(conn.characterId);
-      if (world) world.leave(conn.characterId);
-      charRealm.delete(conn.characterId);
-      if (rid) pruneRealmIfEmpty(rid);
+      const world = sessionWorld;
+      if (world?.sessions.get(conn.characterId)?.conn === conn) {
+        world.leave(conn.characterId);
+        pruneRealmIfEmpty(world.realmId);
+      }
+      sessionWorld = undefined;
     }
   });
 });
 
+const simulationClock = new FixedStepClock(TICK_MS, performance.now());
 setInterval(() => {
-  for (const world of realms.values()) {
-    if (world.sessions.size === 0 && world.realmId !== DEFAULT_REALM_ID) {
-      // Named empty realms are pruned on leave; skip tick if somehow empty
-      continue;
+  simulationClock.advance(performance.now(), (dt) => {
+    for (const world of realms.values()) {
+      // Empty worlds remain paused; each populated realm advances the same fixed dt.
+      if (world.sessions.size > 0) world.step(dt);
     }
-    // Always tick if anyone is connected; also tick public when present
-    if (world.sessions.size > 0) {
-      world.step(TICK_MS / 1000);
-    }
-  }
-}, TICK_MS);
+  });
+  // Timers can round up on Windows. Polling more often reduces input latency;
+  // the accumulator alone decides when a 1/30s simulation step is due.
+}, TICK_MS / 2);
 
 httpServer.listen(PORT, "0.0.0.0", () => {
   console.log(`Loose Cannon server on http://0.0.0.0:${PORT} (ws://localhost:${PORT})`);

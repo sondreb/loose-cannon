@@ -67,17 +67,18 @@ async function main() {
         : undefined,
     });
     const page = await context.newPage();
+    await page.addInitScript(() => localStorage.setItem("lc_onboard_v1", "1"));
     await page.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
     // Login if form present
-    const nameInput = page.locator("#playerName, input[name='name'], #name");
+    const nameInput = page.locator("#nameInput, #playerName, input[name='name'], #name");
     if (await nameInput.count()) {
       await nameInput.first().fill("ShotBot" + Math.floor(Math.random() * 99));
       const realm = page.locator("#realmInput, input[name='realm']");
       if (await realm.count()) await realm.first().fill("public");
-      const btn = page.locator("#loginBtn, button:has-text('Hit the streets'), button:has-text('Play')");
+      const btn = page.locator("#joinBtn, #loginBtn, button:has-text('Hit the streets'), button:has-text('Play')");
       if (await btn.count()) await btn.first().click();
     }
-    // Wait for canvas / game
+    await page.locator("#game:not(.hidden)").waitFor({ timeout: 15000 });
     await page.waitForTimeout(2500);
     const file = path.join(outDir, s.name);
     await page.screenshot({ path: file, fullPage: false });

@@ -47,6 +47,21 @@ npm run dev
 - Client: http://localhost:5173  
 - Server: ws://localhost:3001 (in-memory, reset on restart)
 
+### Art and validation
+
+```bash
+npm run build
+npm run smoke        # requires the local server
+npm run test:presentation  # requires server + Vite; desktop/mobile screenshots
+npm run test:contracts
+npm run test:scheduler -w @loose-cannon/server
+npm run test:audio
+node scripts/realm-routing.test.mjs  # starts its own isolated server
+npm run art:check
+```
+
+The full crew editor's **Crew inspection** panel shows the actual animated GLB: drag to rotate, choose Idle/Walk, or zoom. The world uses prerendered directional atlases to keep the isometric client lightweight. To edit/regenerate models, see [the local model studio](scripts/art/README.md). Generated facade image prompts and source reference are recorded in [provenance.json](packages/client/public/art/facades/provenance.json).
+
 ### Controls
 
 | Input | Action |
@@ -57,7 +72,7 @@ npm run dev
 | E | Interact (doors, NPCs, shop counter) |
 | 1–4 | Select posse member |
 | 5–0 / - | Quick-equip weapons (Syndicate-style slots) |
-| FULL (panel) | Open full crew loadout editor |
+| EDIT CREW (panel) | Open full crew loadout editor and 3D inspection |
 | M | City district map |
 | Enter | Focus proximity chat |
 | Esc | Close dialogue / shop / editor |
@@ -74,7 +89,9 @@ Death: **3 second** respawn delay, then a random outdoor spot with few other pla
 - Hire / recruit, shop with icons, crew loadout editor
 - Combat scales with Aim / Muscle / weapons; wipe loot
 - Job board / missions, heat meter, tutorial coach
-- Basic Web Audio SFX + offline NPC voice lines
+- Spatial weapon SFX, movement footsteps, street/weather/interior ambience + offline NPC voice lines
+- Original animated 3D crew and street models, 8-direction world sprites, rotatable crew inspection
+- Fast/clean contract bonuses, S/A/B payday grades, and cash-only repeat raids
 - Proximity chat
 
 ## Beta (Azure)

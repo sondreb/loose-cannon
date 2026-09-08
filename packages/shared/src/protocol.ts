@@ -1,4 +1,5 @@
 import type { DayPhase, WeatherKind } from "./lighting.js";
+import type { ContractRank } from "./missions.js";
 import type { ArmorId, UpgradeId, WeaponId } from "./weapons.js";
 
 export type TileType =
@@ -207,6 +208,33 @@ export interface MissionOffer {
   difficulty: 1 | 2 | 3;
   rewardCash: number;
   rewardRep: number;
+  bonusCash: number;
+  parSeconds: number;
+  replay: boolean;
+  bestRank?: ContractRank;
+}
+
+export interface ContractBonusPublic {
+  id: "quick" | "clean";
+  label: string;
+  cash: number;
+  eligible: boolean;
+  timeLeft?: number;
+}
+
+/** Last payday stays readable in the current session after its toast ends. */
+export interface MissionDebrief {
+  id: string;
+  missionId: string;
+  title: string;
+  rank: ContractRank;
+  elapsedSeconds: number;
+  baseCash: number;
+  bonusCash: number;
+  totalCash: number;
+  rewardRep: number;
+  replay: boolean;
+  bonuses: ContractBonusPublic[];
 }
 
 /** Open job board UI (snapshot-driven, like shop) */
@@ -290,6 +318,9 @@ export interface MissionRuntime {
   hintY?: number;
   /** True when running inside a private mission layer (warehouse etc.) */
   instanced?: boolean;
+  bonuses: ContractBonusPublic[];
+  elapsedSeconds: number;
+  replay: boolean;
 }
 
 /** Visual combat event for one tick (muzzle, tracer, hit, etc.) */
@@ -377,6 +408,7 @@ export interface WorldSnapshot {
   jobBoard: JobBoardState | null;
   /** Active mission, if any */
   mission: MissionRuntime | null;
+  missionDebrief: MissionDebrief | null;
   /** First-session tutorial coach (null if done/skipped) */
   tutorial: TutorialState | null;
   /** Fallen named goons (your posse only) */

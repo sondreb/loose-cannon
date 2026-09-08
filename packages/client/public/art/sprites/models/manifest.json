@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "directions": 8,
+  "idleFrames": 4,
+  "walkFrames": 8,
+  "specs": {
+    "leather": {
+      "w": 96,
+      "h": 128,
+      "view": 2.7,
+      "anchor": 0.86,
+      "display": 68,
+      "frames": 12
+    },
+    "bruiser": {
+      "w": 96,
+      "h": 128,
+      "view": 2.7,
+      "anchor": 0.86,
+      "display": 68,
+      "frames": 12
+    },
+    "enforcer": {
+      "w": 96,
+      "h": 128,
+      "view": 2.7,
+      "anchor": 0.86,
+      "display": 68,
+      "frames": 12
+    },
+    "runner": {
+      "w": 96,
+      "h": 128,
+      "view": 2.7,
+      "anchor": 0.86,
+      "display": 68,
+      "frames": 12
+    },
+    "taxi": {
+      "w": 256,
+      "h": 192,
+      "view": 4.8,
+      "anchor": 0.75,
+      "display": 110,
+      "frames": 1
+    },
+    "sedan": {
+      "w": 256,
+      "h": 192,
+      "view": 4.8,
+      "anchor": 0.75,
+      "display": 110,
+      "frames": 1
+    },
+    "dumpster": {
+      "w": 160,
+      "h": 160,
+      "view": 2.7,
+      "anchor": 0.79,
+      "display": 77,
+      "frames": 1
+    },
+    "motorcycle": {
+      "w": 160,
+      "h": 160,
+      "view": 2.8,
+      "anchor": 0.78,
+      "display": 82,
+      "frames": 1
+    },
+    "phonebooth": {
+      "w": 128,
+      "h": 192,
+      "view": 3.35,
+      "anchor": 0.86,
+      "display": 110,
+      "frames": 1
+    },
+    "mailbox": {
+      "w": 96,
+      "h": 128,
+      "view": 2.1,
+      "anchor": 0.84,
+      "display": 66,
+      "frames": 1
+    },
+    "hydrant": {
+      "w": 96,
+      "h": 128,
+      "view": 1.6,
+      "anchor": 0.82,
+      "display": 52,
+      "frames": 1
+    },
+    "cone": {
+      "w": 96,
+      "h": 96,
+      "view": 1.25,
+      "anchor": 0.81,
+      "display": 36,
+      "frames": 1
+    }
+  }
+}

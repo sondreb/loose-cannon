@@ -1,0 +1,48 @@
+/** Live editor integration QA. Requires the local Mode A server + Vite client. */
+import assert from 'node:assert/strict';
+import { chromium } from 'playwright';
+import { mkdir, access } from 'node:fs/promises';
+const edge='C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
+const hasEdge=await access(edge).then(()=>true,()=>false);
+const browser=await chromium.launch({headless:true,...(hasEdge?{executablePath:edge}:{}),args:['--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+try {
+  const page=await browser.newPage({viewport:{width:1440,height:1000}});
+  const errors=[];page.on('pageerror',error=>errors.push(String(error)));
+  await page.goto(process.env.PLAYTEST_URL||'http://127.0.0.1:5173');
+  await page.locator('#nameInput').fill('Model QA');
+  await page.locator('#realmInput').fill('model-preview-qa');
+  await page.locator('#joinBtn').click();
+  if(await page.locator('#onboardSkip').isVisible())await page.locator('#onboardSkip').click();
+  await page.locator('#posseList .posse-card .name').first().click();
+  await page.locator('#openFullEditor').click();
+  const walking=page.getByRole('button',{name:'Play walking animation'});
+  await walking.waitFor();
+  await page.waitForFunction(()=>!document.querySelector('[aria-label="Play walking animation"]').disabled);
+  const canvas=page.locator('.crew-model-preview canvas');
+  await page.evaluate(()=>{window.previewCanvas=document.querySelector('.crew-model-preview canvas');window.previewCanvasId=window.previewCanvas;});
+  await walking.click();
+  const original=await canvas.screenshot();
+  await page.waitForTimeout(170);
+  assert.ok(!original.equals(await canvas.screenshot()),'Model animates inside the live editor');
+  const bounds=await page.locator('.crew-model-preview__viewport').boundingBox();
+  await page.mouse.move(bounds.x+bounds.width*.5,bounds.y+80);
+  await page.mouse.down();await page.mouse.move(bounds.x+bounds.width*.5+75,bounds.y+100,{steps:8});await page.mouse.up();
+  await page.waitForTimeout(1200);
+  assert.ok(await page.evaluate(()=>window.previewCanvasId===document.querySelector('.crew-model-preview canvas')),'Snapshot updates preserve the same preview renderer');
+  assert.equal(await walking.getAttribute('aria-pressed'),'true','Snapshot updates preserve selected animation');
+  await mkdir('playtest-out',{recursive:true});
+  await page.screenshot({path:'playtest-out/crew-editor-3d-desktop.png'});
+  await page.locator('#crewEditorClose').click();
+  assert.equal(await canvas.count(),0,'Editor close releases its canvas');
+  await page.locator('#openFullEditor').click();
+  await page.waitForFunction(()=>!document.querySelector('[aria-label="Play walking animation"]').disabled);
+  assert.ok(await page.evaluate(()=>window.previewCanvasId!==document.querySelector('.crew-model-preview canvas')),'Reopening builds a fresh renderer');
+  await page.setViewportSize({width:390,height:844});
+  await page.waitForTimeout(200);
+  await page.screenshot({path:'playtest-out/crew-editor-3d-mobile.png'});
+  const mobileBounds=await page.locator('.crew-model-preview').boundingBox();
+  assert.ok(mobileBounds.x>=0&&mobileBounds.x+mobileBounds.width<=390,'Preview fits mobile viewport');
+  await page.locator('#crewEditorClose').click();
+  assert.deepEqual(errors,[]);
+  console.log('CREW_PREVIEW_GAME_OK: editor load, animation, orbit, snapshot continuity, close/reopen, mobile fit');
+} finally {await browser.close();}

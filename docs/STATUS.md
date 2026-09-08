@@ -1,7 +1,20 @@
 # Implementation Status
 
-Last updated: 2026-08-23 (hub buildings: garage / warehouse / coldstore / shops / drinks)  
+Last updated: 2026-09-08 (concept-art presentation, 3D assets, audio and contract mastery)
 Roadmap: [MASTER_PLAN.md](./MASTER_PLAN.md) · Realms: [realms.md](./realms.md) · Overseer: [OVERSEER.md](./OVERSEER.md) · Log: [OVERSEER_LOG.md](./OVERSEER_LOG.md)
+
+## Current presentation and contract pass (2026-09-08)
+
+Human request re-opened M6/M7 for graphics, proper 3D assets, sound and a more complete play loop.
+
+- **3D asset studio:** 12 original GLBs (four articulated animated crew looks, taxi, sedan, motorcycle, dumpster, phone booth, mailbox, hydrant, cone). Eight-direction transparent atlases drive the Pixi world; full crew editor also offers a real-time rotatable GLB view. These are original stylized models, not cinematic scanned assets. Local sources/regeneration: [model studio](../scripts/art/README.md).
+- **Environment:** two new image_gen facade elevations derived from `combat-scene.jpg`; correctly projected facade textures, masonry bands, fire escapes, rooftop solids, entrance signage, continuous world-space ground textures. Sparse warm streetlights, neon spill/reflections, rooftop steam, nearby obstructing facade fade. Interiors have projected walls, counters, floor textures and viewport-aware framing. Actual clear/rain/storm and day/night timing retained.
+- **HUD:** compact desktop crew dossier, clearer loadout, splash artwork-led login. Dedicated notification space clears objectives, mission bonuses and tutorial panels on desktop/mobile. Mobile floating crew/map controls and full-screen dialogue preserved.
+- **Sound:** layered weapon reports with stereo/distance filtering; footsteps follow real movement; weather, traffic and interior ambience. Cached noise, shared limiter, bounded voices, gesture unlock and background/mute lifecycle.
+- **Pacing:** monotonic elapsed-time accumulation preserves 30 fixed simulation steps per second despite Windows timer rounding; bounded catch-up avoids huge bursts after sleep/debugger pauses. This corrects slow movement/countdowns and prediction drift from counting timer callbacks.
+- **Contract mastery:** optional quick/clean bonuses each pay 20% of the offered base; S/A/B grade and payday receipt. Private raids can be repeated for 60% base cash and no repeat reputation; outdoor completions remain one-time. Best grades are session records in Mode A, not durable accounts. Per-player co-op eligibility and unique raid layers prevent overlapping run cleanup.
+- **Correctness:** mission crates feed Pallet Pete's fence loop; nearby props/NPCs/doors resolve by intent and distance, including taxi jacking and Tony's overlapping exit radius. Mission extraction requires the extraction door. Downed bosses are protected until their standing crew falls; boss jobs require the marked boss. Each WebSocket binds its own realm, fixing colliding character IDs across worlds. Mobile door taps win over crew hitboxes; automatic interaction waits for the authoritative position and an EXIT click sends an explicit exit intent. Client requests remain intents; server controls rewards/deadlines/casualties.
+- **Validation:** full build, all 19 contract/combat/interaction and 4 scheduler regressions, model validation (12 GLBs / 448 atlas frames), audio lifecycle checks and isolated real-WebSocket realm routing passed. Final progression smoke7 passed on the corrected clock (`SMOKE_OK`, all five raids, crate/hub loops, Tony/Pete, reconnect, realms, parties). Desktop/mobile live movement, entrance, EXIT click and far-door automatic entry passed without browser/network errors; day/night lighting reviewed with separate renderer fixtures. Actual 3D editor, contract acceptance/payday receipt and club dialogue/tip-stage art were checked on desktop/mobile. Final mobile capture confirms notifications clear the status ribbons. Evidence is in gitignored `playtest-out/`: `presentation-report.json`, `club-qa-report.json`, `contracts-smoke-7.log` and screenshots.
 
 ## What’s live (Mode A — local Node + in-memory)
 
@@ -297,12 +310,11 @@ Server-authoritative; AI ignores ammo (always free fire). Players:
 
 ### Directional goons / walk bob (live)
 
-- Client `unitAnim.ts`: octant facing helpers matching server; **iso screen flip** (PNG faces right → mirror when aiming left of screen)  
-- Two-beat walk: bob, sway, rock lean, squash/stretch, shadow plant; cadence scales with Speed  
-- Idle: soft breath + **server facing** (combat aim holds when stopped)  
-- Painted sprites: flip + rotation lean + mild bob (feet stay planted); dancers keep hip sway only  
-- Procedural fallback: leg stride, body/head lean, weapons aim along iso facing vector  
-- Still one art sheet per goon (no full 8-dir PNGs) — readable street motion without new assets  
+- `modelSprites.ts`: eight real rendered facings matching server octants, with four idle frames and eight walking frames per crew look.
+- Animated 3D clothing and limbs bake into transparent atlases; speed changes walking cadence and planted shadows follow movement.
+- Server facing controls combat aim; equipped special weapons retain runtime overlays.
+- Existing bartender and club dancer artwork remains in use; dancers keep their authored hip sway and tip stages.
+- Procedural and painted fallback paths remain available when model assets cannot load.
 
 ### HUD / event-log + mobile touch (live)
 
@@ -401,14 +413,7 @@ Shared `gangs.ts` profiles keyed by map spawn id — server applies on spawn/res
 
 ## Next for overseer (priority)
 
-**Mode A near-term checklist is complete** (M0–M7 + optional packs). No incomplete MASTER_PLAN item remains short of deferred M8.
-
-Human-named gap fill (empty hubs) shipped 2026-08-23. Mode A near-term checklist remains complete.
-
-1. **Stop greenfield** until a human re-opens backlog or reports a player-facing bug  
-2. Feel polish / critical bugs only if they appear  
-3. Optional content only if a human names it (e.g. more shells, club music bed, 8-dir art, balance pass)  
-4. **Never** Mode B (Postgres/auth/k8s) unless human asks  
+Human-requested M6/M7 presentation and contract extension is implemented and verified. Await player feedback on combat balance, art fidelity, physical-device performance and listening mix. M8 remains deferred; do not invent another roadmap or idle health-check cycles.
 
 ## Known bugs / polish debt
 
@@ -417,7 +422,9 @@ Human-named gap fill (empty hubs) shipped 2026-08-23. Mode A near-term checklist
 | Smoke needs live server | Ops | `npm run smoke` → `ws://127.0.0.1:3001` |
 | Disconnect = wipe | Low | Mode A design |
 | Five instance templates | Live | warehouse + garage + coldstore + church + gym; more optional later |
-| Goon sprites single art facing | Low | L/R iso flip + lean/bob; full 8-dir art sheets still optional later |
+| Character fidelity | Art | Four stylized 3D crew looks with eight-direction idle/walk animation; portrait identity is not one-to-one with the shared model looks. Club dancer art remains the existing authored sprites. |
+| Device and listening QA | Validation | Desktop/mobile layouts and WebGL behavior tested in headless Edge with software rendering. Physical phone frame rate, touch feel and speaker/headphone mix still need human playtesting. |
+| Bundle size | Performance | Build passes with Vite's >500 kB chunk warning. The real-time crew viewer lazily loads Three.js only when opened; world gameplay uses atlas textures. |
 | Instance smoke wipe | Ops | Much rarer after cycle 47: smoke `fireAtLivingHostile` prefers non-incapacitated nearest foes (was dumping rounds into downed AI boss while bodyguards free-fired). Residual unlucky RNG still possible; cycle 35 extract limp + WS open timeout still in place |
 
 ## Still deferred (Mode B)

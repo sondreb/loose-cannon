@@ -76,6 +76,19 @@ export interface MissionDef {
   instance?: MissionInstanceDef;
 }
 
+export type ContractRank = "S" | "A" | "B";
+
+/** A replay keeps the combat loop funded without farming street reputation. */
+export function contractTerms(def: MissionDef, replay = false) {
+  const rewardCash = replay ? Math.round(def.rewardCash * 0.6) : def.rewardCash;
+  return {
+    rewardCash,
+    rewardRep: replay ? 0 : def.rewardRep,
+    bonusCash: Math.round(rewardCash * 0.2),
+    parSeconds: def.instance ? 180 : def.objectives.some((o) => o.kind === "kill_unit") ? 240 : 150,
+  };
+}
+
 export const MISSIONS: Record<MissionId, MissionDef> = {
   smash_stash: {
     id: "smash_stash",
@@ -534,6 +547,7 @@ export const MISSION_ORDER: MissionId[] = [
 export function listMissionOffers(opts?: {
   /** Mission ids already completed this session (Mode A in-memory) */
   completedIds?: Iterable<string>;
+  bestRanks?: Partial<Record<MissionId, ContractRank>>;
 }): Array<{
   id: MissionId;
   title: string;
@@ -541,17 +555,23 @@ export function listMissionOffers(opts?: {
   difficulty: 1 | 2 | 3;
   rewardCash: number;
   rewardRep: number;
+  bonusCash: number;
+  parSeconds: number;
+  replay: boolean;
+  bestRank?: ContractRank;
 }> {
   const done = new Set(opts?.completedIds ?? []);
-  return MISSION_ORDER.filter((id) => !done.has(id)).map((id) => {
+  return MISSION_ORDER.filter((id) => !done.has(id) || !!MISSIONS[id].instance).map((id) => {
     const m = MISSIONS[id];
+    const replay = done.has(id);
     return {
       id: m.id,
       title: m.title,
       blurb: m.blurb,
       difficulty: m.difficulty,
-      rewardCash: m.rewardCash,
-      rewardRep: m.rewardRep,
+      ...contractTerms(m, replay),
+      replay,
+      bestRank: opts?.bestRanks?.[id],
     };
   });
 }

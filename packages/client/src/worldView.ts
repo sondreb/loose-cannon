@@ -22,6 +22,9 @@ import {
   type WorldSnapshot,
 } from "@loose-cannon/shared";
 import { Application, Container, Graphics, Sprite, Text } from "pixi.js";
+import { loadModelSprites, modelCrewSkin, modelUnitTexture, modelPropTexture, modelPropStyle, MODEL_UNIT_ANCHOR_Y, MODEL_UNIT_SPRITE_H } from "./modelSprites";
+import { StreetLighting, drawStreetLamp, isStreetLamp } from "./streetLighting";
+import { isoDetailBox, buildingHeight, drawArchitecture, loadArchitecture } from "./architecture";
 import { asphaltColor, asphaltGrit, asphaltNoise, sidewalkColor } from "./asphalt.js";
 import { screenToWorld as isoScreenToWorld, worldToScreen } from "./iso.js";
 import {
@@ -30,7 +33,6 @@ import {
   loadGameSprites,
   propTexture,
   PROP_SPRITE_H,
-  spritesReady,
   unitTexture,
   UNIT_SPRITE_H,
 } from "./sprites.js";
@@ -189,7 +191,6 @@ export type HoverTarget =
   | null;
 
 /** Exterior floor height in px — tall enough façades read as buildings, not flat roofs */
-const FLOOR_PX = 40;
 /** Fallback when unit stats missing — matches baseline speed 5 */
 const PRED_SPEED_DEFAULT = moveSpeedTilesPerSec(5);
 const MIN_ZOOM = 0.65;
@@ -215,6 +216,9 @@ export class WorldView {
   private overlayLayer = new Container();
   /** Screen-space day/night + district wash (not under camera zoom) */
   private atmosphereGfx = new Graphics();
+  private streetLights = new StreetLighting();
+  private buildingVisuals = new Map<string, Container>();
+  private fadedBuildings = new Set<string>();
   /** Pixel-art unit chips (combat-scene style) */
   private unitSpriteLayer = new Container();
   private unitSprites = new Map<string, Sprite>();
@@ -269,8 +273,8 @@ export class WorldView {
       resizeTo: window,
       // Combat-scene night purple (modulated by day/night each frame)
       background: 0x0e0c18,
-      antialias: false,
-      resolution: Math.min(window.devicePixelRatio || 1, 1),
+      antialias: true,
+      resolution: Math.min(window.devicePixelRatio || 1, 2),
       autoDensity: true,
       powerPreference: "high-performance",
       // roundPixels causes shimmer/glitches on textured walls under continuous zoom
@@ -278,6 +282,8 @@ export class WorldView {
     });
     // Load painted goons / props / world textures (non-blocking if fail → procedural fallback)
     await Promise.all([
+      loadModelSprites().catch(() => undefined),
+      loadArchitecture().catch(() => undefined),
       loadGameSprites().catch(() => undefined),
       loadWorldTextures().catch(() => undefined),
     ]);
@@ -287,14 +293,17 @@ export class WorldView {
     this.app.stage.addChild(this.root, this.rainGfx, this.atmosphereGfx);
     this.root.addChild(
       this.mapLayer,
+      this.streetLights.ground,
       this.buildingLayer,
       this.propGfx,
       this.propSpriteLayer,
       this.entityLayer,
+      this.streetLights.air,
       this.overlayLayer,
     );
     this.mapLayer.addChild(this.tileGfx);
     this.buildingLayer.addChild(this.buildingGfx);
+    this.unitSpriteLayer.sortableChildren = true;
     this.entityLayer.addChild(
       this.unitSpriteLayer,
       this.entityGfx,
@@ -319,6 +328,8 @@ export class WorldView {
         this.mapRedrawPending = false;
       }
       if (this.lastSnap) {
+        this.updateBuildingCutaway(this.lastSnap, dt);
+        this.streetLights.update(this.lastSnap, this.look, this.time, { x: this.followX, y: this.followY }, this.cachedFloors);
         this.drawEntities(this.lastSnap);
         this.drawHoverOverlay(this.lastSnap);
         this.drawWeather(this.lastSnap);
@@ -348,6 +359,7 @@ export class WorldView {
     if (key !== this.lastLightKey) {
       this.lastLightKey = key;
       this.look = lightingLook(phase, place, indoor, weather);
+      if (this.mapBuiltFor) this.drawBuildings(snap);
       if (this.lastDayPhase !== phase || this.lastWeather !== weather) {
         this.lastDayPhase = phase;
         this.lastWeather = weather;
@@ -369,8 +381,8 @@ export class WorldView {
   private drawAtmosphere(): void {
     const g = this.atmosphereGfx;
     g.clear();
-    const w = this.app.renderer.width;
-    const h = this.app.renderer.height;
+    const w = this.app.screen.width;
+    const h = this.app.screen.height;
     const { overlay, overlayAlpha } = this.look;
     if (overlayAlpha <= 0.01) return;
     // Soft multiply-style wash: two passes (tint + slight vignette)
@@ -610,6 +622,7 @@ export class WorldView {
 
     if (e.kind === "shot" || e.kind === "flame" || e.kind === "melee") {
       const big = e.weapon === "shotgun" || e.weapon === "tommy" || e.weapon === "minigun";
+      if (e.kind !== "melee") this.streetLights.flash(e.x0, e.y0, this.time, big);
       // Muzzle flash at shooter
       if (e.kind !== "melee") {
         this.fx.push({
@@ -909,8 +922,8 @@ export class WorldView {
         this.followY = me.y;
         // Hard-snap camera too so the room appears immediately
         const { sx, sy } = worldToScreen(me.x, me.y);
-        const w = this.app.renderer.width;
-        const h = this.app.renderer.height;
+        const w = this.app.screen.width;
+        const h = this.app.screen.height;
         this.camX = sx - w / (2 * this.zoom);
         this.camY = sy - h / (2 * this.zoom);
       } else {
@@ -1194,8 +1207,8 @@ export class WorldView {
     const insideB = this.getInteriorBuilding(snap);
     const bounds = insideB ? this.interiorBounds(insideB) : null;
     const { sx: camSx, sy: camSy } = worldToScreen(this.followX, this.followY);
-    const halfW = (this.app.renderer.width / this.zoom) * 0.7 + TILE_W * 12;
-    const halfH = (this.app.renderer.height / this.zoom) * 0.7 + TILE_H * 14;
+    const halfW = (this.app.screen.width / this.zoom) * 0.7 + TILE_W * 12;
+    const halfH = (this.app.screen.height / this.zoom) * 0.7 + TILE_H * 14;
 
     // ——— Indoor: full-room view, outdoors completely hidden ———
     if (insideB && bounds) {
@@ -1326,11 +1339,12 @@ export class WorldView {
       sy + hh,
     ]);
     if (tex) {
-      // Shared matrix — continuous UV across the whole map layer
+      // Explicit global space is essential: local bounds would repeat the texture per diamond.
       g.fill({
         texture: tex,
         matrix: isoTileMatrix(),
-        color: 0xffffff,
+        textureSpace: "global",
+        color,
         alpha,
       });
       // Soft lighting wash (low alpha so seams don't darken)
@@ -1355,10 +1369,8 @@ export class WorldView {
     const wy = y + 0.5;
     const cx = sx;
     const cy = sy + hh;
-    // Outdoor ground textures disabled for iso diamonds — per-tile UV stamps stitch at
-    // every zoom. Continuous solid + noise looks seamless; textures stay on walls / interiors.
-    const texKey: string | null = null;
-    void groundTexForType; // available if we re-enable continuous ground mesh later
+    // Global texture coordinates keep shared tile edges continuous under movement and zoom.
+    const texKey: string | null = indoor ? null : groundTexForType(type);
 
     let color = 0x2a2840;
     if (type === "road") {
@@ -1388,7 +1400,7 @@ export class WorldView {
     if (type === "road") {
       // Expand ~2px past tile edge so neighbors blend; no stroke ever
       const pad = 2.2;
-      this.fillIsoDiamond(g, sx, sy, hw, hh, pad, color, texKey);
+      this.fillIsoDiamond(g, sx, sy, hw, hh, texKey ? 0 : pad, texKey ? shade(0x72798a, bright) : color, texKey);
 
       // Continuous grit: world-noise speckles (same field across tile boundaries)
       const grit = asphaltGrit(wx, wy);
@@ -1507,7 +1519,7 @@ export class WorldView {
       indoor && type === "floor"
         ? null // set by interior chrome
         : texKey;
-    this.fillIsoDiamond(g, sx, sy, hw, hh, pad, color, floorTex);
+    this.fillIsoDiamond(g, sx, sy, hw, hh, floorTex ? 0 : pad, floorTex ? shade(type === "grass" ? 0x64665b : 0x9b9da9, bright) : color, floorTex);
 
     if (type === "sidewalk") {
       // Very soft slab joints (not a hard grid)
@@ -1633,8 +1645,10 @@ export class WorldView {
       }
     }
 
+    if (isStreetLamp(x, y, type)) drawStreetLamp(g, x, y);
+
     // Traffic cone
-    if ((type === "road" || type === "sidewalk") && seed % 23 === 3) {
+    if (type === "sidewalk" && seed % 127 === 3) {
       g.ellipse(sx, sy + 4, 5, 2);
       g.fill({ color: 0x000000, alpha: 0.3 });
       g.moveTo(sx, sy - 10);
@@ -1821,11 +1835,11 @@ export class WorldView {
     const canvas = this.app.canvas as HTMLCanvasElement;
     const w = Math.max(
       64,
-      canvas.clientWidth || this.app.screen.width || this.app.renderer.width,
+      canvas.clientWidth || this.app.screen.width || this.app.screen.width,
     );
     const h = Math.max(
       64,
-      canvas.clientHeight || this.app.screen.height || this.app.renderer.height,
+      canvas.clientHeight || this.app.screen.height || this.app.screen.height,
     );
     const t = this.time;
     const storm = rainScale > 1;
@@ -1964,6 +1978,9 @@ export class WorldView {
     for (const t of this.buildingLabelPool) t.destroy();
     this.buildingLabelPool = [];
     this.overlayLayer.removeChildren();
+    for (const c of this.buildingVisuals.values()) c.destroy({ children: true });
+    this.buildingVisuals.clear();
+    this.fadedBuildings.clear();
 
     // Full indoor room presentation — no exterior skyline
     if (snap.you.insideBuildingId) {
@@ -1981,23 +1998,13 @@ export class WorldView {
       .sort((a, b) => a.ex0! + a.ey0! - (b.ex0! + b.ey0!));
 
     for (const b of buildings) {
-      const midY = ((b.ey0 ?? 0) + (b.ey1 ?? 0)) / 2;
-      this.drawIsoBuilding(g, b, warFactor(midY));
-      const { sx, sy } = worldToScreen((b.ex0! + b.ex1!) / 2, (b.ey0! + b.ey1!) / 2);
-      const h = (b.stories ?? 2) * FLOOR_PX;
-      const title = new Text({
-        text: b.name,
-        style: {
-          fontSize: 11,
-          fill: midY >= SAFE_Y_MAX ? 0xffb0a0 : 0xffe0a0,
-          fontWeight: "700",
-          fontFamily: "system-ui, sans-serif",
-        },
-      });
-      title.x = sx - title.width / 2;
-      title.y = sy - h - 28;
-      this.overlayLayer.addChild(title);
-      this.buildingLabelPool.push(title);
+      const container = new Container();
+      const facade = new Graphics();
+      container.addChild(facade);
+      this.buildingLayer.addChild(container);
+      drawArchitecture(facade, b, this.look, container);
+      this.buildingVisuals.set(b.id, container);
+
     }
   }
 
@@ -2069,25 +2076,12 @@ export class WorldView {
     const tex = texId && texturesReady() ? worldTexture(texId) : null;
     g.poly(pts);
     if (tex) {
-      // Map texture across the whole room using geometry extents
-      const minX = Math.min(c00.sx, c10.sx, c01.sx, c11.sx);
-      const minY = Math.min(c00.sy, c10.sy, c01.sy, c11.sy);
-      const maxX = Math.max(c00.sx, c10.sx, c01.sx, c11.sx);
-      const maxY = Math.max(c00.sy, c10.sy, c01.sy, c11.sy);
-      const period = 140;
-      const mat = floorTextureMatrix().clone();
-      // Prefer continuous world UV: scale + translate by room origin
-      mat.set(
-        (maxX - minX) / period,
-        0,
-        0,
-        (maxY - minY) / period,
-        minX / period,
-        minY / period,
-      );
+      // Constant world UV scale: plank size stays the same in every room.
+      const mat = floorTextureMatrix();
       g.fill({
         texture: tex,
         matrix: mat,
+        textureSpace: "global",
         color: 0xffffff,
         alpha: Math.min(1, alpha + 0.25),
       });
@@ -2125,25 +2119,28 @@ export class WorldView {
     wash: number,
   ): void {
     const tex = texId && texturesReady() ? worldTexture(texId) : null;
-    const mat = wallFaceMatrix();
-    // One continuous strip instead of per-tile rects (kills wall stitching)
-    const left = worldToScreen(bounds.x0, bounds.y0);
-    const right = worldToScreen(bounds.x1 + 1, bounds.y0);
-    const midY = (left.sy + right.sy) / 2;
-    const minX = Math.min(left.sx, right.sx) - 8;
-    const maxX = Math.max(left.sx, right.sx) + 8;
-    const w = maxX - minX;
-    g.rect(minX, midY - 44, w, 28);
-    if (tex) {
-      g.fill({ texture: tex, matrix: mat, alpha: 0.88 });
-      g.rect(minX, midY - 44, w, 28);
-      g.fill({ color: wash, alpha: 0.28 });
-    } else {
-      g.fill({ color: wash, alpha: 0.55 });
+    const origin = worldToScreen(bounds.x0, bounds.y0);
+    const east = worldToScreen(bounds.x1 + 1, bounds.y0);
+    const west = worldToScreen(bounds.x0, bounds.y1 + 1);
+    const height = 67;
+    for (const [a, b, tint] of [[west, origin, 0xa49fa6], [origin, east, 0xd0c2b5]] as const) {
+      const pts = [a.sx, a.sy, b.sx, b.sy, b.sx, b.sy-height, a.sx, a.sy-height];
+      g.poly(pts);
+      if (tex) {
+        const mat = wallFaceMatrix().clone();
+        mat.set((b.sx-a.sx)/tex.width, (b.sy-a.sy)/tex.width, 0, height/tex.height, a.sx, a.sy-height);
+        g.fill({ texture: tex, textureSpace: "global", matrix: mat, color: tint });
+      } else g.fill({ color: wash, alpha: .95 });
+      // Timber wainscoting, top coping and deep contact shadow.
+      g.poly([a.sx,a.sy,b.sx,b.sy,b.sx,b.sy-22,a.sx,a.sy-22]).fill({color:0x2d211c,alpha:.8});
+      for (let t = .06; t < 1; t += .08) {
+        const x = a.sx+(b.sx-a.sx)*t, y = a.sy+(b.sy-a.sy)*t;
+        g.moveTo(x,y-3).lineTo(x,y-20).stroke({color:0x99826b,width:1,alpha:.35});
+      }
+      g.moveTo(a.sx,a.sy-24).lineTo(b.sx,b.sy-24).stroke({color:0x9b7850,width:2});
+      g.moveTo(a.sx,a.sy-height).lineTo(b.sx,b.sy-height).stroke({color:0xb7a292,width:4});
+      g.moveTo(a.sx,a.sy).lineTo(b.sx,b.sy).stroke({color:0x070a11,width:5,alpha:.8});
     }
-    // Baseboard
-    g.rect(minX, midY - 18, w, 3);
-    g.fill({ color: 0x1a1010, alpha: 0.45 });
   }
 
   private drawBarInteriorDecor(bounds: {
@@ -2158,38 +2155,20 @@ export class WorldView {
     this.drawIsoFloorWash(g, bounds, 0x2a1c18, 0x241814, 0.6, "wood_floor");
     this.drawInteriorWallStrip(g, bounds, "plaster_wall", 0x3a2a24);
 
-    // Continuous bar counter (one piece, not per-tile boxes)
-    const barL = worldToScreen(bounds.x0 + 1.2, bounds.y0 + 1.3);
-    const barR = worldToScreen(bounds.x1 - 0.8, bounds.y0 + 1.3);
-    const barMidX = (barL.sx + barR.sx) / 2;
-    const barMidY = (barL.sy + barR.sy) / 2;
-    const barW = Math.hypot(barR.sx - barL.sx, barR.sy - barL.sy) + 20;
-    g.ellipse(barMidX, barMidY + 8, barW * 0.48, 10);
-    g.fill({ color: 0x000000, alpha: 0.35 });
-    g.roundRect(barMidX - barW * 0.45, barMidY - 6, barW * 0.9, 16, 3);
-    g.fill({ color: 0x3a2418, alpha: 0.95 });
-    g.roundRect(barMidX - barW * 0.45, barMidY - 8, barW * 0.9, 5, 2);
-    g.fill({ color: 0x5a3a28, alpha: 0.9 }); // countertop
-    g.roundRect(barMidX - barW * 0.45, barMidY - 6, barW * 0.9, 16, 3);
-    g.stroke({ color: 0x1a1008, width: 1.2, alpha: 0.5 });
-
-    // Bottle shelf + bottles along counter
-    g.rect(barMidX - barW * 0.4, barMidY - 28, barW * 0.8, 4);
-    g.fill({ color: 0x2a1a12, alpha: 0.9 });
-    for (let i = 0; i < 9; i++) {
-      const bx = barMidX - barW * 0.35 + i * (barW * 0.08);
-      const cols = [0x60a0ff, 0xff8060, 0xffe080, 0x80ff80, 0xff60c0, 0xc0a0ff];
-      g.rect(bx - 1.5, barMidY - 26, 3, 14);
-      g.fill({ color: cols[i % cols.length]!, alpha: 0.55 });
-      g.rect(bx - 1, barMidY - 28, 2, 3);
-      g.fill({ color: 0xd0d0d0, alpha: 0.4 });
+    // Counter and bottle shelving follow the room's isometric axes.
+    const counterX = bounds.x0 + 1.2, counterY = bounds.y0 + 1.3;
+    const counterW = bounds.x1 - bounds.x0 - 1.5;
+    isoDetailBox(g, counterX, counterY, counterW, .65, 0, 22, 0x573522);
+    isoDetailBox(g, counterX - .08, counterY - .06, counterW + .16, .82, 22, 4, 0x95734c);
+    isoDetailBox(g, bounds.x0 + .8, bounds.y0 + .18, counterW, .25, 31, 3, 0x69503b);
+    const colors = [0x477457,0x9c6738,0x657d80,0x6e3446,0xad8549];
+    for (let i = 0; i < 12; i++) {
+      const p = worldToScreen(bounds.x0 + 1 + i * (counterW-.3)/12, bounds.y0 + .32);
+      g.roundRect(p.sx-2,p.sy-47,4,12,1).fill(colors[i%colors.length]!);
+      g.rect(p.sx-1,p.sy-50,2,4).fill(colors[i%colors.length]!);
+      g.rect(p.sx-1.5,p.sy-42,3,3).fill({color:0xe2c79c,alpha:.65});
+      g.moveTo(p.sx-1,p.sy-46).lineTo(p.sx-1,p.sy-43).stroke({color:0xffffff,width:.7,alpha:.4});
     }
-
-    // Back-bar mirror glow
-    g.rect(barMidX - barW * 0.38, barMidY - 40, barW * 0.76, 10);
-    g.fill({ color: 0x4a6078, alpha: 0.2 });
-    g.ellipse(barMidX, barMidY - 20, barW * 0.3, 8);
-    g.fill({ color: 0xffa060, alpha: 0.06 * pulse });
 
     // Bar stools (fewer, better)
     for (let i = 0; i < 4; i++) {
@@ -2849,289 +2828,36 @@ export class WorldView {
     }
   }
 
-  private drawIsoBuilding(g: Graphics, b: BuildingPublic, war: number): void {
-    const x0 = b.ex0!;
-    const y0 = b.ey0!;
-    const x1 = b.ex1!;
-    const y1 = b.ey1!;
-    const stories = Math.max(2, b.stories ?? 2);
-    // Extra height so large footprints still read as vertical buildings
-    const h = stories * FLOOR_PX + 10;
-    let wall = b.wallColor ?? 0x3a3648;
-    wall = lerpColor(wall, 0x342e42, 0.35);
-    let roof = b.roofColor ?? 0x18141e;
-    let accent = b.accentColor ?? 0xff40aa;
-    if (b.kind === "bar" || b.kind === "club") accent = 0xff40c8;
-    else if (b.kind === "shop") accent = 0x40e0ff;
-    else if (b.kind === "hospital") accent = 0xff5050;
-    else if (b.kind === "gym") accent = 0xffc040;
-    else if (b.kind === "safehouse") accent = 0x60c080;
-    else if (b.kind === "church") accent = 0xc9a227;
-    else if (b.kind === "coldstore" || b.kind === "warehouse") accent = 0x60d0ff;
-    else if (b.kind === "garage") accent = 0x60a0e0;
-    if (war > 0.15) {
-      wall = lerpColor(wall, 0x221018, war * 0.7);
-      roof = lerpColor(roof, 0x10080c, war * 0.7);
+  private updateBuildingCutaway(snap: WorldSnapshot, dt: number): void {
+    const leader = this.leaderWorldPos();
+    this.fadedBuildings.clear();
+    for (const b of snap.buildings) {
+      const visual = this.buildingVisuals.get(b.id);
+      if (!visual || !leader) continue;
+      const farDoor = (b.ey0 != null && b.doorY <= b.ey0) || (b.ex0 != null && b.doorX <= b.ex0);
+      const nearDoor = farDoor && Math.hypot(leader.x - b.doorX, leader.y - b.doorY) < 6;
+      const behind = this.projectedBuildingContains(b, leader.x, leader.y);
+      const fade = nearDoor || behind;
+      if (fade) this.fadedBuildings.add(b.id);
+      const target = fade ? 0.28 : 1;
+      visual.alpha += (target - visual.alpha) * Math.min(1, dt * 8);
     }
+  }
 
-    const c00 = worldToScreen(x0, y0);
-    const c10 = worldToScreen(x1 + 1, y0);
-    const c01 = worldToScreen(x0, y1 + 1);
-    const c11 = worldToScreen(x1 + 1, y1 + 1);
-    const top = (c: { sx: number; sy: number }) => ({ sx: c.sx, sy: c.sy - h });
-    const t00 = top(c00);
-    const t10 = top(c10);
-    const t01 = top(c01);
-    const t11 = top(c11);
-
-    // Ground shadow
-    g.poly([c00.sx, c00.sy + 6, c10.sx, c10.sy + 6, c11.sx, c11.sy + 6, c01.sx, c01.sy + 6]);
-    g.fill({ color: 0x000000, alpha: 0.32 });
-
-    const brick = texturesReady() ? worldTexture("brick") : null;
-    const roofTex = texturesReady() ? worldTexture("roof") : null;
-    const wallMat = wallFaceMatrix();
-    const fillWall = (pts: number[], shadeMul: number) => {
-      g.poly(pts);
-      if (brick) {
-        g.fill({
-          texture: brick,
-          matrix: wallMat,
-          color: 0xffffff,
-          alpha: 0.95,
-        });
-        g.poly(pts);
-        g.fill({ color: shade(wall, shadeMul), alpha: 0.32 });
-      } else {
-        g.fill({ color: shade(wall, shadeMul) });
-      }
-    };
-
-    // Four wall faces with strong value separation (reads as 3D, not flat diamond)
-    fillWall([c00.sx, c00.sy, c01.sx, c01.sy, t01.sx, t01.sy, t00.sx, t00.sy], 0.62);
-    fillWall([c00.sx, c00.sy, c10.sx, c10.sy, t10.sx, t10.sy, t00.sx, t00.sy], 1.05);
-    fillWall([c01.sx, c01.sy, c11.sx, c11.sy, t11.sx, t11.sy, t01.sx, t01.sy], 0.48);
-    fillWall([c10.sx, c10.sy, c11.sx, c11.sy, t11.sx, t11.sy, t10.sx, t10.sy], 0.72);
-
-    // Brick / panel courses on the front face
-    const courseN = stories * 4;
-    for (let row = 1; row < courseN; row++) {
-      const t = row / courseN;
-      const ax = c00.sx + (t00.sx - c00.sx) * t;
-      const ay = c00.sy + (t00.sy - c00.sy) * t;
-      const bx = c10.sx + (t10.sx - c10.sx) * t;
-      const by = c10.sy + (t10.sy - c10.sy) * t;
-      g.moveTo(ax + (bx - ax) * 0.05, ay + (by - ay) * 0.05);
-      g.lineTo(ax + (bx - ax) * 0.95, ay + (by - ay) * 0.95);
-      g.stroke({ color: 0x0a0812, width: 1, alpha: 0.14 });
+  private projectedBuildingContains(b: BuildingPublic, x: number, y: number): boolean {
+    if (b.ex0 == null || b.ey0 == null || b.ex1 == null || b.ey1 == null) return false;
+    if (x >= b.ex1 + 1 || y >= b.ey1 + 1) return false;
+    const h = buildingHeight(b);
+    const a = worldToScreen(b.ex0, b.ey0), e = worldToScreen(b.ex1 + 1, b.ey0);
+    const s = worldToScreen(b.ex1 + 1, b.ey1 + 1), w = worldToScreen(b.ex0, b.ey1 + 1);
+    const hull = [{sx:a.sx,sy:a.sy-h},{sx:e.sx,sy:e.sy-h},e,s,w,{sx:w.sx,sy:w.sy-h}];
+    const p = worldToScreen(x, y); p.sy -= 22;
+    let inside = false;
+    for (let i = 0, j = hull.length - 1; i < hull.length; j = i++) {
+      const u = hull[i]!, v = hull[j]!;
+      if ((u.sy > p.sy) !== (v.sy > p.sy) && p.sx < (v.sx-u.sx)*(p.sy-u.sy)/(v.sy-u.sy)+u.sx) inside = !inside;
     }
-
-    // Ground-floor storefront strip (front face)
-    {
-      const storeH = h * 0.28;
-      const s00 = { sx: c00.sx, sy: c00.sy };
-      const s10 = { sx: c10.sx, sy: c10.sy };
-      const s00t = { sx: c00.sx, sy: c00.sy - storeH };
-      const s10t = { sx: c10.sx, sy: c10.sy - storeH };
-      g.poly([s00.sx, s00.sy, s10.sx, s10.sy, s10t.sx, s10t.sy, s00t.sx, s00t.sy]);
-      g.fill({ color: shade(wall, 0.35), alpha: 0.92 });
-      // Glass panes
-      const paneN = Math.min(5, Math.max(2, Math.floor((x1 - x0 + 1) / 2)));
-      for (let i = 1; i <= paneN; i++) {
-        const t = i / (paneN + 1);
-        const bx = c00.sx + (c10.sx - c00.sx) * t;
-        const by = c00.sy + (c10.sy - c00.sy) * t;
-        g.rect(bx - 7, by - storeH * 0.75, 14, storeH * 0.55);
-        g.fill({ color: 0x0a1020, alpha: 0.85 });
-        g.rect(bx - 6, by - storeH * 0.72, 12, storeH * 0.48);
-        g.fill({
-          color: accent,
-          alpha: 0.12 + 0.2 * Math.max(0.15, this.look.neon),
-        });
-      }
-    }
-
-    // Outlines
-    g.poly([c00.sx, c00.sy, c10.sx, c10.sy, t10.sx, t10.sy, t00.sx, t00.sy]);
-    g.stroke({ color: 0x0a0812, width: 1.8, alpha: 0.7 });
-    g.poly([c00.sx, c00.sy, c01.sx, c01.sy, t01.sx, t01.sy, t00.sx, t00.sy]);
-    g.stroke({ color: 0x0a0812, width: 1.4, alpha: 0.5 });
-
-    // Upper-floor windows on front + left faces
-    const neonPalette = [0xff40aa, 0x40e0ff, 0x60ff90, 0xffc040, 0xc060ff];
-    const neonMul = Math.max(0.12, this.look.neon);
-    const winCols = Math.min(6, Math.max(3, Math.floor((x1 - x0 + 1) / 1.5)));
-    for (let f = 1; f < stories; f++) {
-      const fy = 1 - (f + 0.45) / stories;
-      for (let i = 1; i <= winCols; i++) {
-        const t = i / (winCols + 1);
-        // Front face
-        const bx = c00.sx + (c10.sx - c00.sx) * t;
-        const by = c00.sy + (c10.sy - c00.sy) * t;
-        const broken = war > 0.25 && (b.id.charCodeAt(0) + f + i) % 4 === 0;
-        const litChance = neonMul > 0.7 ? 2 : neonMul > 0.4 ? 3 : 4;
-        const lit = !broken && (b.id.charCodeAt(0) + f + i) % litChance !== 0;
-        const winNeon = neonPalette[(b.id.charCodeAt(0) + f + i) % neonPalette.length]!;
-        g.rect(bx - 5, by - h * fy - 6, 10, 9);
-        g.fill({ color: 0x0a0810, alpha: 0.92 });
-        g.rect(bx - 4, by - h * fy - 5, 8, 7);
-        if (broken) {
-          g.fill({ color: 0x0a0808, alpha: 0.85 });
-        } else if (lit) {
-          g.fill({ color: winNeon, alpha: 0.5 + 0.45 * neonMul });
-          g.circle(bx, by - h * fy - 1, 8);
-          g.fill({ color: winNeon, alpha: 0.07 + 0.1 * neonMul });
-        } else {
-          g.fill({ color: 0x12101c, alpha: 0.8 });
-        }
-      }
-    }
-
-    // Roof slab + parapet
-    g.poly([t00.sx, t00.sy, t10.sx, t10.sy, t11.sx, t11.sy, t01.sx, t01.sy]);
-    if (roofTex) {
-      g.fill({
-        texture: roofTex,
-        matrix: wallFaceMatrix(),
-        color: 0xffffff,
-        alpha: 0.95,
-      });
-      g.poly([t00.sx, t00.sy, t10.sx, t10.sy, t11.sx, t11.sy, t01.sx, t01.sy]);
-      g.fill({ color: roof, alpha: 0.28 });
-    } else {
-      g.fill({ color: roof });
-    }
-    g.poly([t00.sx, t00.sy, t10.sx, t10.sy, t11.sx, t11.sy, t01.sx, t01.sy]);
-    g.stroke({ color: shade(accent, 0.75), width: 1.6, alpha: 0.55 });
-    // Parapet lip
-    const ph = 5;
-    g.poly([
-      t00.sx,
-      t00.sy,
-      t10.sx,
-      t10.sy,
-      t10.sx,
-      t10.sy - ph,
-      t00.sx,
-      t00.sy - ph,
-    ]);
-    g.fill({ color: shade(roof, 1.15), alpha: 0.9 });
-
-    // Roof gear: AC units / vents
-    {
-      const rcx = (t00.sx + t11.sx) / 2;
-      const rcy = (t00.sy + t11.sy) / 2;
-      g.roundRect(rcx - 10, rcy - 6, 14, 10, 1);
-      g.fill({ color: 0x2a2c34, alpha: 0.9 });
-      g.rect(rcx - 8, rcy - 4, 4, 3);
-      g.fill({ color: 0x1a1c22 });
-      g.roundRect(rcx + 6, rcy - 2, 10, 8, 1);
-      g.fill({ color: 0x32343c, alpha: 0.85 });
-      // Antenna / water tower hint for taller buildings
-      if (stories >= 3) {
-        g.rect(rcx + 2, rcy - 22, 2, 16);
-        g.fill({ color: 0x4a4a55 });
-        g.circle(rcx + 3, rcy - 24, 3);
-        g.fill({ color: accent, alpha: 0.4 * neonMul });
-      }
-    }
-
-    // Kind-specific roof flair
-    if (b.kind === "church") {
-      const sp = { sx: (t00.sx + t11.sx) / 2, sy: (t00.sy + t11.sy) / 2 - 8 };
-      g.moveTo(sp.sx, sp.sy - 28);
-      g.lineTo(sp.sx + 10, sp.sy);
-      g.lineTo(sp.sx - 10, sp.sy);
-      g.closePath();
-      g.fill({ color: 0x3a3028 });
-      g.rect(sp.sx - 1.5, sp.sy - 36, 3, 12);
-      g.fill({ color: 0xc9a227, alpha: 0.8 });
-    }
-    if (b.kind === "gym") {
-      const sp = { sx: (t00.sx + t10.sx) / 2, sy: (t00.sy + t10.sy) / 2 };
-      g.roundRect(sp.sx - 22, sp.sy - h * 0.55, 44, 12, 2);
-      g.fill({ color: 0x0a0810, alpha: 0.9 });
-      g.roundRect(sp.sx - 20, sp.sy - h * 0.55 + 1, 40, 10, 1);
-      g.fill({ color: 0xffc040, alpha: 0.5 + 0.35 * neonMul });
-    }
-
-    // Vertical neon sign (street face)
-    {
-      const midX = (c00.sx + c10.sx) / 2;
-      const midY = (c00.sy + c10.sy) / 2;
-      const signH = Math.min(h * 0.55, 42);
-      g.circle(midX - 16, midY - h * 0.5, 16);
-      g.fill({
-        color: accent,
-        alpha: (0.1 + Math.sin(this.time * 3 + b.id.charCodeAt(0)) * 0.04) * neonMul,
-      });
-      g.roundRect(midX - 22, midY - h * 0.72, 11, signH, 2);
-      g.fill({ color: 0x0a0810, alpha: 0.92 });
-      g.roundRect(midX - 21, midY - h * 0.72 + 1, 9, signH - 2, 1);
-      g.fill({ color: accent, alpha: 0.5 + 0.4 * neonMul });
-      for (let i = 0; i < 5; i++) {
-        g.rect(midX - 19, midY - h * 0.7 + 4 + i * (signH / 6), 5, 2.2);
-        g.fill({ color: 0xffffff, alpha: 0.22 + 0.2 * neonMul });
-      }
-    }
-
-    // Awning / canopy for public fronts
-    if (
-      b.kind === "bar" ||
-      b.kind === "shop" ||
-      b.kind === "club" ||
-      b.kind === "hospital" ||
-      b.kind === "gym"
-    ) {
-      const door = worldToScreen(b.doorX + 0.5, b.doorY + 0.5);
-      g.poly([
-        door.sx - 18,
-        door.sy - 20,
-        door.sx + 18,
-        door.sy - 20,
-        door.sx + 15,
-        door.sy - 12,
-        door.sx - 15,
-        door.sy - 12,
-      ]);
-      g.fill({ color: shade(accent, 0.5), alpha: 0.88 });
-      g.poly([
-        door.sx - 18,
-        door.sy - 20,
-        door.sx + 18,
-        door.sy - 20,
-        door.sx + 15,
-        door.sy - 12,
-        door.sx - 15,
-        door.sy - 12,
-      ]);
-      g.stroke({ color: 0x0a0810, width: 1.2, alpha: 0.55 });
-      // Stripe on awning
-      for (let i = -2; i <= 2; i++) {
-        g.rect(door.sx + i * 6 - 2, door.sy - 19, 3, 6);
-        g.fill({ color: 0x0a0810, alpha: 0.15 });
-      }
-    }
-
-    // Door with steps
-    const door = worldToScreen(b.doorX + 0.5, b.doorY + 0.5);
-    g.ellipse(door.sx, door.sy + 4, 10, 4);
-    g.fill({ color: 0x000000, alpha: 0.3 });
-    g.rect(door.sx - 9, door.sy - 2, 18, 4);
-    g.fill({ color: 0x3a3a48, alpha: 0.7 });
-    g.roundRect(door.sx - 8, door.sy - 20, 16, 20, 1);
-    g.fill({ color: 0x0a0810 });
-    g.roundRect(door.sx - 7, door.sy - 19, 14, 18, 1);
-    g.fill({ color: shade(wall, 0.28) });
-    // Door window
-    g.rect(door.sx - 4, door.sy - 16, 8, 6);
-    g.fill({ color: accent, alpha: 0.25 + 0.3 * neonMul });
-    g.circle(door.sx + 4, door.sy - 8, 1.6);
-    g.fill({ color: 0xc0a060, alpha: 0.85 });
-    g.circle(door.sx, door.sy - 6, 12);
-    g.stroke({ color: accent, width: 2, alpha: 0.3 + 0.4 * neonMul });
-    g.circle(door.sx, door.sy - 6, 18);
-    g.stroke({ color: accent, width: 1, alpha: 0.08 + 0.12 * neonMul });
+    return inside;
   }
 
   private drawProps(props: PropPublic[]): void {
@@ -3152,8 +2878,10 @@ export class WorldView {
       g.fill({ color: 0x000000, alpha: 0.4 });
 
       // Prefer painted prop sprites when available
-      const tex = propTexture(p.kind === "car" ? "car" : p.kind);
-      if (tex && spritesReady()) {
+      const modelTex = modelPropTexture(p.kind, p.x % 2 < 1 ? 4 : 6, p.id);
+      const modelStyle = modelTex ? modelPropStyle(p.kind, p.id) : null;
+      const tex = modelTex ?? propTexture(p.kind);
+      if (tex) {
         let spr = this.propSprites.get(p.id);
         if (!spr) {
           spr = new Sprite(tex);
@@ -3162,7 +2890,8 @@ export class WorldView {
           this.propSpriteLayer.addChild(spr);
         }
         if (spr.texture !== tex) spr.texture = tex;
-        const scale = PROP_SPRITE_H / Math.max(1, tex.height);
+        spr.anchor.set(0.5, modelStyle?.anchorY ?? 0.9);
+        const scale = (modelStyle?.displayHeight ?? PROP_SPRITE_H) / Math.max(1, tex.height);
         spr.scale.set(scale);
         spr.x = sx;
         spr.y = sy + 4;
@@ -3320,7 +3049,7 @@ export class WorldView {
     const used = new Set<string>();
     const { sx: camSx, sy: camSy } = worldToScreen(this.followX, this.followY);
     const cullR =
-      (Math.max(this.app.renderer.width, this.app.renderer.height) / this.zoom) * 0.8;
+      (Math.max(this.app.screen.width, this.app.screen.height) / this.zoom) * 0.8;
 
     const sorted = snap.units
       .filter((u) => {
@@ -3456,39 +3185,7 @@ export class WorldView {
    */
   private unitOccludedByBuilding(ux: number, uy: number, snap: WorldSnapshot): boolean {
     if (snap.you.insideBuildingId) return false;
-    const unitDepth = ux + uy;
-    const up = worldToScreen(ux, uy);
-    for (const b of snap.buildings) {
-      if (b.ex0 == null || b.ey0 == null || b.ex1 == null || b.ey1 == null) continue;
-      // Skip tiny / mission-only without exterior
-      const x0 = b.ex0;
-      const y0 = b.ey0;
-      const x1 = b.ex1 + 1;
-      const y1 = b.ey1 + 1;
-      // Must be near the footprint (including north/west “behind” band)
-      if (ux < x0 - 2.5 || ux > x1 + 1.5 || uy < y0 - 2.5 || uy > y1 + 1.5) continue;
-      // In front of SE corner → not occluded
-      const frontDepth = x1 + y1;
-      const backDepth = x0 + y0;
-      if (unitDepth >= frontDepth - 1.2) continue;
-      // Only occlude when unit is more “behind” than the building mid-depth
-      if (unitDepth > (backDepth + frontDepth) * 0.52) continue;
-
-      const h = Math.max(2, b.stories ?? 2) * FLOOR_PX + 10;
-      const c00 = worldToScreen(x0, y0);
-      const c10 = worldToScreen(x1, y0);
-      const c01 = worldToScreen(x0, y1);
-      const c11 = worldToScreen(x1, y1);
-      const minSx = Math.min(c00.sx, c10.sx, c01.sx, c11.sx) - 8;
-      const maxSx = Math.max(c00.sx, c10.sx, c01.sx, c11.sx) + 8;
-      const minSy = Math.min(c00.sy, c10.sy, c01.sy, c11.sy) - h - 12;
-      const maxSy = Math.max(c00.sy, c10.sy, c01.sy, c11.sy) + 16;
-      // Body from feet up ~40px
-      if (up.sx >= minSx && up.sx <= maxSx && up.sy >= minSy && up.sy - 36 <= maxSy) {
-        return true;
-      }
-    }
-    return false;
+    return snap.buildings.some(b => !this.fadedBuildings.has(b.id) && this.projectedBuildingContains(b, ux, uy));
   }
 
   /** Flat silhouette when unit is behind a building (readable through façades). */
@@ -3684,7 +3381,8 @@ export class WorldView {
     }
 
     // ——— Painted combat-scene sprite when available ———
-    const tex = unitTexture({
+    const modelTex = !isDancer && !(isNpc && /bartender|vince|venus/i.test((u.npcRole ?? "") + u.name)) ? modelUnitTexture(modelCrewSkin(u.id, female, u.armor), vis.facing, vis.phase, vis.moving) : null;
+    const tex = modelTex ?? unitTexture({
       id: u.id,
       name: u.name,
       female,
@@ -3695,30 +3393,31 @@ export class WorldView {
     });
     let bh = 28 + bulk; // label offset height (sprite or procedural)
 
-    if (tex && spritesReady()) {
+    if (tex) {
       let spr = this.unitSprites.get(u.id);
       if (!spr) {
         spr = new Sprite(tex);
         // Anchor near bottom of art so feet meet the tile (was 0.92 → floated)
-        spr.anchor.set(0.5, 0.98);
+        spr.anchor.set(0.5, modelTex ? MODEL_UNIT_ANCHOR_Y : 0.98);
         this.unitSprites.set(u.id, spr);
         this.unitSpriteLayer.addChild(spr);
       }
       if (spr.texture !== tex) spr.texture = tex;
-      spr.anchor.set(0.5, 0.98);
-      const targetH = isDancer ? DANCER_SPRITE_H : UNIT_SPRITE_H;
+      spr.anchor.set(0.5, modelTex ? MODEL_UNIT_ANCHOR_Y : 0.98);
+      const targetH = modelTex ? MODEL_UNIT_SPRITE_H : isDancer ? DANCER_SPRITE_H : UNIT_SPRITE_H;
       const scale = targetH / Math.max(1, tex.height);
       // Dancers: slight idle sway / hip roll (keep feet planted — no walk bob)
       const danceSway = isDancer ? Math.sin(this.time * 2.8 + u.x) * 2.2 : 0;
       const sxMul = isDancer ? 1 : walk.scaleX;
       const syMul = isDancer ? 1 : walk.scaleY;
-      spr.scale.set(flip * scale * sxMul, scale * syMul);
-      spr.rotation = isDancer ? Math.sin(this.time * 2.8 + u.x) * 0.04 : lean * flip;
-      spr.x = sx + (isDancer ? danceSway : sway);
+      spr.scale.set(modelTex ? scale : flip * scale * sxMul, modelTex ? scale : scale * syMul);
+      spr.rotation = modelTex ? 0 : isDancer ? Math.sin(this.time * 2.8 + u.x) * 0.04 : lean * flip;
+      spr.x = sx + (modelTex ? 0 : isDancer ? danceSway : sway);
       // Plant feet on the iso ground point (shadow sits just under)
       // Mild bob on body only — full bob floats sprites off the street
-      spr.y = baseSy + 7 + (isDancer ? 0 : bob * 0.45);
+      spr.y = baseSy + 7 + (modelTex || isDancer ? 0 : bob * 0.45);
       spr.visible = true;
+      spr.zIndex = baseSy;
       // Team tint: posse color wash (keep readable) × day/district atmosphere
       const lightTint = this.look.entityTint;
       if (mine) spr.tint = mulTint(0xffffff, lightTint);
@@ -3824,6 +3523,8 @@ export class WorldView {
       this.drawWeapon(g, sx + bx + flip * 2, sy - bh / 2 - 2, u.weapon, mine, vis.facing);
       used.add(u.id);
     }
+
+    if (modelTex && u.weapon !== "pistol") this.drawWeapon(g, sx + flip * 4, baseSy - 17, u.weapon, mine, vis.facing);
 
     // Threat pips / HP / labels (shared)
     if (threat > 0 && !isNpc) {
@@ -4185,6 +3886,14 @@ export class WorldView {
     this.fx = next;
   }
 
+  private interiorFit(bounds: { x0: number; y0: number; x1: number; y1: number }): number {
+    const span = bounds.x1 - bounds.x0 + bounds.y1 - bounds.y0 + 2;
+    const mobile = this.app.screen.width <= 700;
+    const availableW = this.app.screen.width - (mobile ? 32 : 330);
+    const availableH = this.app.screen.height - (mobile ? 330 : 180);
+    return Math.max(MIN_ZOOM, Math.min(MAX_INTERIOR_ZOOM, availableW / (span * TILE_W / 2 + 54), availableH / (span * TILE_H / 2 + 110)));
+  }
+
   private updateCamera(dt: number): void {
     const snap = this.lastSnap;
     const insideB = snap ? this.getInteriorBuilding(snap) : null;
@@ -4196,12 +3905,7 @@ export class WorldView {
     if (indoors && !this.wasInside) {
       this.outdoorZoomTarget = this.zoomTarget;
       this.interiorZoomLocked = true;
-      const bw = bounds!.x1 - bounds!.x0 + 3;
-      const bh = bounds!.y1 - bounds!.y0 + 3;
-      // Iso footprint roughly scales with (w+h)
-      const span = Math.max(bw, bh) + Math.min(bw, bh) * 0.5;
-      const fit = Math.min(MAX_INTERIOR_ZOOM, Math.max(1.1, 14 / Math.max(6, span)));
-      this.zoomTarget = Math.min(MAX_INTERIOR_ZOOM, Math.max(MIN_ZOOM, fit));
+      this.zoomTarget = this.interiorFit(bounds!);
       this.mapRedrawPending = true;
     } else if (!indoors && this.wasInside) {
       this.interiorZoomLocked = false;
@@ -4218,11 +3922,7 @@ export class WorldView {
       this.followY = rcy * 0.72 + this.followY * 0.28;
       // One-shot auto-fit only until the player zooms themselves
       if (this.interiorZoomLocked) {
-        const bw = bounds.x1 - bounds.x0 + 3;
-        const bh = bounds.y1 - bounds.y0 + 3;
-        const span = Math.max(bw, bh) + Math.min(bw, bh) * 0.5;
-        const fit = Math.min(MAX_INTERIOR_ZOOM, Math.max(1.1, 14 / Math.max(6, span)));
-        this.zoomTarget = Math.min(MAX_INTERIOR_ZOOM, Math.max(MIN_ZOOM, fit));
+        this.zoomTarget = this.interiorFit(bounds);
         // Release after first settle so further frames don't fight the user
         if (Math.abs(this.zoom - this.zoomTarget) < 0.02) {
           this.interiorZoomLocked = false;
@@ -4235,11 +3935,11 @@ export class WorldView {
     if (Math.abs(this.zoom - this.zoomTarget) < 0.001) this.zoom = this.zoomTarget;
 
     const { sx, sy } = worldToScreen(this.followX, this.followY);
-    const w = this.app.renderer.width;
-    const h = this.app.renderer.height;
+    const w = this.app.screen.width;
+    const h = this.app.screen.height;
     const k = 1 - Math.exp(-18 * dt);
     // Desired top-left of world in screen space such that follow is centered under zoom
-    const targetX = sx - w / (2 * this.zoom);
+    const targetX = sx - (w / 2 + (indoors && w > 700 ? 95 : 0)) / this.zoom;
     const targetY = sy - h / (2 * this.zoom);
     this.camX += (targetX - this.camX) * k;
     this.camY += (targetY - this.camY) * k;
@@ -4268,8 +3968,8 @@ export class WorldView {
   /** Canvas client coords → world tiles (respects zoom + camera). */
   screenToWorld(clientX: number, clientY: number): { x: number; y: number } {
     const rect = this.canvas.getBoundingClientRect();
-    const scaleX = this.app.renderer.width / Math.max(1, rect.width);
-    const scaleY = this.app.renderer.height / Math.max(1, rect.height);
+    const scaleX = this.app.screen.width / Math.max(1, rect.width);
+    const scaleY = this.app.screen.height / Math.max(1, rect.height);
     const mx = (clientX - rect.left) * scaleX;
     const my = (clientY - rect.top) * scaleY;
     // Inverse of root transform: worldScreen = (screen - root.pos) / zoom

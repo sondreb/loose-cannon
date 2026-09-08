@@ -1,0 +1,47 @@
+.contract-offer-bonuses {
+  color: #cdb986;
+  font-size: 0.73rem;
+  line-height: 1.55;
+  margin: 0.65rem 0;
+}
+.contract-replay {
+  display: inline-block;
+  margin-bottom: 0.55rem;
+  color: #d8be79;
+  font: 700 0.63rem/1.4 monospace;
+  letter-spacing: 0.09em;
+}
+.contract-live-bonuses {
+  border-top: 1px solid #bea86a35;
+  padding-top: 0.4rem;
+  margin-top: 0.5rem;
+}
+.contract-bonus {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: #e0c587;
+  font: 0.68rem/1.8 monospace;
+}
+.contract-bonus.missed { color: #ae9190; }
+.contract-bonus strong { white-space: nowrap; font-size: 0.66rem; }
+.contract-receipt {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.9rem;
+  margin-bottom: 1rem;
+  border: 1px solid #d4b77655;
+  border-radius: 8px;
+  background: linear-gradient(110deg, #40332480, #141718e8);
+}
+.contract-rank {
+  font: 900 2.4rem/1 monospace;
+  color: #d8bb78;
+  border-right: 1px solid #d4b77655;
+  padding-right: 1rem;
+}
+.contract-rank[data-rank="S"] { color: #ffe1a0; text-shadow: 0 0 22px #ffc54d55; }
+.contract-receipt > div > strong { color: #e7d6ad; font: 700 0.73rem/1.5 monospace; }
+.contract-receipt p { color: #fff1d6; font-size: 0.83rem; margin: 0.3rem 0; }
+.contract-receipt small { display: block; color: #bba98a; font-size: 0.7rem; line-height: 1.6; }

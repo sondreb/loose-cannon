@@ -28,7 +28,7 @@ import {
   type WeaponId,
   type WorldSnapshot,
 } from "@loose-cannon/shared";
-import { music, sfx } from "./audio.js";
+import { music, sfx, type SoundOptions } from "./audio.js";
 import { goonBackstory } from "./backstory.js";
 import { voice } from "./voice.js";
 import { statBonus, upgradeTier } from "./avatar.js";
@@ -40,6 +40,8 @@ import {
   weaponIconDataUrl,
 } from "./icons.js";
 import { GameSocket } from "./net.js";
+import { syncCrewModelPreview } from "./crewModelPreview";
+import { decorateContractOffer, renderContractStatus } from "./contracts";
 import { WorldView } from "./worldView.js";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -279,7 +281,7 @@ let keyMoving = false;
 const DIR_RESEND_MS = 50;
 
 /** After click-to-interact: walk here then send intent.interact (optional NPC target) */
-let pendingInteract: { x: number; y: number; targetUnitId?: string } | null = null;
+let pendingInteract: { x: number; y: number; targetUnitId?: string; exit?: boolean } | null = null;
 
 /**
  * Mobile mode toggle:
@@ -567,8 +569,17 @@ function handlePrimaryPointer(clientX: number, clientY: number, asAttack: boolea
     if (exitB) {
       const ex = exitB.exitX ?? exitB.doorX;
       const ey = exitB.exitY ?? exitB.doorY;
-      // No targetUnitId — server prefers leave when near the mat
-      clickInteractAt(ex + 0.5, ey + 0.5);
+      clickInteractAt(ex + 0.5, ey + 0.5, undefined, true);
+      return;
+    }
+  }
+
+  // A precise outdoor door tap wins over the nearby crew's generous touch hitbox.
+  if (!s.you.insideBuildingId && !s.dialogue) {
+    const door = view.pickBuilding(clientX, clientY);
+    const point = view.screenToWorld(clientX, clientY);
+    if (door && Math.hypot(point.x - door.doorX - 0.5, point.y - door.doorY - 0.5) < 1) {
+      clickInteractAt(door.doorX + 0.5, door.doorY + 0.5);
       return;
     }
   }
@@ -1556,6 +1567,7 @@ function renderCrewEditor(): void {
     if (id) openGoonProfile(id);
   });
 
+  syncCrewModelPreview(crewEditorProfile, u, true);
   fillWeaponBar(crewWeaponBar, crewWeaponDetail, u, true);
   fillArmorBar(crewArmorBar, crewArmorDetail, u, true);
 
@@ -1586,6 +1598,7 @@ function openCrewEditor(): void {
 }
 
 function closeCrewEditor(): void {
+  syncCrewModelPreview(crewEditorProfile, null, false);
   crewEditorOpen = false;
   crewEditorModal.classList.add("hidden");
 }
@@ -1718,6 +1731,7 @@ function renderJobBoard(): void {
         <button type="button" class="job-accept" data-mission-id="${escapeHtml(offer.id)}">ACCEPT</button>
       </div>
     `;
+    decorateContractOffer(card, offer);
     jobBoardOffers.appendChild(card);
   }
 }
@@ -2467,6 +2481,7 @@ function onSnapshot(s: WorldSnapshot): void {
 
   snap = s;
   view.applySnapshot(s);
+  sfx.syncFromWorld(s);
   // Combat VFX SFX (visuals applied inside WorldView.applySnapshot)
   if (s.fx?.length) playCombatFxAudio(s.fx);
   // Music beds: explore (safe) ↔ action (war / instance / firefight hold)
@@ -2486,6 +2501,7 @@ function onSnapshot(s: WorldSnapshot): void {
   renderStash();
   renderJobBoard();
   renderMissionHud();
+  renderContractStatus(snap);
   renderTutorialHud();
   renderPartyHud();
   updateActionBanner(s);
@@ -2507,56 +2523,62 @@ function onSnapshot(s: WorldSnapshot): void {
   }
   // Auto-complete click-to-interact when in range (must stay within server NPC_TALK_RANGE)
   if (pendingInteract && view) {
-    const d = view.distToLeader(pendingInteract.x, pendingInteract.y);
+    const d = interactionDistance(pendingInteract.x, pendingInteract.y);
     // Slightly tighter than server (INTERACT_RANGE+0.55) so we don't fire one frame too early
-    if (d <= INTERACT_RANGE + 0.4) {
+    if (d <= (pendingInteract.targetUnitId || s.you.insideBuildingId ? INTERACT_RANGE + 0.35 : INTERACT_RANGE - 0.1)) {
       const target = pendingInteract.targetUnitId;
+      const exit = pendingInteract.exit;
       pendingInteract = null;
-      fireInteract(target);
+      fireInteract(target, exit);
     }
   }
 }
 
-function weaponFireSfx(weapon: WeaponId): void {
-  sfx.unlock();
+function weaponFireSfx(weapon: WeaponId, options?: SoundOptions): void {
   music.noteCombatActivity();
-  if (weapon === "shotgun") sfx.play("shotgun");
-  else if (weapon === "minigun") sfx.play("minigun");
-  else if (weapon === "tommy") sfx.play("tommy");
-  else if (weapon === "uzi") sfx.play("uzi");
-  else if (weapon === "pipe") sfx.play("melee");
-  else if (weapon === "switchblade") sfx.play("blade");
-  else if (weapon === "flamethrower") sfx.play("flame");
-  else if (weapon === "pistol") sfx.play("pistol");
-  else sfx.play("gun");
+  if (weapon === "shotgun") sfx.play("shotgun", options);
+  else if (weapon === "minigun") sfx.play("minigun", options);
+  else if (weapon === "tommy") sfx.play("tommy", options);
+  else if (weapon === "uzi") sfx.play("uzi", options);
+  else if (weapon === "pipe") sfx.play("melee", options);
+  else if (weapon === "switchblade") sfx.play("blade", options);
+  else if (weapon === "flamethrower") sfx.play("flame", options);
+  else if (weapon === "pistol") sfx.play("pistol", options);
+  else sfx.play("gun", options);
 }
 
 function playCombatFxAudio(events: CombatFxEvent[]): void {
   if (!events.length) return;
-  sfx.unlock();
+  const leaderId = snap?.posses.find((p) => p.id === snap?.you.posseId)?.leaderId;
+  const listener = snap?.units.find((u) => u.id === leaderId);
   // Cap concurrent one-shots per snapshot so auto-fire stays audible but not clipped
   let shots = 0;
   let hits = 0;
   for (const e of events) {
+    const attack = e.kind === "shot" || e.kind === "melee" || e.kind === "flame";
+    const dx = (attack ? e.x0 : e.x1) - (listener?.x ?? e.x0);
+    const dy = (attack ? e.y0 : e.y1) - (listener?.y ?? e.y0);
+    const sound: SoundOptions = { distance: Math.hypot(dx, dy), pan: (dx - dy) / 16 };
+    if ((sound.distance ?? 0) > 32) continue;
     if (e.kind === "shot" || e.kind === "melee" || e.kind === "flame") {
       if (shots < 6) {
-        weaponFireSfx(e.weapon);
+        weaponFireSfx(e.weapon, sound);
         shots++;
       }
     } else if (e.kind === "hit") {
       if (hits < 5) {
-        sfx.play(e.crit ? "crit" : "hit");
+        sfx.play(e.crit ? "crit" : "hit", sound);
         hits++;
       }
     } else if (e.kind === "miss" || e.kind === "blocked") {
-      sfx.play("miss");
+      sfx.play("miss", sound);
     } else if (e.kind === "death") {
-      sfx.play("death", { force: true });
+      sfx.play("death", { ...sound, force: true });
     }
   }
 }
 
-function fireInteract(targetUnitId?: string): void {
+function fireInteract(targetUnitId?: string, exit = false): void {
   if (!socket) return;
   keys.up = keys.down = keys.left = keys.right = false;
   keyMoving = false;
@@ -2564,7 +2586,9 @@ function fireInteract(targetUnitId?: string): void {
   view?.clearLocalPrediction();
   socket.send({ type: "intent.dir", dx: 0, dy: 0 });
   socket.send({ type: "intent.stop" });
-  if (targetUnitId) {
+  if (exit) {
+    socket.send({ type: "intent.exit" });
+  } else if (targetUnitId) {
     socket.send({ type: "intent.interact", targetUnitId });
   } else {
     socket.send({ type: "intent.interact" });
@@ -2572,22 +2596,29 @@ function fireInteract(targetUnitId?: string): void {
   sfx.play("ui");
 }
 
+/** Wait for the server position, since visual prediction can arrive ahead of it. */
+function interactionDistance(x: number, y: number): number {
+  const leaderId = snap?.posses.find((p) => p.id === snap?.you.posseId)?.leaderId;
+  const leader = snap?.units.find((u) => u.id === leaderId);
+  return leader ? Math.hypot(leader.x - x, leader.y - y) : Infinity;
+}
+
 /** Walk toward a world point, then interact when close enough. */
-function clickInteractAt(x: number, y: number, targetUnitId?: string): void {
+function clickInteractAt(x: number, y: number, targetUnitId?: string, exit = false): void {
   if (!socket || !view || !snap) return;
   keys.up = keys.down = keys.left = keys.right = false;
   if (keyMoving) {
     keyMoving = false;
     socket.send({ type: "intent.dir", dx: 0, dy: 0 });
   }
-  const d = view.distToLeader(x, y);
+  const d = interactionDistance(x, y);
   // Server NPC talk range is INTERACT_RANGE+0.55 — fire only when safely inside it
-  if (d <= INTERACT_RANGE + 0.35) {
+  if (d <= (targetUnitId || snap.you.insideBuildingId ? INTERACT_RANGE + 0.35 : INTERACT_RANGE - 0.1)) {
     pendingInteract = null;
-    fireInteract(targetUnitId);
+    fireInteract(targetUnitId, exit);
     return;
   }
-  pendingInteract = { x, y, targetUnitId };
+  pendingInteract = { x, y, targetUnitId, exit };
   view.predictClickMove(x, y);
   socket.send({ type: "intent.move", x, y });
 }
@@ -2909,6 +2940,7 @@ async function startGame(): Promise<void> {
       voice.play(lineId, { force: true });
     },
     onClose: () => {
+      sfx.stopWorld();
       pushEvent("Disconnected from server.");
     },
   });
@@ -3768,6 +3800,9 @@ const unlockTitleMusic = () => {
 window.addEventListener("pointerdown", unlockTitleMusic, { passive: true });
 window.addEventListener("keydown", unlockTitleMusic);
 window.addEventListener("touchstart", unlockTitleMusic, { passive: true });
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) voice.stop();
+});
 
 // Prefill login: localStorage name, then ?name= / ?realm= overrides (invite links)
 try {

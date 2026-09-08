@@ -34,25 +34,25 @@ const MAT = {
   ground: (() => {
     const m = new Matrix();
     // denser: smaller number → more repeats
-    m.scale(1 / 110, 1 / 110);
+    m.set(0.42, 0.21, -0.42, 0.21, 0, 0);
     return m;
   })(),
   /** Walls / roofs on building faces */
   wall: (() => {
     const m = new Matrix();
-    m.scale(1 / 90, 1 / 90);
+    m.scale(0.35, 0.35);
     return m;
   })(),
   /** Interior floors */
   floor: (() => {
     const m = new Matrix();
-    m.scale(1 / 100, 1 / 100);
+    m.set(0.075, 0.0375, -0.075, 0.0375, 0, 0);
     return m;
   })(),
   /** Sparse debris stamps — still global so no seam fight */
   debris: (() => {
     const m = new Matrix();
-    m.scale(1 / 70, 1 / 70);
+    m.scale(0.3, 0.3);
     return m;
   })(),
 } as const;

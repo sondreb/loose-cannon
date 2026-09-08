@@ -19,6 +19,14 @@ Newest entries at the top. Each autonomous or interactive overseer cycle should 
 
 ## Entries
 
+### 2026-09-08 — human-requested presentation + contract mastery
+- Focus: Bring live game closer to repository concept art; proper reusable 3D models, richer sound and replayable gameplay.
+- Done: 12 original animated/prop GLBs and directional atlas pipeline; real-time crew model inspection; generated facade art integrated into projected architecture; rebuilt interior walls/counters/framing; ground UV repair, streetlights/reflections/steam/cutaway; compact crime dossier HUD and readable notification layout; environmental/spatial audio; quick/clean contract bonuses, grades and repeat raids.
+- Repairs: Contract crates feed fence marks; nearest prop/NPC/door interaction and explicit EXIT intent fix taxi/Tony/mobile entry; extraction door required; downed-boss protection/targeting and marked-boss completion fixed; overlapping co-op raid layers isolated. Connection-bound realms fix colliding character IDs. Monotonic fixed-step clock fixes Windows timer rounding while retaining bounded catch-up.
+- Verify: Full build, 19 gameplay + 4 scheduler regressions, 12 GLBs/448 atlas frames, audio lifecycle and real WebSocket realm isolation passed. Full smoke7 passed all five raids, crate/hub loops, reconnect and parties. Live desktop/mobile model viewer, contract board/receipt and club tip/art/full-screen dialogue checks passed. Final presentation rerun passed after notification adjustments; mobile screenshot visually confirms clear status/notification spacing. All QA sockets/realms and isolated smoke processes cleaned up. Evidence: gitignored `playtest-out/` reports, screenshots and `contracts-smoke-7.log`.
+- Next: Human play/listening feedback; physical-device frame rate and final mix remain unverified. Mode B remains deferred. Local preview left running at http://127.0.0.1:5173; no commit, push or deployment.
+- Blocked: none.
+
 ### 2026-08-23 — hub buildings (empty rooms → real loops)
 - Focus: Human request — finish stubbed / empty / half-implemented buildings first
 - Done:

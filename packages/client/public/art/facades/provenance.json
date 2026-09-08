@@ -1,0 +1,14 @@
+{
+  "generatedWith": "Built-in image_gen tool",
+  "reference": "packages/client/public/art/combat-scene.jpg",
+  "assets": [
+    {
+      "file": "brownstone-v1.png",
+      "prompt": "Use case: stylized-concept. Asset type: production game wall texture, a flat orthographic front elevation to map onto 3D isometric building walls in Loose Cannon. Create a richly detailed, gritty 1990s American crime-city brownstone brick facade, matching the mature hand-painted realism and dense material detail of the supplied combat-scene reference. The reference is style/mood only; do not reproduce its perspective or scene. Entire square image is ONE flat wall face edge-to-edge: three stories, red-brown weathered masonry, four evenly spaced tall sash windows on each upper floor with dirty glass and varied warm amber room lights, ground floor grimy shop glazing with faded paper notices and a metal shutter. Beautiful realistic texture: eroded mortar, soot below stone sills, subtle chipped pale lintels, cables and old painted-over graffiti. Warm tungsten light against desaturated cool slate brick shadows; cinematic hand-painted game-art finish, legible at game scale. Strictly front-facing orthographic elevation, NO perspective, NO roof, NO sky, NO pavement, NO people, NO vehicles, NO framing, NO UI, NO logo, no prominent text. Flat evenly lit surface suitable for mapping onto a modeled building; no ambient background. Keep all texture within image, fill edge-to-edge."
+    },
+    {
+      "file": "industrial-v1.png",
+      "prompt": "Use case: stylized-concept. Asset type: flat orthographic building facade texture for gritty isometric crime game Loose Cannon. The supplied combat-scene is a style reference only. Create one square front-facing elevation of an aging 1990s American industrial warehouse, edge-to-edge uninterrupted facade with NO perspective, roof, sky, pavement, people or frame. Three-story wall of soot-stained gray-brown masonry and chipped concrete structural columns. Upper two-thirds feature two rows of four large dark steel factory windows with many small panes, some cracked, a few rooms glowing weak amber. Lower third: weathered corrugated steel loading shutters, battered utility door, conduit, rusty junction boxes and faded loading-bay safety stripes. Faded red ghost-sign paint and subtle old graffiti, no readable prominent text. Extremely rich photorealistic hand-painted game texture detail, weathering, gritty material depth. Restrained muted slate teal/gray, rusty brown and warm tungsten, appropriate to a crime noir city. Even cool ambient illumination, entire image usable as a flat wall texture, no vignette."
+    }
+  ]
+}

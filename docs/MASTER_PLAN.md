@@ -1,6 +1,6 @@
 # Loose Cannon — Master Plan (Overseer Roadmap)
 
-Last updated: 2026-08-23 (hub buildings completed; Mode A near-term still complete)
+Last updated: 2026-09-08 (human-requested graphics, sound and contract mastery pass)
 
 Track completion in `docs/STATUS.md`. This file is the **ordered backlog** for autonomous development. Prefer finishing higher milestones before lower ones unless a dependency forces otherwise.
 
@@ -106,6 +106,18 @@ Full design: [realms.md](./realms.md). Friend groups on one beta/in-memory serve
 - [x] Temple pack (temple_sweat gym dual-use + west_wreck outdoor kill)
 - [x] Outdoor Choir kill (`last_hymn` / `ai_church` — street beat next to chapel instance)
 - [x] Hub building completion (human request 2026-08-23): Chop Shop / Warehouse / Cold Storage services; per-shop catalogs; bar/liquor drinks; jack→Tony + crate→Pete loops
+
+### M6/M7 extension — Human-requested presentation and replayability (2026-09-08)
+
+- [x] Original exportable GLB crew/street models, eight-direction animated atlases and reproducible local model studio
+- [x] Real-time rotatable 3D crew inspection with idle/walk animation in the full editor
+- [x] Concept-referenced generated facade art, projected masonry, volumetric roof details and fire escapes
+- [x] Continuous world-space ground UVs, streetlights, wet reflections, steam and nearby-building cutaway
+- [x] Compact crime-dossier HUD and artwork-led login; preserve mobile full-screen panels
+- [x] Spatial gunfire, movement footsteps, weather/interior soundscape and audio lifecycle/resource bounds
+- [x] Server-authoritative quick/clean contract bonuses, payday grades and cash-only repeat raids
+- [x] Monotonic 30 Hz fixed-step pacing, isolated realm routing and progression/interaction regression repairs
+- [x] Final integrated browser/model/build/smoke verification and regression repair
 
 ### M8 — Explicitly deferred (do not start unless user asks)
 

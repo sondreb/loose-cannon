@@ -1,3 +1,6 @@
+import type { WorldSnapshot } from "@loose-cannon/shared";
+import { StreetSoundscape } from "./soundscape.js";
+
 /**
  * Lightweight Web Audio SFX — no external files.
  * Punchy procedural combat + UI sounds (90s arcade / crime game energy).
@@ -47,6 +50,15 @@ export type Sfx =
   | "cash"
   | "dumpster";
 
+export interface SoundOptions {
+  force?: boolean;
+  gain?: number;
+  /** Isometric screen position, -1 (left) to +1 (right). */
+  pan?: number;
+  /** World-space distance in tiles. */
+  distance?: number;
+}
+
 /** In-game bed mood (title is separate) */
 export type MusicMood = "explore" | "action";
 
@@ -56,22 +68,56 @@ export class SfxBus {
   /** Overall loudness — combat needs to cut through */
   private master = 0.55;
   private lastPlay = new Map<string, number>();
+  private output: GainNode | null = null;
+  private gestureOk = false;
+  private voices = new Set<GainNode>();
+  private noiseCache = new Map<string, AudioBuffer>();
+  private ambience: StreetSoundscape | null = null;
+
+  constructor() {
+    document.addEventListener("visibilitychange", () => {
+      if (!this.ctx) return;
+      if (document.hidden) {
+        this.clearVoices();
+        this.ambience?.resetMovement();
+        void this.ctx.suspend().catch(() => undefined);
+      } else if (this.gestureOk && !this.muted) {
+        void this.ctx.resume().catch(() => undefined);
+      }
+    });
+  }
 
   private ensure(): AudioContext | null {
-    if (this.muted) return null;
+    if (this.muted || !this.gestureOk || document.hidden) return null;
     if (!this.ctx) {
       const AC =
         window.AudioContext ||
         (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (!AC) return null;
       this.ctx = new AC();
+      this.output = this.ctx.createGain();
+      // Keep overlapping automatic fire punchy without digital clipping.
+      const limiter = this.ctx.createDynamicsCompressor();
+      limiter.threshold.value = -12;
+      limiter.knee.value = 8;
+      limiter.ratio.value = 8;
+      limiter.attack.value = 0.003;
+      limiter.release.value = 0.18;
+      this.output.connect(limiter);
+      limiter.connect(this.ctx.destination);
+      this.ambience = new StreetSoundscape(this.ctx, this.output);
     }
-    if (this.ctx.state === "suspended") void this.ctx.resume();
     return this.ctx;
   }
 
   setMuted(m: boolean): void {
     this.muted = m;
+    if (this.output && this.ctx) {
+      this.output.gain.setTargetAtTime(m ? 0 : 1, this.ctx.currentTime, 0.02);
+      if (m) this.clearVoices();
+    }
+    if (m) this.ambience?.resetMovement();
+    if (!m && this.gestureOk) this.unlock();
   }
 
   isMuted(): boolean {
@@ -80,15 +126,30 @@ export class SfxBus {
 
   /** Call from any user gesture so browsers allow audio. */
   unlock(): void {
+    this.gestureOk = true;
     const ctx = this.ensure();
-    if (ctx?.state === "suspended") void ctx.resume();
+    if (ctx?.state === "suspended") void ctx.resume().catch(() => undefined);
+  }
+
+  syncFromWorld(snapshot: WorldSnapshot): void {
+    if (!this.ensure()) return;
+    this.ambience?.sync(snapshot);
+  }
+
+  stopWorld(): void {
+    this.ambience?.stop();
+  }
+
+  private clearVoices(): void {
+    for (const node of this.voices) node.disconnect();
+    this.voices.clear();
   }
 
   /**
    * Play a named sound. Optional rate-limit key prevents machine-gun clipping
    * from stacking dozens of identical buffers in one frame.
    */
-  play(name: Sfx, opts?: { force?: boolean; gain?: number }): void {
+  play(name: Sfx, opts?: SoundOptions): void {
     const now = performance.now();
     const minGap =
       name === "minigun"
@@ -105,15 +166,30 @@ export class SfxBus {
     this.lastPlay.set(name, now);
 
     const ctx = this.ensure();
-    if (!ctx) return;
-    // Always try resume (autoplay policy)
-    if (ctx.state === "suspended") void ctx.resume();
+    if (!ctx || !this.output || ctx.state !== "running" || this.voices.size >= 48) return;
 
     const t = ctx.currentTime;
-    const master = this.master * (opts?.gain ?? 1);
+    const distance = Math.max(0, opts?.distance ?? 0);
+    if (distance > 32) return;
+    const master = this.master * Math.max(0, Math.min(2, opts?.gain ?? 1)) / (1 + distance * 0.1);
     const out = ctx.createGain();
     out.gain.value = master;
-    out.connect(ctx.destination);
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = Math.max(-0.9, Math.min(0.9, opts?.pan ?? 0));
+    const air = ctx.createBiquadFilter();
+    air.type = "lowpass";
+    air.frequency.value = Math.max(1800, 18000 / (1 + distance * 0.12));
+    out.connect(air);
+    air.connect(pan);
+    pan.connect(this.output);
+    this.voices.add(out);
+    // Every scheduled sound ends within one second; release its routing graph too.
+    window.setTimeout(() => {
+      out.disconnect();
+      air.disconnect();
+      pan.disconnect();
+      this.voices.delete(out);
+    }, 1200);
 
     switch (name) {
       case "pistol":
@@ -250,6 +326,9 @@ export class SfxBus {
     this.noiseBurst(ctx, dest, t, p.body * 0.9, p.noise * p.crack, 1800);
     // Short high click / chamber
     this.noiseBurst(ctx, dest, t, 0.015, 0.2 * p.crack, 6000);
+    // Reflected street report and a quiet mechanical return give each shot weight.
+    this.noiseBurst(ctx, dest, t + 0.055, 0.16, 0.065 * p.crack, 700);
+    this.noiseBurst(ctx, dest, t + p.body + 0.055, 0.025, 0.065, 3500);
   }
 
   private tone(
@@ -273,6 +352,7 @@ export class SfxBus {
     g.connect(dest);
     o.start(t);
     o.stop(t + dur + 0.03);
+    o.onended = () => { o.disconnect(); g.disconnect(); };
   }
 
   /**
@@ -287,17 +367,22 @@ export class SfxBus {
     vol: number,
     bright = 4000,
   ): void {
-    const n = Math.max(1, Math.floor(ctx.sampleRate * dur));
-    const buf = ctx.createBuffer(1, n, ctx.sampleRate);
-    const data = buf.getChannelData(0);
-    // Soft low-pass: mix with previous sample based on brightness
-    const smooth = Math.min(0.95, Math.max(0.05, 1 - bright / 8000));
-    let prev = 0;
-    for (let i = 0; i < n; i++) {
-      const white = Math.random() * 2 - 1;
-      prev = prev * smooth + white * (1 - smooth);
-      const env = 1 - i / n;
-      data[i] = prev * env * env;
+    const key = `${dur}:${bright}`;
+    let buf = this.noiseCache.get(key);
+    if (!buf) {
+      const n = Math.max(1, Math.floor(ctx.sampleRate * dur));
+      buf = ctx.createBuffer(1, n, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      // Soft low-pass: mix with previous sample based on brightness
+      const smooth = Math.min(0.95, Math.max(0.05, 1 - bright / 8000));
+      let prev = 0;
+      for (let i = 0; i < n; i++) {
+        const white = Math.random() * 2 - 1;
+        prev = prev * smooth + white * (1 - smooth);
+        const env = 1 - i / n;
+        data[i] = prev * env * env;
+      }
+      this.noiseCache.set(key, buf);
     }
     const src = ctx.createBufferSource();
     src.buffer = buf;
@@ -307,6 +392,7 @@ export class SfxBus {
     src.connect(g);
     g.connect(dest);
     src.start(t);
+    src.onended = () => { src.disconnect(); g.disconnect(); };
   }
 }
 
@@ -334,13 +420,31 @@ export class MusicBus {
   /** performance.now() until which we prefer action bed after combat cues */
   private actionUntil = 0;
 
+  constructor() {
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) {
+        // RAF fades stop in background tabs; finish the transition on return.
+        if (this.fading) {
+          this.cancelFade();
+          this.disposeAudio();
+          this.phase = "game";
+        }
+        this.audio?.pause();
+      } else if (this.gestureOk && !this.muted) this.unlock();
+    });
+  }
+
   setMuted(m: boolean): void {
     this.muted = m;
     if (m) {
       this.audio?.pause();
       return;
     }
-    if (!this.gestureOk) return;
+    if (!this.gestureOk || document.hidden) return;
+    if (this.phase === "game" && !this.fading) {
+      this.playMoodTrack(this.mood, false);
+      return;
+    }
     if (this.phase === "idle") {
       this.playTitle();
       return;
@@ -370,24 +474,20 @@ export class MusicBus {
    */
   unlock(): void {
     this.gestureOk = true;
-    if (this.muted) return;
+    if (this.muted || document.hidden) return;
     if (this.fading) return;
     if (this.phase === "idle" || this.phase === "title") {
       this.playTitle();
       return;
     }
     if (this.phase === "game") {
-      if (this.audio) {
-        if (this.audio.paused) void this.audio.play().catch(() => undefined);
-      } else {
-        this.playMoodTrack(this.mood, false);
-      }
+      this.playMoodTrack(this.mood, false);
     }
   }
 
   /** Login / splash bed (loops). Safe to call repeatedly. */
   playTitle(): void {
-    if (this.muted || !this.gestureOk) return;
+    if (this.muted || !this.gestureOk || document.hidden) return;
     if (this.phase === "game" || this.fading) return;
     if (this.phase === "title" && this.audio && !this.audio.paused) return;
     this.cancelFade();
@@ -425,7 +525,7 @@ export class MusicBus {
    */
   setGameMood(want: MusicMood, opts?: { force?: boolean }): void {
     if (this.phase !== "game") return;
-    if (this.muted) {
+    if (this.muted || document.hidden) {
       this.mood = want;
       return;
     }
@@ -523,6 +623,7 @@ export class MusicBus {
     el.loop = loop;
     el.preload = "auto";
     this.audio = el;
+    if (document.hidden) return;
     void el.play().catch(() => {
       // Autoplay blocked or missing file — wait for another unlock
       if (this.audio === el) {

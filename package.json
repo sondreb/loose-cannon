@@ -16,11 +16,19 @@
     "build": "npm run build -w @loose-cannon/shared && npm run build -w @loose-cannon/server && npm run build -w @loose-cannon/client",
     "build:azure": "node scripts/prepare-azure-deploy.mjs",
     "build:azure:client": "node scripts/prepare-azure-deploy.mjs",
-    "start:client:prod": "node packages/client/static-server.mjs"
+    "start:client:prod": "node packages/client/static-server.mjs",
+    "art:build": "node scripts/art/generate-models.mjs",
+    "art:check": "node scripts/art/verify-models.mjs",
+    "test:contracts": "npm run test:contracts -w @loose-cannon/server",
+    "test:presentation": "node scripts/playtest/presentation.mjs",
+    "test:audio": "node scripts/playtest/audio-lifecycle.cjs"
   },
   "devDependencies": {
+    "@types/three": "^0.185.4",
     "concurrently": "^9.1.2",
     "esbuild": "^0.25.12",
+    "playwright": "^1.63.0",
+    "three": "^0.185.1",
     "typescript": "^5.8.2"
   },
   "allowScripts": {

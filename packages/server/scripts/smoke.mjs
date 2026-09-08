@@ -6,7 +6,7 @@
 import WebSocket from "ws";
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-const WS_URL = "ws://127.0.0.1:3001";
+const WS_URL = process.env.WS_URL ?? "ws://127.0.0.1:3001";
 
 function fail(msg) {
   console.error("SMOKE_FAIL:", msg);
@@ -574,6 +574,10 @@ await wait(400);
 ws.send(JSON.stringify({ type: "dialogue.choice", choiceId: "job" }));
 await wait(400);
 if (!last?.jobBoard?.offers?.some((o) => o.id === "smash_stash")) fail("no smash offer");
+const smashOffer = last.jobBoard.offers.find((o) => o.id === "smash_stash");
+if (smashOffer.bonusCash !== 56 || smashOffer.parSeconds !== 150 || smashOffer.replay !== false) {
+  fail("smash offer must expose server contract terms");
+}
 
 let cash0 = last.you.cash;
 let rep0 = last.you.rep;
@@ -584,6 +588,12 @@ me = await goTo(44, 28, 22);
 ws.send(JSON.stringify({ type: "intent.interact" }));
 await wait(600);
 if (last?.mission) fail("smash should complete");
+if (last.missionDebrief?.missionId !== "smash_stash" || last.missionDebrief.baseCash !== 280) {
+  fail("completed smash must retain a payday debrief");
+}
+if (last.missionDebrief.totalCash !== last.missionDebrief.baseCash + last.missionDebrief.bonusCash) {
+  fail("debrief bonus must add up to server payday");
+}
 // Job pay only — tutorial bonus waits for Crash Pad stash step
 if (last.you.cash < cash0 + 280) fail("smash pay");
 if (last.you.rep < rep0 + 2) fail("smash rep");
@@ -770,6 +780,10 @@ console.log("warehouse_raid instance ok heat", last.you.heat, "memorials", last.
 // --- M6 outdoor: still_not_guns (crate cr2) ---
 await openRitaBoard();
 const m6Ids = ["still_not_guns", "parking_tax", "chop_shop_raid", "rail_rats", "pier_punch"];
+const repeatRaid = last.jobBoard.offers.find((o) => o.id === "warehouse_raid");
+if (!repeatRaid?.replay || repeatRaid.rewardCash !== 270 || repeatRaid.rewardRep !== 0 || !repeatRaid.bestRank) {
+  fail("completed warehouse must offer cash-only rerun with best rank");
+}
 for (const id of m6Ids) {
   if (!last.jobBoard.offers.some((o) => o.id === id)) fail(`missing M6 offer ${id}`);
 }
